@@ -9,11 +9,17 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DateRange
@@ -33,7 +39,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -138,11 +150,12 @@ private fun MainShell(repo: RotRunRepository) {
     }
     val canvas = when (tab) {
         Tab.Home -> look.canvas
-        Tab.Stats -> Color(0xFFFDE6C7)
+        Tab.Stats -> Color.White
         else -> Melt.Grouped
     }
+    val barColor = if (tab == Tab.Home && !look.light) look.tab else Color.White
     Box(Modifier.fillMaxSize().background(canvas)) {
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 120.dp)) {
+        Column(Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState()).padding(bottom = 132.dp)) {
             when (tab) {
                 Tab.Home -> HomeScreen(state, usage, refreshing, repo::refreshUsage) {
                     context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
@@ -154,7 +167,8 @@ private fun MainShell(repo: RotRunRepository) {
         }
         TabBar(
             tab = tab,
-            meadow = tab == Tab.Home && !look.light,
+            bar = barColor,
+            light = tab != Tab.Home || look.light,
             onHome = { tab = Tab.Home },
             onBlock = { tab = Tab.Block },
             onStats = { tab = Tab.Stats },
@@ -178,10 +192,37 @@ private fun MainShell(repo: RotRunRepository) {
     }
 }
 
+private class CurvedTabShape : Shape {
+    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
+        val bump = with(density) { 36.dp.toPx() }
+        val lift = bump - with(density) { 8.dp.toPx() }
+        val corner = with(density) { 18.dp.toPx() }
+        val inset = with(density) { 22.dp.toPx() }
+        val shoulder = with(density) { 18.dp.toPx() }
+        val w = size.width
+        val h = size.height
+        val mid = w / 2f
+        val path = Path().apply {
+            moveTo(0f, corner + lift)
+            quadraticBezierTo(0f, lift, inset, lift)
+            lineTo(mid - bump - shoulder, lift)
+            cubicTo(mid - bump + with(density) { 2.dp.toPx() }, lift, mid - bump + with(density) { 4.dp.toPx() }, 0f, mid, 0f)
+            cubicTo(mid + bump - with(density) { 4.dp.toPx() }, 0f, mid + bump - with(density) { 2.dp.toPx() }, lift, mid + bump + shoulder, lift)
+            lineTo(w - inset, lift)
+            quadraticBezierTo(w, lift, w, corner + lift)
+            lineTo(w, h)
+            lineTo(0f, h)
+            close()
+        }
+        return Outline.Generic(path)
+    }
+}
+
 @Composable
 private fun TabBar(
     tab: Tab,
-    meadow: Boolean,
+    bar: Color,
+    light: Boolean,
     onHome: () -> Unit,
     onBlock: () -> Unit,
     onStats: () -> Unit,
@@ -189,34 +230,70 @@ private fun TabBar(
     onFocus: () -> Unit,
     modifier: Modifier,
 ) {
-    val bar = if (meadow) Melt.Tab else Color.White
-    val item = if (meadow) Color.White else Melt.Muted
-    Box(modifier.fillMaxWidth().navigationBarsPadding()) {
+    val nav = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val item = if (light) Melt.Muted else Color.White
+    Box(modifier.fillMaxWidth().height(36.dp + 88.dp + nav)) {
         Box(
-            Modifier.align(Alignment.TopCenter).padding(bottom = 8.dp).clip(CircleShape).background(Melt.Glow).padding(4.dp).clickable(onClick = onFocus),
-        ) { CartoonBrain(BrainStyle.Spa, Modifier.size(58.dp), animated = false) }
-        RowUnder(bar, item, tab, onHome, onBlock, onStats, onSettings)
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(88.dp + nav).background(bar, CurvedTabShape()),
+        )
+        androidx.compose.foundation.layout.Row(
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(bottom = nav, top = 28.dp).height(74.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TabItem("Home", tab == Tab.Home, item, light, Modifier.weight(1f), onHome) {
+                Glyph { Icon(Icons.Default.Home, null, tint = Color(0xFFF28C59)) }
+            }
+            TabItem("Block", tab == Tab.Block, item, light, Modifier.weight(1f), onBlock) {
+                Glyph { Icon(Icons.Default.Lock, null, tint = Color(0xFF8C949E)) }
+            }
+            Text("Focus", color = item, fontSize = 11.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center, modifier = Modifier.weight(1f).padding(top = 22.dp))
+            TabItem("Stats", tab == Tab.Stats, item, light, Modifier.weight(1f), onStats) {
+                Glyph {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(Icons.Default.DateRange, null, tint = Color(0xFF8C949E))
+                        Text("12", fontSize = 7.sp, fontWeight = FontWeight.Bold, modifier = Modifier.offset(y = 2.dp))
+                    }
+                }
+            }
+            TabItem("Settings", tab == Tab.Settings, item, light, Modifier.weight(1f), onSettings) {
+                Glyph { Icon(Icons.Default.Settings, null, tint = Color(0xFF8C949E)) }
+            }
+        }
+        Box(
+            Modifier.align(Alignment.TopCenter).size(74.dp).clip(CircleShape).background(Melt.Glow).clickable(onClick = onFocus),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(Modifier.size(66.dp).clip(CircleShape).background(Color.White), contentAlignment = Alignment.Center) {
+                CartoonBrain(BrainStyle.Spa, Modifier.size(58.dp), animated = false)
+            }
+        }
     }
 }
 
 @Composable
-private fun RowUnder(bar: Color, item: Color, tab: Tab, onHome: () -> Unit, onBlock: () -> Unit, onStats: () -> Unit, onSettings: () -> Unit) {
-    androidx.compose.foundation.layout.Row(
-        Modifier.padding(top = 28.dp).fillMaxWidth().height(78.dp).background(bar).padding(top = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        TabItem("Home", tab == Tab.Home, item, Modifier.weight(1f), onHome) { Icon(Icons.Default.Home, null, tint = Melt.House) }
-        TabItem("Block", tab == Tab.Block, item, Modifier.weight(1f), onBlock) { Icon(Icons.Default.Lock, null, tint = Color(0xFF8E9399)) }
-        Text("Focus", color = item, fontSize = 11.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center, modifier = Modifier.weight(1f).padding(top = 28.dp))
-        TabItem("Stats", tab == Tab.Stats, item, Modifier.weight(1f), onStats) { Icon(Icons.Default.DateRange, null, tint = Color(0xFF8E9399)) }
-        TabItem("Settings", tab == Tab.Settings, item, Modifier.weight(1f), onSettings) { Icon(Icons.Default.Settings, null, tint = Color(0xFF8E9399)) }
+private fun Glyph(icon: @Composable () -> Unit) {
+    Box(Modifier.size(34.dp), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(34.dp).offset(y = 3.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.28f)))
+        Box(Modifier.size(34.dp).clip(CircleShape).background(Color.White), contentAlignment = Alignment.Center) { icon() }
     }
 }
 
 @Composable
-private fun TabItem(label: String, selected: Boolean, color: Color, modifier: Modifier, onClick: () -> Unit, icon: @Composable () -> Unit) {
-    Column(modifier.clickable(onClick = onClick).padding(4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        icon()
-        Text(label, color = color, fontSize = 11.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium)
+private fun TabItem(
+    label: String,
+    selected: Boolean,
+    color: Color,
+    light: Boolean,
+    modifier: Modifier,
+    onClick: () -> Unit,
+    icon: @Composable () -> Unit,
+) {
+    val labelColor = if (selected && light) Melt.Ink else color
+    Column(modifier.clickable(onClick = onClick), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(4.dp)) {
+        Box(
+            Modifier.clip(RoundedCornerShape(10.dp)).background(if (selected) Color.White.copy(alpha = if (light) 0f else 0.16f) else Color.Transparent).padding(horizontal = 6.dp, vertical = 2.dp),
+            contentAlignment = Alignment.Center,
+        ) { icon() }
+        Text(label, color = labelColor, fontSize = 11.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium)
     }
 }

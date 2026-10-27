@@ -6,8 +6,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -39,42 +41,55 @@ fun FocusChooser(onClose: () -> Unit, onCouch: () -> Unit, repo: RotRunRepositor
     var scope by remember { mutableStateOf("all") }
     var legendary by remember { mutableStateOf(false) }
     val targets = listOf(15, 30, 45, 60)
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(28.dp)).background(Color.White).padding(20.dp)) {
-        Text("Focus Mode", fontSize = 28.sp, fontWeight = FontWeight.Black)
-        Text("Go into focus mode to heal your brain!", color = Melt.Muted)
-        Box(Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
-            CartoonBrain(BrainStyle.Spa, Modifier.size(120.dp))
-        }
-        Text("Target Time", fontWeight = FontWeight.Bold)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 8.dp)) {
-            targets.forEach { value ->
-                Text("${value}m", color = if (!legendary && minutes == value) Color.White else Melt.Ink, modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(if (!legendary && minutes == value) Melt.Action else Melt.Grouped).clickable { legendary = false; minutes = value }.padding(10.dp))
+    Box(Modifier.fillMaxWidth().padding(top = 78.dp)) {
+        Column(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(36.dp)).background(Color.White).padding(horizontal = 22.dp).padding(top = 84.dp, bottom = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("Focus Mode", fontSize = 28.sp, fontWeight = FontWeight.Bold)
+            Text("Go into focus mode to heal your brain!", color = Melt.Muted, fontSize = 15.sp, textAlign = TextAlign.Center)
+            FocusRow("Target Time", if (legendary) "As long as you can!" else "${minutes}m", legendary = false) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    targets.forEach { value ->
+                        Text(
+                            "${value}m",
+                            color = if (!legendary && minutes == value) Melt.Action else Melt.Muted,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            modifier = Modifier.clickable { legendary = false; minutes = value },
+                        )
+                    }
+                    Text("∞", color = if (legendary) Melt.Action else Melt.Muted, fontWeight = FontWeight.Bold, modifier = Modifier.clickable { legendary = true })
+                }
             }
-        }
-        Text(
-            "As long as you can!",
-            color = if (legendary) Color.White else Melt.Ink,
-            modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(if (legendary) Melt.Action else Melt.Grouped).clickable { legendary = true }.padding(10.dp),
-        )
-        Text("Apps to block", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf("all" to "All Apps", "brainrot" to "Brainrot Apps").forEach { (id, label) ->
-                Text(label, color = if (scope == id) Color.White else Melt.Ink, modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(if (scope == id) Melt.Action else Melt.Grouped).clickable { scope = id }.padding(10.dp))
+            FocusRow("Apps to block", if (scope == "all") "All Apps" else "Brainrot Apps", legendary = false) {
+                Text(if (scope == "all") "Brainrot" else "All", color = Melt.Action, fontWeight = FontWeight.Bold, modifier = Modifier.clickable { scope = if (scope == "all") "brainrot" else "all" })
             }
-        }
-        Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("Legendary Mode", fontWeight = FontWeight.Bold)
-                Text(if (legendary) "On" else "Off", color = Melt.Muted)
+            FocusRow("Legendary Mode", if (legendary) "On" else "Off", legendary = legendary) {
+                Switch(checked = legendary, onCheckedChange = { legendary = it })
             }
-            Switch(checked = legendary, onCheckedChange = { legendary = it })
+            PrimaryButton("Start Focus") {
+                repo.startFocus(if (legendary) null else minutes, legendary, scope)
+                onClose()
+            }
+            Text("Start Couch Reset", color = Melt.Action, fontWeight = FontWeight.Bold, modifier = Modifier.clickable(onClick = onCouch))
         }
-        PrimaryButton("Start Focus") {
-            repo.startFocus(if (legendary) null else minutes, legendary, scope)
-            onClose()
+        CartoonBrain(BrainStyle.Meditating, Modifier.align(Alignment.TopCenter).offset(y = (-78).dp).size(168.dp), animated = false)
+    }
+}
+
+@Composable
+private fun FocusRow(title: String, value: String, legendary: Boolean, trailing: @Composable () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(if (legendary) Color(0xFFFF8C2E) else Color(0xFFF2F2F7)).padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, color = if (legendary) Color.White.copy(alpha = 0.85f) else Melt.Muted, fontSize = 13.sp)
+            Text(value, color = if (legendary) Color.White else Melt.Ink, fontWeight = FontWeight.Bold, fontSize = 17.sp)
         }
-        Text("Start Couch Reset", color = Melt.Action, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp).clickable(onClick = onCouch))
-        Text("Close", color = Melt.Muted, modifier = Modifier.padding(top = 8.dp).clickable(onClick = onClose))
+        trailing()
     }
 }
 
@@ -90,12 +105,16 @@ fun FocusOverlay(session: FocusSession, repo: RotRunRepository) {
     }
     val elapsed = ((now - session.startedAt) / 1000).coerceAtLeast(0)
     val remaining = session.targetMinutes?.let { (it * 60 - elapsed).coerceAtLeast(0) }
-    Column(Modifier.fillMaxSize().background(Melt.AscendBottom).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("Focus Mode", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Black)
-        Text(if (session.targetMinutes == null) "As long as you can" else "Time remaining", color = Color.White.copy(alpha = 0.8f))
-        CartoonBrain(BrainStyle.Spa, Modifier.size(140.dp).padding(top = 12.dp))
-        Text(Scoring.formatClock(remaining ?: elapsed), color = Color.White, fontSize = 56.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(vertical = 12.dp))
-        PrimaryButton("End Focus", light = true) { repo.endFocus() }
+    Column(Modifier.fillMaxSize().background(Melt.Meadow.copy(alpha = 0.97f)).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Spacer(Modifier.weight(1f))
+        CartoonBrain(BrainStyle.Meditating, Modifier.size(140.dp))
+        Text("Focus Mode", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+        Text(if (session.targetMinutes == null || session.legendary) "As long as you can" else "Time remaining", color = Color.White.copy(alpha = 0.7f), fontSize = 15.sp, fontWeight = FontWeight.Medium)
+        Text(Scoring.formatClock(if (session.targetMinutes == null || session.legendary) elapsed else (remaining ?: elapsed)), color = Color.White, fontSize = 56.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(vertical = 8.dp))
+        Box(Modifier.padding(horizontal = 12.dp).padding(top = 8.dp)) {
+            PrimaryButton("End Focus", light = true, textColor = Melt.Action) { repo.endFocus() }
+        }
+        Spacer(Modifier.weight(1f))
     }
 }
 

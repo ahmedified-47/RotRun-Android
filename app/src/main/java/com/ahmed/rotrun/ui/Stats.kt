@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -35,10 +37,12 @@ import java.util.Locale
 @Composable
 fun StatsScreen(state: SavedState, health: Int, screenMinutes: Int, repo: RotRunRepository) {
     var page by remember { mutableStateOf("focus") }
-    Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Toggle("Focus Time", page == "focus") { page = "focus" }
-            Toggle("Leaderboard", page == "board") { page = "board" }
+    Column(Modifier.padding(bottom = 24.dp)) {
+        Row(
+            Modifier.padding(horizontal = 20.dp, vertical = 8.dp).fillMaxWidth().clip(CircleShape).background(Color(0xFFF2F2F7)).padding(4.dp),
+        ) {
+            Toggle("Focus Time", page == "focus", Modifier.weight(1f)) { page = "focus" }
+            Toggle("Leaderboard", page == "board", Modifier.weight(1f)) { page = "board" }
         }
         if (page == "focus") FocusStats(state, health) else Leaderboard(state, screenMinutes, repo)
     }
@@ -53,34 +57,58 @@ private fun FocusStats(state: SavedState, health: Int) {
     val longest = state.focusMinutesByDay.maxByOrNull { it.value }
     val lifetime = state.focusMinutesByDay.values.sum()
     val year = if (weekMinutes == 0) 0 else (weekMinutes / 7.0 * 365).toInt()
-    Text(Scoring.formatDuration(minutes * 60L), fontSize = 48.sp, fontWeight = FontWeight.Black, color = Melt.Accent)
-    Text(
-        if (selected == LocalDate.now()) "Today, ${selected.format(DateTimeFormatter.ofPattern("MMM d", Locale.US))}" else selected.format(DateTimeFormatter.ofPattern("MMM d", Locale.US)),
-        color = Melt.Muted,
-    )
-    Row(Modifier.fillMaxWidth().height(90.dp).padding(vertical = 8.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        week.forEach { day ->
-            val value = (state.focusMinutesByDay[Scoring.dayKey(day)] ?: 0).toFloat()
-            val max = (state.focusMinutesByDay.values.maxOrNull() ?: 1).coerceAtLeast(1)
-            Column(Modifier.weight(1f).clickable { selected = day }, horizontalAlignment = Alignment.CenterHorizontally) {
-                Box(Modifier.fillMaxWidth().height((60f * value / max).dp.coerceAtLeast(4.dp)).clip(RoundedCornerShape(4.dp)).background(if (day == selected) Melt.Orange else Color.White))
-                Text(day.dayOfWeek.name.take(1), fontSize = 11.sp)
+    val max = (state.focusMinutesByDay.values.maxOrNull() ?: 1).coerceAtLeast(1)
+    Column(Modifier.fillMaxWidth().background(Color.White).padding(bottom = 8.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            week.forEach { day ->
+                val on = day == selected
+                Column(Modifier.weight(1f).clickable { selected = day }, horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(day.dayOfWeek.name.take(3), color = Melt.Muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        day.dayOfMonth.toString(),
+                        color = if (on) Color.White else Melt.Ink,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(top = 8.dp).size(36.dp).clip(CircleShape).background(if (on) Color(0xFFFF8C2E) else Color(0xFFF2F2F7)),
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            }
+        }
+        Text(Scoring.formatDuration(minutes * 60L), fontSize = 44.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 16.dp).fillMaxWidth(), textAlign = TextAlign.Center)
+        Text(
+            if (selected == LocalDate.now()) "Today, ${selected.format(DateTimeFormatter.ofPattern("MMM d", Locale.US))}" else selected.format(DateTimeFormatter.ofPattern("MMM d", Locale.US)),
+            color = Melt.Muted,
+            modifier = Modifier.fillMaxWidth(),
+            textAlign = TextAlign.Center,
+        )
+        Row(Modifier.fillMaxWidth().height(92.dp).padding(top = 12.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            week.forEach { day ->
+                val value = (state.focusMinutesByDay[Scoring.dayKey(day)] ?: 0).toFloat()
+                Box(Modifier.weight(1f).height((72f * value / max).dp.coerceAtLeast(8.dp)).clip(RoundedCornerShape(8.dp)).background(if (day == selected) Color(0xFFFF8C2E) else Color(0xFFE5E5EA)))
             }
         }
     }
-    Text("You have spent ${Scoring.formatDuration(weekMinutes * 60L)} in", modifier = Modifier.padding(top = 8.dp))
-    Text("focus time this week,", fontWeight = FontWeight.Bold)
-    Text("regaining $health% of your brain health.")
-    Text("With this average, you're on track to spend ${Scoring.formatDuration(year * 60L)} focused this year instead of rotting.")
-    Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Mini("Longest", longest?.let { Scoring.formatDuration(it.value * 60L) } ?: "-")
-        Mini("Best day", longest?.key?.let { Scoring.parseDay(it)?.dayOfWeek?.name?.take(3) } ?: "-")
-        Mini("Lifetime", if (lifetime == 0) "-" else Scoring.formatDuration(lifetime * 60L))
+    Column(Modifier.fillMaxWidth().background(Melt.Peach).padding(bottom = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        CartoonBrain(BrainStyle.Robe, Modifier.padding(top = 8.dp).size(168.dp), animated = false)
+        Text("You have spent ${Scoring.formatDuration(weekMinutes * 60L)} in focus time this week, regaining $health% of your brain health.", modifier = Modifier.padding(horizontal = 22.dp, vertical = 8.dp), textAlign = TextAlign.Center, fontWeight = FontWeight.SemiBold)
+        Text("With this average, you're on track to spend ${Scoring.formatDuration(year * 60L)} focused this year instead of rotting.", color = Melt.Muted, textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 22.dp))
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Mini("Longest", longest?.let { Scoring.formatDuration(it.value * 60L) } ?: "-")
+            Mini("Best day", longest?.key?.let { Scoring.parseDay(it)?.dayOfWeek?.name?.take(3) } ?: "-")
+            Mini("Lifetime", if (lifetime == 0) "-" else Scoring.formatDuration(lifetime * 60L))
+        }
     }
 }
 
 @Composable
 private fun Leaderboard(state: SavedState, screenMinutes: Int, repo: RotRunRepository) {
+    Column(Modifier.padding(horizontal = 20.dp)) {
+    LeaderboardBody(state, screenMinutes, repo)
+    }
+}
+
+@Composable
+private fun LeaderboardBody(state: SavedState, screenMinutes: Int, repo: RotRunRepository) {
     var friends by remember { mutableStateOf(false) }
     var receipt by remember { mutableStateOf(false) }
     var ransom by remember { mutableStateOf(false) }
@@ -144,12 +172,14 @@ private fun Leaderboard(state: SavedState, screenMinutes: Int, repo: RotRunRepos
 }
 
 @Composable
-private fun Toggle(label: String, on: Boolean, click: () -> Unit) {
+private fun Toggle(label: String, on: Boolean, modifier: Modifier = Modifier, click: () -> Unit) {
     Text(
         label,
-        color = if (on) Color.White else Melt.Ink,
-        fontWeight = FontWeight.Bold,
-        modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(if (on) Melt.Orange else Color.White).clickable(onClick = click).padding(horizontal = 12.dp, vertical = 8.dp),
+        color = if (on) Color.White else Melt.Muted,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 14.sp,
+        textAlign = TextAlign.Center,
+        modifier = modifier.clip(CircleShape).background(if (on) Melt.Action else Color.Transparent).clickable(onClick = click).padding(vertical = 9.dp),
     )
 }
 

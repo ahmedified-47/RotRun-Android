@@ -6,6 +6,7 @@ import android.os.Build
 import android.provider.Settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -92,17 +93,17 @@ private fun RootSettings(state: SavedState, repo: RotRunRepository, open: (Strin
         ) { CartoonBrain(look.brain, Modifier.size(78.dp), animated = false) }
         Text("Settings", fontSize = 34.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 8.dp))
         CardGroup {
-            RowLink("Brain Health", state.brainHealth) { open("brain") }
-            RowLink("Excluded Apps") { open("excluded") }
+            RowLink("Brain Health", state.brainHealth, Color(0xFFFF3B30)) { open("brain") }
+            RowLink("Excluded Apps", tint = Color(0xFF59B8F2)) { open("excluded") }
         }
         CardGroup {
-            RowLink("Intervention Style") { open("styles") }
-            RowLink("Rewards") { open("rewards") }
-            RowLink("App Icon") { open("icon") }
+            RowLink("Intervention Style", tint = Color(0xFF598CF2)) { open("styles") }
+            RowLink("Rewards", tint = Color(0xFFF28C33)) { open("rewards") }
+            RowLink("App Icon", tint = Color(0xFF738CF2)) { open("icon") }
         }
         CardGroup {
-            RowLink("Support & Feedback") { open("support") }
-            RowLink("Home Screen Widget") { open("widget") }
+            RowLink("Support & Feedback", tint = Color(0xFFF25973)) { open("support") }
+            RowLink("Home Screen Widget", tint = Color(0xFF598CF2)) { open("widget") }
         }
         Text("Request Screen Time & Health access", color = Melt.Muted, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 16.dp).clickable(onClick = onAccess))
     }
@@ -267,15 +268,18 @@ private fun BackHeader(title: String, onBack: () -> Unit) {
 
 @Composable
 private fun CardGroup(content: @Composable () -> Unit) {
-    Column(Modifier.padding(vertical = 8.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Color.White)) { content() }
+    Column(Modifier.padding(vertical = 8.dp).fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Color.White)) { content() }
 }
 
 @Composable
-private fun RowLink(title: String, value: String? = null, onClick: () -> Unit) {
+private fun RowLink(title: String, value: String? = null, tint: Color = Melt.Action, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(title, modifier = Modifier.weight(1f), fontWeight = FontWeight.Medium)
-        if (value != null) Text(value, color = Melt.Muted)
-        Text(" ›", color = Melt.Muted)
+        Box(Modifier.size(28.dp).clip(CircleShape).background(tint.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(10.dp).clip(CircleShape).background(tint))
+        }
+        Text(title, modifier = Modifier.padding(start = 12.dp).weight(1f), fontWeight = FontWeight.Bold, fontSize = 16.sp)
+        if (value != null) Text(value, color = Melt.Muted, fontSize = 15.sp)
+        Text("›", color = Color(0xFFC7C7CC), fontWeight = FontWeight.SemiBold)
     }
 }
 

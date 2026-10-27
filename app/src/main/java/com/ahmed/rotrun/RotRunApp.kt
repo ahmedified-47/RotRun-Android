@@ -13,6 +13,7 @@ import com.ahmed.rotrun.data.RotRunGraph
 import com.ahmed.rotrun.data.RotRunRepository
 import com.ahmed.rotrun.ui.InterventionFlow
 import com.ahmed.rotrun.ui.RotRunRoot
+import com.ahmed.rotrun.ui.RotRunTheme
 
 class RotRunApplication : Application() {
     override fun onCreate() {
@@ -28,7 +29,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         handle(intent)
-        setContent { RotRunRoot(RotRunGraph.repo) }
+        setContent { RotRunTheme { RotRunRoot(RotRunGraph.repo) } }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -77,6 +78,7 @@ class InterventionActivity : ComponentActivity() {
         }
         if (mode != "shield") RotRunGraph.repo.chargeAskBrain(token)
         setContent {
+            RotRunTheme {
             androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
                 InterventionFlow(
                     appName = appName,
@@ -90,6 +92,7 @@ class InterventionActivity : ComponentActivity() {
                         finish()
                     },
                 )
+            }
             }
         }
     }

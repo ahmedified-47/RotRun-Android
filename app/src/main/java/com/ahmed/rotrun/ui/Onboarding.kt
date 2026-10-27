@@ -2,13 +2,12 @@ package com.ahmed.rotrun.ui
 
 import android.Manifest
 import android.content.Intent
-import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -16,17 +15,34 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Alarm
+import androidx.compose.material.icons.filled.Bedtime
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.RadioButtonUnchecked
+import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.TrackChanges
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -39,14 +55,23 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.ahmed.rotrun.data.AppList
 import com.ahmed.rotrun.data.OnboardingStep
 import com.ahmed.rotrun.data.RotRunRepository
@@ -74,66 +99,67 @@ fun OnboardingScreen(repo: RotRunRepository) {
         }
         return
     }
-    val canvas = when (step) {
-        OnboardingStep.Committed -> Brush.verticalGradient(listOf(Melt.Orange, Color(0xFFFFC46B)))
-        OnboardingStep.HoldToAscend -> Brush.verticalGradient(listOf(Melt.AscendTop, Melt.AscendBottom))
-        OnboardingStep.RotMessage -> Brush.verticalGradient(listOf(Melt.Sky, Melt.Meadow))
-        else -> Brush.verticalGradient(listOf(Color(0xFFF8F9FC), Melt.Grouped))
-    }
-    Column(
-        Modifier.fillMaxSize().background(canvas).verticalScroll(rememberScrollState()).padding(bottom = 28.dp),
-    ) {
+    Box(Modifier.fillMaxSize().statusBarsPadding()) {
+        OnboardingBackdrop(step)
         when (step) {
-            OnboardingStep.Persona -> Choices(step, "Which best describes you?", state.persona, personaOptions, false, repo) { it.copy(persona = it.persona) }
-            OnboardingStep.ScreenTimeAffect -> Choices(step, "How does screen time affect you the most?", state.screenTimeAffect, affectOptions, true, repo) { it.copy(screenTimeAffect = it.screenTimeAffect) }
-            OnboardingStep.TriedReduce -> Choices(step, "Have you tried to reduce screen time before?", state.triedReduce, triedOptions, true, repo) { it.copy(triedReduce = it.triedReduce) }
-            OnboardingStep.RotMessage -> Story(step, "The more you rot, the more your brain rots.", mascot = BrainStyle.Meadow, repo = repo)
+            OnboardingStep.Persona -> Choices(step, "Which best describes you?", state.persona, personaOptions, false, repo)
+            OnboardingStep.ScreenTimeAffect -> Choices(step, "How does screen time affect you the most?", state.screenTimeAffect, affectOptions, true, repo)
+            OnboardingStep.TriedReduce -> Choices(step, "Have you tried to reduce screen time before?", state.triedReduce, triedOptions, true, repo)
+            OnboardingStep.RotMessage -> Story(step, "The more you rot, the more your brain rots.", mascot = BrainStyle.Meadow, repo = repo, ground = true)
             OnboardingStep.SeeForYourself -> Reveal(state, repo)
-            OnboardingStep.LoseControl -> Choices(step, "When do you usually lose control? (rot the most)", state.loseControl, loseOptions, true, repo) { it.copy(loseControl = it.loseControl) }
-            OnboardingStep.ThisWeekHelp -> Bullets(step, "This week, RotRun will help you:", weekHelp, repo)
-            OnboardingStep.WelcomeBrand -> Story(step, "Welcome to RotRun!", "It's time to regain control of your screen time.", "Let's go!", BrainStyle.Meadow, repo)
-            OnboardingStep.GoalWithApp -> Choices(step, "What is your goal with RotRun?", state.goal, goalOptions, true, repo) { it.copy(goal = it.goal) }
-            OnboardingStep.PersonalizeIntro -> Story(step, "Let's personalize RotRun for you.", "Your answers help us map your attention patterns.", "Let's do it!", BrainStyle.Mug, repo)
+            OnboardingStep.LoseControl -> Choices(step, "When do you usually lose control? (rot the most)", state.loseControl, loseOptions, true, repo)
+            OnboardingStep.ThisWeekHelp -> WeekHelp(repo)
+            OnboardingStep.WelcomeBrand -> Story(step, "Welcome to RotRun!", "It's time to regain control of your screen time.", "Let's go!", BrainStyle.Meadow, repo, brainSize = 180)
+            OnboardingStep.GoalWithApp -> Choices(step, "What is your goal with RotRun?", state.goal, goalOptions, true, repo)
+            OnboardingStep.PersonalizeIntro -> Story(step, "Let's personalize RotRun for you.", "Your answers help us map your attention patterns.", "Let's do it!", BrainStyle.Mug, repo, brainSize = 170)
             OnboardingStep.Personalizing -> Personalizing(repo)
-            OnboardingStep.MeetBrain -> Story(step, "Meet your brain", "He's doing OK.", mascot = BrainStyle.Meadow, repo = repo)
-            OnboardingStep.Age -> Choices(step, "How old are you?", state.ageRange, ageOptions, true, repo, mascot = false) { it.copy(ageRange = it.ageRange) }
-            OnboardingStep.AttentionProfile -> Attention(repo)
+            OnboardingStep.MeetBrain -> Story(step, "Meet your brain", "He's doing OK.", mascot = BrainStyle.Meadow, repo = repo, ground = true, brainSize = 170)
+            OnboardingStep.Age -> Choices(step, "How old are you?", state.ageRange, ageOptions, true, repo)
+            OnboardingStep.AttentionProfile -> Attention(state, repo)
             OnboardingStep.DailyEstimate -> Hours(state, repo, goal = false)
-            OnboardingStep.Committed -> Story(step, "Let's go!", "You're committed and ready to go! The first step is often the hardest.", mascot = BrainStyle.Meadow, repo = repo, lightButton = true)
+            OnboardingStep.Committed -> Committed(repo)
             OnboardingStep.BeforeAfter -> BeforeAfter(repo)
             OnboardingStep.HoldToAscend -> Hold(repo)
             OnboardingStep.NotAddicted -> NotAddicted(repo)
-            OnboardingStep.DidYouKnow -> Bullets(step, "Did you know?", facts, repo, BrainStyle.Reading)
+            OnboardingStep.DidYouKnow -> DidYouKnow(repo)
             OnboardingStep.SocialProof -> SocialProof(repo)
             OnboardingStep.CarouselWelcome, OnboardingStep.CarouselThemes, OnboardingStep.CarouselFocus -> Carousel(step, { legal = it }, repo)
-            OnboardingStep.PeakFocus -> Choices(step, "Pick your peak focus time!", state.peakFocus, peakOptions, true, repo, "This is the time where you want to block the most distracting apps.") { it.copy(peakFocus = it.peakFocus) }
-            OnboardingStep.Notifications -> Notifications { 
+            OnboardingStep.PeakFocus -> Choices(step, "Pick your peak focus time!", state.peakFocus, peakOptions, false, repo, "This is the time where you want to block the most distracting apps.", chrome = false)
+            OnboardingStep.Notifications -> Notifications {
                 if (Build.VERSION.SDK_INT >= 33) askNotify.launch(Manifest.permission.POST_NOTIFICATIONS) else repo.advance()
             }
-            OnboardingStep.RulePreview -> RulePreview(repo)
-            OnboardingStep.GetAccess -> GetAccessPaywall(
-                state = state,
-                showClose = !state.skippedOneTimeOffer,
-                showDiscountLink = !state.skippedOneTimeOffer,
-                onClose = repo::declineAccess,
-                onDiscount = repo::declineAccess,
-                onPurchase = repo::purchase,
-                onRestore = repo::restore,
-                selected = plan,
-                onSelect = { plan = it },
-            )
-            OnboardingStep.OneTimeOffer -> OneTimeOffer(
-                onRedeem = { repo.purchase(Products.YEARLY70) },
-                onOther = repo::leaveOffer,
-                showClose = true,
-                onClose = repo::leaveOffer,
-            )
+            OnboardingStep.RulePreview -> RulePreview(state, repo)
+            OnboardingStep.GetAccess -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                GetAccessPaywall(
+                    state = state,
+                    showClose = !state.skippedOneTimeOffer,
+                    showDiscountLink = !state.skippedOneTimeOffer,
+                    onClose = repo::declineAccess,
+                    onDiscount = repo::declineAccess,
+                    onPurchase = repo::purchase,
+                    onRestore = repo::restore,
+                    selected = plan,
+                    onSelect = { plan = it },
+                    onTerms = { legal = "terms" },
+                    onPrivacy = { legal = "privacy" },
+                )
+            }
+            OnboardingStep.OneTimeOffer -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                OneTimeOffer(
+                    onRedeem = { repo.purchase(Products.YEARLY70) },
+                    onOther = repo::leaveOffer,
+                    showClose = true,
+                    onClose = repo::leaveOffer,
+                    onTerms = { legal = "terms" },
+                    onPrivacy = { legal = "privacy" },
+                )
+            }
             OnboardingStep.SetGoal -> Hours(state, repo, goal = true)
-            OnboardingStep.ConnectScreenTime -> Story(step, "Connect RotRun to Screen Time", "Your data is completely private and never leaves your device.", mascot = BrainStyle.Meadow, repo = repo)
-            OnboardingStep.PurchaseComplete -> Story(step, "Purchase complete!", "RotRun Premium is on. You now have access to every feature.", if (state.onboardingCompleted) "Continue to app" else "Continue", BrainStyle.Meadow, repo)
-            OnboardingStep.ThemeUnlocked -> TwoActions(step, "New Theme Unlocked!", "You unlocked the Grassy theme! Check it out in your profile under customization!", "Go Try it out!", "Maybe Later", repo)
+            OnboardingStep.ConnectScreenTime -> ConnectEdu(repo)
+            OnboardingStep.PurchaseComplete -> PurchaseComplete(state, repo)
+            OnboardingStep.ThemeUnlocked -> ThemeUnlocked(repo)
             OnboardingStep.WidgetHowTo -> WidgetSteps(repo)
-            OnboardingStep.StreakReward -> TwoActions(step, "Reward Unlocked!", "You hit a 1-day streak and unlocked a new reward.", "Collect Reward", "Maybe Later", repo, headline = "1\nday streak")
+            OnboardingStep.StreakReward -> StreakReward(repo)
             OnboardingStep.SelectApps -> SelectApps(state, installed, repo)
             OnboardingStep.ScreenTimeDialog -> ScreenDialog(repo) {
                 context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -147,34 +173,81 @@ fun OnboardingScreen(repo: RotRunRepository) {
 }
 
 private val personaOptions = listOf("Builder / Creator" to "⚙️", "Knowledge worker" to "🔍", "Founder / Entrepreneur" to "✈️", "Sports / Athlete" to "🏃", "Student" to "📚", "Just trying to live better" to "❤️")
-private val affectOptions = listOf("No focus / procrastination" to "", "Anxiety / overstimulation" to "👀", "Bad sleep" to "", "Productivity loss" to "", "I feel mentally fried" to "🔥", "Less time with friends / family" to "")
-private val triedOptions = listOf("Yes, didn't stick" to "", "Yes, briefly worked" to "", "No, first time" to "")
-private val loseOptions = listOf("Mornings" to "", "During the day" to "", "Evenings" to "", "All day" to "", "Not sure" to "")
-private val goalOptions = listOf("Improve focus" to "", "Reduce mindless scrolling" to "", "Sleep better" to "", "Be more present" to "", "Be more productive" to "", "Just curious" to "")
+private val affectOptions = listOf("No focus / procrastination" to "🌀", "Anxiety / overstimulation" to "👀", "Bad sleep" to "🌙", "Productivity loss" to "📉", "I feel mentally fried" to "🔥", "Less time with friends / family" to "👥")
+private val triedOptions = listOf("Yes, didn't stick" to "↩", "Yes, briefly worked" to "✓", "No, first time" to "✦")
+private val loseOptions = listOf("Mornings" to "🌅", "During the day" to "☀️", "Evenings" to "🌆", "All day" to "🔁", "Not sure" to "？")
+private val goalOptions = listOf("Improve focus" to "🎯", "Reduce mindless scrolling" to "📱", "Sleep better" to "😴", "Be more present" to "🌿", "Be more productive" to "⚡", "Just curious" to "✨")
 private val ageOptions = listOf("Under 18" to "", "18-24" to "", "25-34" to "", "35-44" to "", "45-54" to "", "55+" to "")
-private val peakOptions = listOf("Mindful Morning" to "🌅", "Work Focus" to "💼", "Evening Wind Down" to "🌙")
-private val weekHelp = listOf("Regain control of your phone", "Save over 3 hours every day", "Improve your focus and mental clarity", "Build healthier digital habits")
-private val facts = listOf(
-    "The average person spends over 4 hours per day on their phone",
-    "Most of us check our phone 58 times per day without realizing",
-    "Too much screen time messes with your memory, focus and sleep",
-    "7 out of 10 people get tired, dry eyes from staring at screens",
-)
+private val peakOptions = listOf("Mindful Morning" to "⏰", "Work Focus" to "⚙️", "Evening Wind Down" to "🌙")
 
 @Composable
-private fun Chrome(step: OnboardingStep, showBack: Boolean, repo: RotRunRepository, light: Boolean = false) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-        if (showBack && step != OnboardingStep.Persona) {
-            Text("‹", color = if (light) Color.White else Melt.Ink, fontSize = 28.sp, modifier = Modifier.clickable(onClick = repo::back))
-        } else {
-            Spacer(Modifier.size(20.dp))
+private fun OnboardingBackdrop(step: OnboardingStep) {
+    when (step) {
+        OnboardingStep.Committed -> Sunburst(Color(0xFF6BBDE6), 0.12f)
+        OnboardingStep.ThemeUnlocked -> Sunburst(Melt.Sky, 0.16f)
+        OnboardingStep.StreakReward -> Sunburst(Melt.Orange, 0.12f)
+        OnboardingStep.HoldToAscend -> Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Melt.AscendTop, Melt.AscendBottom))))
+        else -> Box(Modifier.fillMaxSize()) {
+            Box(Modifier.fillMaxSize().background(Melt.Grouped))
+            Box(
+                Modifier.fillMaxWidth().height(460.dp).background(
+                    Brush.verticalGradient(listOf(Melt.Sky.copy(alpha = 0.58f), Melt.Glow.copy(alpha = 0.32f), Color.Transparent)),
+                ),
+            )
+            Box(
+                Modifier.align(Alignment.TopEnd).offset(x = 70.dp, y = (-90).dp).size(260.dp).clip(CircleShape).background(Melt.Action.copy(alpha = 0.12f)),
+            )
         }
-        LinearProgressIndicator(
-            progress = { step.progress() },
-            modifier = Modifier.padding(horizontal = 12.dp).weight(1f).height(6.dp).clip(CircleShape),
-            color = Melt.Action,
-            trackColor = Color.Black.copy(alpha = 0.08f),
-        )
+    }
+}
+
+@Composable
+private fun Sunburst(fill: Color, ray: Float) {
+    Canvas(Modifier.fillMaxSize()) {
+        drawRect(fill)
+        val center = Offset(size.width / 2f, size.height / 2f)
+        val long = maxOf(size.width, size.height) * 1.6f
+        val thick = 18.dp.toPx()
+        repeat(18) { index ->
+            rotate(index * 10f, center) {
+                drawRect(
+                    Color.White.copy(alpha = ray),
+                    topLeft = Offset(center.x - thick / 2f, center.y - long / 2f),
+                    size = Size(thick, long),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ScreenFrame(footer: @Composable () -> Unit, content: @Composable () -> Unit) {
+    Column(Modifier.fillMaxSize()) {
+        Column(
+            Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) { content() }
+        Box(Modifier.padding(horizontal = 20.dp).padding(bottom = 16.dp)) { footer() }
+    }
+}
+
+@Composable
+private fun Chrome(step: OnboardingStep, showBack: Boolean, repo: RotRunRepository, mascot: Boolean = true) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (showBack && step != OnboardingStep.Persona) {
+            Box(
+                Modifier.size(36.dp).clip(CircleShape).background(Color(0xFFE5E5EA)).clickable(onClick = repo::back),
+                contentAlignment = Alignment.Center,
+            ) { Text("‹", color = Melt.Ink, fontSize = 22.sp, fontWeight = FontWeight.SemiBold) }
+        } else {
+            Spacer(Modifier.size(36.dp))
+        }
+        Box(
+            Modifier.padding(horizontal = 12.dp).weight(1f).height(6.dp).clip(CircleShape).background(Color(0xFFE5E5EA)),
+        ) {
+            Box(Modifier.fillMaxHeight().fillMaxWidth(step.progress().coerceIn(0.04f, 1f)).background(Melt.Action))
+        }
+        if (mascot) CartoonBrain(BrainStyle.Mug, Modifier.size(44.dp), animated = false) else Spacer(Modifier.size(36.dp))
     }
 }
 
@@ -187,33 +260,33 @@ private fun Choices(
     showBack: Boolean,
     repo: RotRunRepository,
     subtitle: String? = null,
-    mascot: Boolean = true,
-    apply: (SavedState) -> SavedState,
+    chrome: Boolean = true,
 ) {
-    Chrome(step, showBack, repo)
-    if (mascot) CartoonBrain(BrainStyle.Mug, Modifier.size(72.dp).alignCenter(), animated = false)
-    Text(title, fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 22.dp, vertical = 8.dp))
-    if (subtitle != null) Text(subtitle, color = Melt.Muted, modifier = Modifier.padding(horizontal = 22.dp))
-    Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
-        options.forEach { (label, emoji) ->
-            ChoiceRow(label, selected == label, emoji.ifBlank { null }) {
-                repo.update { current ->
-                    val picked = when (step) {
-                        OnboardingStep.Persona -> current.copy(persona = label)
-                        OnboardingStep.ScreenTimeAffect -> current.copy(screenTimeAffect = label)
-                        OnboardingStep.TriedReduce -> current.copy(triedReduce = label)
-                        OnboardingStep.LoseControl -> current.copy(loseControl = label)
-                        OnboardingStep.GoalWithApp -> current.copy(goal = label)
-                        OnboardingStep.Age -> current.copy(ageRange = label)
-                        OnboardingStep.PeakFocus -> current.copy(peakFocus = label)
-                        else -> current
+    ScreenFrame(footer = { PrimaryButton("Continue", enabled = selected != null) { repo.advance() } }) {
+        if (chrome) Chrome(step, showBack, repo) else Spacer(Modifier.height(24.dp))
+        Text(title, fontSize = 26.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp))
+        if (subtitle != null) {
+            Text(subtitle, color = Melt.Muted, textAlign = TextAlign.Center, fontSize = 16.sp, modifier = Modifier.fillMaxWidth().padding(horizontal = 28.dp))
+        }
+        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            options.forEach { (label, emoji) ->
+                ChoiceRow(label, selected == label, emoji.ifBlank { null }) {
+                    repo.update { current ->
+                        when (step) {
+                            OnboardingStep.Persona -> current.copy(persona = label)
+                            OnboardingStep.ScreenTimeAffect -> current.copy(screenTimeAffect = label)
+                            OnboardingStep.TriedReduce -> current.copy(triedReduce = label)
+                            OnboardingStep.LoseControl -> current.copy(loseControl = label)
+                            OnboardingStep.GoalWithApp -> current.copy(goal = label)
+                            OnboardingStep.Age -> current.copy(ageRange = label)
+                            OnboardingStep.PeakFocus -> current.copy(peakFocus = label)
+                            else -> current
+                        }
                     }
-                    picked
                 }
             }
         }
     }
-    PrimaryButton("Continue", enabled = selected != null) { repo.advance() }
 }
 
 @Composable
@@ -224,78 +297,145 @@ private fun Story(
     button: String = "Continue",
     mascot: BrainStyle,
     repo: RotRunRepository,
-    lightButton: Boolean = false,
+    ground: Boolean = false,
+    brainSize: Int = 160,
 ) {
-    Chrome(step, true, repo, light = step == OnboardingStep.HoldToAscend || step == OnboardingStep.Committed)
-    Spacer(Modifier.height(12.dp))
-    CartoonBrain(mascot, Modifier.size(160.dp).alignCenter())
-    Text(title, fontSize = 28.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, color = if (lightButton || step == OnboardingStep.Committed) Color.White else Melt.Ink, modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp))
-    if (subtitle != null) {
-        Text(subtitle, textAlign = TextAlign.Center, color = if (step == OnboardingStep.Committed) Color.White.copy(alpha = 0.9f) else Melt.Muted, modifier = Modifier.fillMaxWidth().padding(horizontal = 28.dp))
+    ScreenFrame(footer = { PrimaryButton(button) { repo.advance() } }) {
+        Chrome(step, true, repo, mascot = false)
+        Spacer(Modifier.height(28.dp))
+        CartoonBrain(mascot, Modifier.size(brainSize.dp))
+        if (ground) {
+            Box(Modifier.offset(y = (-6).dp).size(width = 180.dp, height = 22.dp).clip(RoundedCornerShape(50)).background(Color(0xFFE5E5EA)))
+        }
+        Text(title, fontSize = 26.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 8.dp).padding(top = 8.dp))
+        if (subtitle != null) {
+            Text(subtitle, textAlign = TextAlign.Center, color = Melt.Muted, fontSize = 16.sp, fontWeight = FontWeight.Medium, modifier = Modifier.fillMaxWidth().padding(horizontal = 32.dp))
+        }
+        Spacer(Modifier.height(24.dp))
     }
-    Spacer(Modifier.height(20.dp))
-    Box(Modifier.padding(horizontal = 20.dp)) { PrimaryButton(button, light = lightButton) { repo.advance() } }
 }
 
 @Composable
 private fun Reveal(state: SavedState, repo: RotRunRepository) {
-    Chrome(OnboardingStep.SeeForYourself, true, repo)
-    Text("See for yourself!", fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(22.dp))
-    CartoonBrain(if (state.rotReveal < 0.45f) BrainStyle.Sad else BrainStyle.Meadow, Modifier.size(160.dp).alignCenter())
-    Slider(
-        value = state.rotReveal,
-        onValueChange = { value -> repo.update { it.copy(rotReveal = value) } },
-        modifier = Modifier.padding(horizontal = 22.dp),
-    )
-    Box(Modifier.padding(horizontal = 20.dp)) { PrimaryButton("Continue") { repo.advance() } }
+    ScreenFrame(footer = { PrimaryButton("Continue") { repo.advance() } }) {
+        Chrome(OnboardingStep.SeeForYourself, true, repo, mascot = false)
+        Spacer(Modifier.height(24.dp))
+        CartoonBrain(if (state.rotReveal < 0.45f) BrainStyle.Sad else BrainStyle.Meadow, Modifier.size(180.dp))
+        Text("See for yourself!", fontSize = 26.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 12.dp))
+        Slider(
+            value = state.rotReveal,
+            onValueChange = { value -> repo.update { it.copy(rotReveal = value) } },
+            modifier = Modifier.padding(horizontal = 32.dp, vertical = 12.dp),
+            colors = SliderDefaults.colors(thumbColor = Melt.Orange, activeTrackColor = Melt.Orange),
+        )
+    }
 }
 
 @Composable
-private fun Bullets(step: OnboardingStep, title: String, lines: List<String>, repo: RotRunRepository, mascot: BrainStyle = BrainStyle.Meadow) {
-    Chrome(step, true, repo)
-    CartoonBrain(mascot, Modifier.size(100.dp).alignCenter(), animated = false)
-    Text(title, fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 22.dp, vertical = 8.dp))
-    lines.forEach { line ->
-        Text("•  $line", modifier = Modifier.padding(horizontal = 24.dp, vertical = 6.dp), fontSize = 16.sp)
+private fun WeekHelp(repo: RotRunRepository) {
+    val rows = listOf(
+        Icons.Filled.Phone to Color.Gray to "Regain control of your phone",
+        Icons.Filled.Alarm to Melt.House to "Save over 3 hours every day",
+        Icons.Filled.TrackChanges to Color(0xFFE23B3B) to "Improve your focus and mental clarity",
+        Icons.Filled.Send to Melt.Orange to "Build healthier digital habits",
+    )
+    ScreenFrame(footer = { PrimaryButton("Continue") { repo.advance() } }) {
+        Chrome(OnboardingStep.ThisWeekHelp, true, repo, mascot = false)
+        Text("This week, RotRun will help you:", fontSize = 24.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 18.dp))
+        rows.forEach { (icon, line) ->
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp).clip(RoundedCornerShape(16.dp)).background(Melt.Action.copy(alpha = 0.10f)).padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(icon.first, null, tint = icon.second, modifier = Modifier.size(22.dp).width(36.dp))
+                Text(line, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, modifier = Modifier.padding(start = 8.dp))
+            }
+        }
+        CartoonBrain(BrainStyle.Meadow, Modifier.padding(top = 8.dp).size(120.dp))
     }
-    Box(Modifier.padding(horizontal = 20.dp)) { PrimaryButton("Continue") { repo.advance() } }
 }
 
 @Composable
 private fun Personalizing(repo: RotRunRepository) {
-    var line by remember { mutableStateOf("Analyzing your habits...") }
+    var progress by remember { mutableFloatStateOf(0.12f) }
     LaunchedEffect(Unit) {
-        delay(700); line = "Calculating your profile..."
-        delay(700); line = "Generating insights..."
-        delay(800); repo.advance()
+        delay(550); progress = 0.35f
+        delay(550); progress = 0.62f
+        delay(550); progress = 0.9f
+        delay(350); progress = 1f
+        delay(350); repo.advance()
     }
-    Spacer(Modifier.height(80.dp))
-    CartoonBrain(BrainStyle.Meadow, Modifier.size(140.dp).alignCenter())
-    Text("Personalizing your experience!", fontWeight = FontWeight.Bold, fontSize = 26.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(24.dp))
-    Text(line, color = Melt.Muted, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+    Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+        Spacer(Modifier.weight(1f))
+        CartoonBrain(BrainStyle.Meadow, Modifier.size(140.dp))
+        Text("Personalizing your experience!", fontWeight = FontWeight.Bold, fontSize = 24.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(24.dp))
+        Box(Modifier.padding(horizontal = 40.dp).fillMaxWidth().height(6.dp).clip(CircleShape).background(Color(0xFFE5E5EA))) {
+            Box(Modifier.fillMaxHeight().fillMaxWidth(progress).background(Melt.Action))
+        }
+        Column(Modifier.fillMaxWidth().padding(horizontal = 36.dp, vertical = 22.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            StatusLine("Analyzing your habits...", progress >= 0.12f)
+            Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFE5E5EA)))
+            StatusLine("Calculating your profile...", progress >= 0.35f)
+            Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFE5E5EA)))
+            StatusLine("Generating insights...", progress >= 0.62f)
+        }
+        Spacer(Modifier.weight(1f))
+    }
 }
 
 @Composable
-private fun Attention(repo: RotRunRepository) {
-    Chrome(OnboardingStep.AttentionProfile, true, repo)
-    Text("Your attention profile is", color = Melt.Muted, modifier = Modifier.padding(horizontal = 22.dp))
-    Text("The Distracted Achiever", fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 22.dp, vertical = 6.dp))
-    Text("You value focus and productivity, but constant interruptions keep pulling you off track.", modifier = Modifier.padding(horizontal = 22.dp))
-    BarLine("Focus interruptions", "Low", "High", 0.72f)
-    BarLine("Daytime vulnerability", "Mornings", "Evenings", 0.8f)
-    Box(Modifier.padding(horizontal = 20.dp)) { PrimaryButton("Makes sense") { repo.advance() } }
+private fun StatusLine(text: String, revealed: Boolean) {
+    val tint = if (revealed) Melt.Action else Color(0xFFC7C7CC)
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(if (revealed) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked, null, tint = tint, modifier = Modifier.size(18.dp))
+        Text(text, color = tint, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, modifier = Modifier.padding(start = 10.dp))
+    }
+}
+
+@Composable
+private fun Attention(state: SavedState, repo: RotRunRepository) {
+    val interrupt = when (state.screenTimeAffect) {
+        "No focus / procrastination", "Productivity loss" -> 0.78f
+        "Anxiety / overstimulation", "I feel mentally fried" -> 0.7f
+        else -> 0.62f
+    }
+    val daytime = when (state.loseControl) {
+        "Mornings" -> 0.22f
+        "Evenings" -> 0.82f
+        "All day" -> 0.55f
+        else -> 0.4f
+    }
+    ScreenFrame(footer = { PrimaryButton("Makes sense") { repo.advance() } }) {
+        Chrome(OnboardingStep.AttentionProfile, true, repo, mascot = false)
+        Spacer(Modifier.height(12.dp))
+        Box(Modifier.fillMaxWidth().padding(horizontal = 20.dp).height(220.dp).clip(RoundedCornerShape(24.dp))) {
+            Sunburst(Melt.Sky.copy(alpha = 0.35f), 0.2f)
+            CartoonBrain(BrainStyle.Watch, Modifier.align(Alignment.Center).size(150.dp))
+        }
+        Text("Your attention profile is", color = Melt.Action, fontWeight = FontWeight.Bold, fontSize = 15.sp, modifier = Modifier.padding(top = 16.dp))
+        Text("The Distracted Achiever", fontSize = 28.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 6.dp))
+        Text(
+            "You value focus and productivity, but constant interruptions keep pulling you off track.",
+            textAlign = TextAlign.Center,
+            color = Melt.Muted,
+            fontSize = 16.sp,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
+        )
+        BarLine("Focus interruptions", "Low", "High", interrupt)
+        BarLine("Daytime vulnerability", "Mornings", "Evenings", daytime)
+    }
 }
 
 @Composable
 private fun BarLine(title: String, start: String, end: String, amount: Float) {
-    Column(Modifier.padding(horizontal = 22.dp, vertical = 8.dp)) {
-        Text(title, fontWeight = FontWeight.SemiBold)
-        Box(Modifier.fillMaxWidth().height(10.dp).clip(CircleShape).background(Color(0xFFE5E5EA))) {
-            Box(Modifier.fillMaxWidth(amount).height(10.dp).background(Melt.Orange))
+    Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp)) {
+        Text(title, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+        Box(Modifier.padding(top = 6.dp).fillMaxWidth().height(10.dp).clip(CircleShape).background(Color(0xFFE5E5EA))) {
+            Box(Modifier.fillMaxWidth(amount).fillMaxHeight().background(Melt.Action))
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(start, color = Melt.Muted, fontSize = 12.sp)
-            Text(end, color = Melt.Muted, fontSize = 12.sp)
+        Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(start, color = Color(0xFFC7C7CC), fontSize = 12.sp, fontWeight = FontWeight.Medium)
+            Text(end, color = Color(0xFFC7C7CC), fontSize = 12.sp, fontWeight = FontWeight.Medium)
         }
     }
 }
@@ -304,58 +444,116 @@ private fun BarLine(title: String, start: String, end: String, amount: Float) {
 private fun Hours(state: SavedState, repo: RotRunRepository, goal: Boolean) {
     val step = if (goal) OnboardingStep.SetGoal else OnboardingStep.DailyEstimate
     val value = if (goal) state.goalHours else state.estimatedDailyHours
-    Chrome(step, true, repo)
-    Text(if (goal) "Set your goal" else "How much time do you spend on screens daily?", fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 22.dp))
-    Text(
-        if (goal) "What's a healthy daily screen time target for you?" else "We don't judge, you can tell us the truth!",
-        color = Melt.Muted,
-        modifier = Modifier.padding(horizontal = 22.dp, vertical = 6.dp),
-    )
-    Text("$value Hours", fontSize = 42.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(horizontal = 22.dp))
-    Slider(
-        value = value.toFloat(),
-        onValueChange = { next ->
-            val hours = next.toInt()
-            repo.update { if (goal) it.copy(goalHours = hours.coerceIn(1, 8)) else it.copy(estimatedDailyHours = hours.coerceIn(0, 12)) }
-        },
-        valueRange = if (goal) 1f..8f else 0f..12f,
-        modifier = Modifier.padding(horizontal = 22.dp),
-    )
-    Text(
-        if (goal) Scoring.goalCopy(state.estimatedDailyHours, state.goalHours) else Scoring.estimateCopy(state.estimatedDailyHours),
-        modifier = Modifier.padding(horizontal = 22.dp),
-    )
-    Box(Modifier.padding(horizontal = 20.dp)) { PrimaryButton("Continue") { repo.advance() } }
+    val tint = if (goal) Melt.Meadow else Melt.Orange
+    ScreenFrame(footer = { PrimaryButton("Continue") { repo.advance() } }) {
+        Chrome(step, true, repo, mascot = false)
+        Text(
+            if (goal) "Set your goal" else "How much time do you spend on screens daily?",
+            fontSize = if (goal) 28.sp else 24.sp,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp),
+        )
+        Text(
+            if (goal) "What's a healthy daily screen time target for you?" else "We don't judge, you can tell us the truth!",
+            color = Melt.Muted,
+            textAlign = TextAlign.Center,
+            fontSize = 16.sp,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 28.dp),
+        )
+        CartoonBrain(if (goal) BrainStyle.Mug else BrainStyle.Watch, Modifier.padding(top = 8.dp).size(if (goal) 140.dp else 150.dp))
+        Text("$value Hours", fontSize = if (goal) 32.sp else 34.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
+        Slider(
+            value = value.toFloat(),
+            onValueChange = { next ->
+                val hours = next.toInt()
+                repo.update { if (goal) it.copy(goalHours = hours.coerceIn(1, 8)) else it.copy(estimatedDailyHours = hours.coerceIn(0, 12)) }
+            },
+            valueRange = if (goal) 1f..8f else 0f..12f,
+            modifier = Modifier.padding(horizontal = 28.dp),
+            colors = SliderDefaults.colors(thumbColor = tint, activeTrackColor = tint),
+        )
+        Row(Modifier.fillMaxWidth().padding(horizontal = 28.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(if (goal) "1h" else "0h", color = Melt.Muted, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+            Text(if (goal) "8h" else "12h+", color = Melt.Muted, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+        }
+        Text(
+            if (goal) Scoring.goalCopy(state.estimatedDailyHours, state.goalHours) else Scoring.estimateCopy(state.estimatedDailyHours),
+            color = Melt.Action,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp).clip(RoundedCornerShape(16.dp)).background(Color(0xFFE9E9EB)).padding(14.dp),
+        )
+    }
+}
+
+@Composable
+private fun Committed(repo: RotRunRepository) {
+    Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+        Spacer(Modifier.weight(1f))
+        CartoonBrain(BrainStyle.Meditating, Modifier.size(180.dp))
+        Text("Let's go!", color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp))
+        Text(
+            "You're committed and ready to go! The first step is often the hardest.",
+            color = Color.White.copy(alpha = 0.9f),
+            textAlign = TextAlign.Center,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 8.dp),
+        )
+        Spacer(Modifier.weight(1f))
+        Box(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
+            PrimaryButton("Continue", light = true) { repo.advance() }
+        }
+    }
 }
 
 @Composable
 private fun BeforeAfter(repo: RotRunRepository) {
-    Chrome(OnboardingStep.BeforeAfter, true, repo)
-    Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        CompareCard("Before RotRun", "Daily Average 6h 32m", Modifier.weight(1f))
-        CompareCard("After RotRun", "1h 49m", Modifier.weight(1f))
-    }
-    Text("Use RotRun and gain 2+ Hours back", fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp))
-    listOf(
-        "Focus, uninterrupted." to "Finally do your best work yet.",
-        "Own your time." to "And fill your days with more intention.",
-        "Be fully present." to "Because life isn't happening on your screen.",
-    ).forEach { (title, body) ->
-        Column(Modifier.padding(horizontal = 22.dp, vertical = 6.dp)) {
-            Text(title, fontWeight = FontWeight.Bold)
-            Text(body, color = Melt.Muted)
+    ScreenFrame(footer = { PrimaryButton("Continue") { repo.advance() } }) {
+        CartoonBrain(BrainStyle.Meadow, Modifier.padding(top = 16.dp).size(72.dp))
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.Top) {
+            CompareColumn("Before RotRun", "6h 32m", true, Modifier.weight(1f))
+            Box(Modifier.padding(horizontal = 8.dp).width(1.dp).height(120.dp).background(Color(0xFFC6C6C8)))
+            CompareColumn("After RotRun", "1h 49m", false, Modifier.weight(1f))
         }
+        Text("Use RotRun and gain 2+ Hours back", fontWeight = FontWeight.Bold, fontSize = 20.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 8.dp))
+        Benefit(BrainStyle.Watch, "Focus, uninterrupted.", "Finally do your best work yet.")
+        Benefit(BrainStyle.Reading, "Own your time.", "And fill your days with more intention.")
+        Benefit(BrainStyle.Spa, "Be fully present.", "Because life isn't happening on your screen.")
+        Row(Modifier.padding(top = 12.dp)) {
+            repeat(5) { Icon(Icons.Filled.Star, null, tint = Melt.Orange, modifier = Modifier.size(16.dp)) }
+        }
+        Text("10,000+ Reviews", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+        Text("Join users using RotRun", color = Melt.Muted, fontSize = 14.sp)
     }
-    Text("10,000+ Reviews", fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 22.dp, vertical = 4.dp))
-    Text("Join users using RotRun", color = Melt.Muted, modifier = Modifier.padding(horizontal = 22.dp))
-    Box(Modifier.padding(horizontal = 20.dp)) { PrimaryButton("Continue") { repo.advance() } }
 }
 
 @Composable
-private fun CompareCard(title: String, value: String, modifier: Modifier) {
-    Column(modifier.clip(RoundedCornerShape(18.dp)).background(Color.White).padding(12.dp)) {
-        Text(title, fontWeight = FontWeight.Bold)
-        Text(value, color = Melt.Muted, fontSize = 13.sp)
+private fun CompareColumn(title: String, average: String, tall: Boolean, modifier: Modifier) {
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(title, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, textAlign = TextAlign.Center)
+        Text("Daily Average $average", color = Melt.Muted, fontSize = 12.sp, textAlign = TextAlign.Center)
+        Row(Modifier.height(90.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            val count = if (tall) 5 else 3
+            repeat(count) { index ->
+                val height = if (tall) 36 + index * 10 else 16 + index * 6
+                Box(
+                    Modifier.width(12.dp).height(height.dp).clip(RoundedCornerShape(4.dp)).background(if (index % 2 == 0) Melt.Orange else Melt.Action),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun Benefit(style: BrainStyle, title: String, body: String) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        CartoonBrain(style, Modifier.size(52.dp), animated = false)
+        Column(Modifier.padding(start = 12.dp)) {
+            Text(title, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Text(body, color = Melt.Muted, fontSize = 14.sp)
+        }
     }
 }
 
@@ -363,18 +561,21 @@ private fun CompareCard(title: String, value: String, modifier: Modifier) {
 private fun Hold(repo: RotRunRepository) {
     var progress by remember { mutableFloatStateOf(0f) }
     var done by remember { mutableStateOf(false) }
-    Chrome(OnboardingStep.HoldToAscend, true, repo, light = true)
-    CartoonBrain(BrainStyle.Meditating, Modifier.size(150.dp).alignCenter())
-    Text("Ready to take control?", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp))
-    Text("Hold the button to help the brain ascend!", color = Color.White.copy(alpha = 0.85f), textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 8.dp))
-    Box(
-        Modifier
-            .padding(24.dp)
-            .size(120.dp)
-            .alignCenter()
-            .clip(CircleShape)
-            .background(Color.White.copy(alpha = 0.2f))
-            .pointerInput(Unit) {
+    Column(Modifier.fillMaxSize().padding(top = 48.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text("Ready to take control?", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp))
+        Text("Hold the button to help the brain ascend!", color = Color.White.copy(alpha = 0.85f), textAlign = TextAlign.Center, fontSize = 16.sp, modifier = Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 8.dp))
+        Spacer(Modifier.weight(1f))
+        CartoonBrain(
+            BrainStyle.Meditating,
+            Modifier.size(200.dp).offset(y = (-48f * progress).dp).graphicsLayer {
+                val scale = 1f + 0.1f * progress
+                scaleX = scale
+                scaleY = scale
+            },
+        )
+        Spacer(Modifier.weight(1f))
+        Box(
+            Modifier.padding(bottom = 36.dp).size(120.dp).pointerInput(Unit) {
                 detectTapGestures(onPress = {
                     val start = System.currentTimeMillis()
                     coroutineScope {
@@ -395,189 +596,435 @@ private fun Hold(repo: RotRunRepository) {
                     if (!done) progress = 0f
                 })
             },
-        contentAlignment = Alignment.Center,
-    ) {
-        Box(Modifier.size(88.dp).clip(CircleShape).background(Color.White), contentAlignment = Alignment.Center) {
-            Text("${(progress * 100).toInt()}%", fontWeight = FontWeight.Bold)
+            contentAlignment = Alignment.Center,
+        ) {
+            Canvas(Modifier.size(92.dp)) {
+                val stroke = Stroke(width = 8.dp.toPx(), cap = StrokeCap.Round)
+                drawArc(Color.White.copy(alpha = 0.25f), 0f, 360f, false, style = stroke)
+                drawArc(Melt.Action, -90f, 360f * progress, false, style = stroke)
+            }
+            Box(
+                Modifier.size(72.dp).shadow(12.dp, CircleShape, ambientColor = Color.White, spotColor = Color.White).clip(CircleShape).background(Color.White),
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(Modifier.size(18.dp).rotate(45f).clip(RoundedCornerShape(3.dp)).background(Melt.Action))
+            }
         }
     }
 }
 
 @Composable
 private fun NotAddicted(repo: RotRunRepository) {
-    Chrome(OnboardingStep.NotAddicted, true, repo)
-    Text("You're not addicted.", fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 22.dp))
-    Text("Your brain is being exploited.", fontSize = 22.sp, modifier = Modifier.padding(horizontal = 22.dp, vertical = 4.dp))
-    listOf("Trending now", "Someone commented", "Your friend posted", "Check this out").forEach { bubble ->
-        Text(bubble, modifier = Modifier.padding(horizontal = 22.dp, vertical = 4.dp).clip(RoundedCornerShape(16.dp)).background(Color.White).padding(horizontal = 14.dp, vertical = 8.dp))
+    ScreenFrame(footer = { PrimaryButton("Good to know") { repo.advance() } }) {
+        Chrome(OnboardingStep.NotAddicted, true, repo, mascot = false)
+        Text("You're not addicted.", fontSize = 28.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 16.dp))
+        Text("Your brain is being exploited.", fontSize = 18.sp, fontWeight = FontWeight.Medium, color = Melt.Muted, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
+        Box(Modifier.fillMaxWidth().height(240.dp), contentAlignment = Alignment.Center) {
+            CartoonBrain(BrainStyle.Sad, Modifier.size(140.dp))
+            Notice("Trending now", Melt.Orange, Modifier.offset(x = 70.dp, y = (-50).dp))
+            Notice("Someone commented", Melt.Orange, Modifier.offset(x = (-78).dp, y = (-16).dp))
+            Notice("Your friend posted", Color(0xFF8F5CC7), Modifier.offset(x = 86.dp, y = 18.dp))
+            Notice("Check this out", Melt.House, Modifier.offset(x = (-64).dp, y = 48.dp))
+        }
+        Text("Modern apps are engineered to hijack attention.", color = Melt.Muted, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp))
+        Text("RotRun helps you take control, without deleting your apps.", color = Melt.Muted, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp))
     }
-    Text("Modern apps are engineered to hijack attention.", modifier = Modifier.padding(horizontal = 22.dp, vertical = 8.dp))
-    Text("RotRun helps you take control, without deleting your apps.", color = Melt.Muted, modifier = Modifier.padding(horizontal = 22.dp))
-    Box(Modifier.padding(horizontal = 20.dp)) { PrimaryButton("Good to know") { repo.advance() } }
+}
+
+@Composable
+private fun Notice(text: String, tint: Color, modifier: Modifier) {
+    Row(
+        modifier.shadow(6.dp, CircleShape).clip(CircleShape).background(Color.White).padding(horizontal = 10.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(8.dp).clip(CircleShape).background(tint))
+        Text(text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 6.dp))
+    }
+}
+
+@Composable
+private fun DidYouKnow(repo: RotRunRepository) {
+    val facts = listOf(
+        Icons.Filled.Alarm to Melt.House to "The average person spends over 4 hours per day on their phone",
+        Icons.Filled.Phone to Color(0xFF8F5CC7) to "Most of us check our phone 58 times per day without realizing",
+        Icons.Filled.Bedtime to Color(0xFF8F5CC7) to "Too much screen time messes with your memory, focus and sleep",
+        Icons.Filled.Visibility to Melt.Ink to "7 out of 10 people get tired, dry eyes from staring at screens",
+    )
+    ScreenFrame(footer = { PrimaryButton("Continue") { repo.advance() } }) {
+        Chrome(OnboardingStep.DidYouKnow, true, repo, mascot = false)
+        Text("Did you know?", fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
+        CartoonBrain(BrainStyle.Meadow, Modifier.size(120.dp))
+        facts.forEach { (icon, line) ->
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp).clip(RoundedCornerShape(16.dp)).background(Color(0xFFE9E9EB)).padding(14.dp),
+                verticalAlignment = Alignment.Top,
+            ) {
+                Icon(icon.first, null, tint = icon.second, modifier = Modifier.size(18.dp).width(28.dp))
+                Text(line, fontSize = 15.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = 8.dp))
+            }
+        }
+    }
 }
 
 @Composable
 private fun SocialProof(repo: RotRunRepository) {
-    Chrome(OnboardingStep.SocialProof, true, repo)
-    CartoonBrain(BrainStyle.Meadow, Modifier.size(120.dp).alignCenter())
-    Text("RotRun was made for people like you.", fontSize = 26.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(22.dp))
-    Text("4.7", fontSize = 48.sp, fontWeight = FontWeight.Black, modifier = Modifier.alignCenter())
-    Text("★★★★★", color = Melt.Orange, fontSize = 22.sp, modifier = Modifier.alignCenter())
-    Text("650K+ RotRun users", fontWeight = FontWeight.SemiBold, modifier = Modifier.alignCenter().padding(top = 6.dp))
-    Box(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) { PrimaryButton("Continue") { repo.advance() } }
+    ScreenFrame(footer = { PrimaryButton("Continue") { repo.advance() } }) {
+        Chrome(OnboardingStep.SocialProof, true, repo, mascot = false)
+        Spacer(Modifier.height(12.dp))
+        CartoonBrain(BrainStyle.Meadow, Modifier.size(150.dp))
+        Text("RotRun was made for people like you.", fontSize = 24.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 12.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy((-10).dp)) {
+            listOf(Melt.Orange, Melt.Action, Melt.Meadow).forEach { color ->
+                Box(Modifier.size(44.dp).clip(CircleShape).background(color.copy(alpha = 0.85f)).borderCircle(), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Filled.Person, null, tint = Color.White)
+                }
+            }
+        }
+        Row(Modifier.padding(top = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("❧", color = Melt.Orange, fontSize = 28.sp)
+            Text("4.7", color = Melt.Orange, fontSize = 34.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 8.dp))
+            Text("❧", color = Melt.Orange, fontSize = 28.sp, modifier = Modifier.rotate(180f))
+        }
+        Row {
+            repeat(5) { Icon(Icons.Filled.Star, null, tint = Melt.Orange, modifier = Modifier.size(18.dp)) }
+        }
+        Text("650K+ RotRun users", fontWeight = FontWeight.SemiBold, fontSize = 15.sp, modifier = Modifier.padding(top = 6.dp))
+    }
 }
+
+private fun Modifier.borderCircle(): Modifier = this.then(Modifier.clip(CircleShape))
 
 @Composable
 private fun Carousel(step: OnboardingStep, onLegal: (String) -> Unit, repo: RotRunRepository) {
+    val index = when (step) {
+        OnboardingStep.CarouselThemes -> 1
+        OnboardingStep.CarouselFocus -> 2
+        else -> 0
+    }
     val (eyebrow, title) = when (step) {
         OnboardingStep.CarouselThemes -> "Make it yours" to "Unlock themes and customize."
         OnboardingStep.CarouselFocus -> "Focus Mode" to "Heal your brain with Focus Mode."
         else -> "Welcome to RotRun" to "Stop scrolling. Save your Brain."
     }
-    Chrome(step, true, repo)
-    Text(eyebrow, color = Melt.Action, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 22.dp))
-    Text(title, fontSize = 30.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 22.dp, vertical = 8.dp))
-    CartoonBrain(if (step == OnboardingStep.CarouselFocus) BrainStyle.Spa else BrainStyle.Meadow, Modifier.size(180.dp).alignCenter())
-    Box(Modifier.padding(horizontal = 20.dp)) { PrimaryButton("Get started") { repo.advance() } }
-    Text("By continuing, you agree to our Terms of Use and Privacy Policy", textAlign = TextAlign.Center, color = Melt.Muted, fontSize = 12.sp, modifier = Modifier.fillMaxWidth().padding(16.dp))
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-        Text("Terms of Use", color = Melt.Action, fontWeight = FontWeight.SemiBold, modifier = Modifier.clickable { onLegal("terms") }.padding(8.dp))
-        Text("Privacy Policy", color = Melt.Action, fontWeight = FontWeight.SemiBold, modifier = Modifier.clickable { onLegal("privacy") }.padding(8.dp))
+    ScreenFrame(footer = {
+        PrimaryButton("Get started") { repo.advance() }
+        Text("By continuing, you agree to our", color = Melt.Muted, fontSize = 12.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+            Text("Terms of Use", color = Melt.Action, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, modifier = Modifier.clickable { onLegal("terms") }.padding(8.dp))
+            Text("and", color = Melt.Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+            Text("Privacy Policy", color = Melt.Action, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, modifier = Modifier.clickable { onLegal("privacy") }.padding(8.dp))
+        }
+    }) {
+        PhoneMock(step)
+        Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            repeat(3) { dot ->
+                Box(Modifier.size(8.dp).clip(CircleShape).background(if (dot == index) Melt.Action else Color(0xFFE5E5EA)))
+            }
+        }
+        Text(eyebrow, color = Melt.Action, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, modifier = Modifier.padding(top = 8.dp))
+        Text(title, fontSize = 26.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp))
+    }
+}
+
+@Composable
+private fun PhoneMock(step: OnboardingStep) {
+    Column(
+        Modifier.padding(top = 12.dp).width(230.dp).height(360.dp).clip(RoundedCornerShape(36.dp)).background(Color.Black).padding(8.dp),
+    ) {
+        Column(
+            Modifier.fillMaxSize().clip(RoundedCornerShape(28.dp)).background(
+                when (step) {
+                    OnboardingStep.CarouselThemes -> Melt.Meadow.copy(alpha = 0.35f)
+                    OnboardingStep.CarouselFocus -> Melt.Meadow.copy(alpha = 0.45f)
+                    else -> Color.White
+                },
+            ),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            if (step == OnboardingStep.CarouselFocus) {
+                Spacer(Modifier.height(48.dp))
+                CartoonBrain(BrainStyle.Meditating, Modifier.size(90.dp), animated = false)
+                Text("0:00", color = Color.White, fontSize = 36.sp, fontWeight = FontWeight.Bold)
+                Box(Modifier.padding(top = 12.dp).size(44.dp).clip(CircleShape).background(Color.White), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(18.dp).clip(CircleShape).background(Melt.House))
+                }
+            } else {
+                Text("RotRun", fontWeight = FontWeight.Black, fontSize = 13.sp, modifier = Modifier.padding(top = 28.dp))
+                CartoonBrain(if (step == OnboardingStep.CarouselThemes) BrainStyle.Sad else BrainStyle.Meadow, Modifier.size(72.dp), animated = false)
+                Text(if (step == OnboardingStep.CarouselThemes) "79%" else "90%", fontSize = 28.sp, fontWeight = FontWeight.Bold)
+                Box(
+                    Modifier.padding(horizontal = 24.dp, vertical = 8.dp).fillMaxWidth().height(8.dp).clip(CircleShape)
+                        .background(if (step == OnboardingStep.CarouselThemes) Melt.Orange else Melt.Meadow),
+                )
+                if (step == OnboardingStep.CarouselWelcome) {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf("1h 24m", "32", "4m").forEach { stat ->
+                            Text(
+                                stat,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(Color(0xFFF2F2F7)).padding(horizontal = 8.dp, vertical = 8.dp),
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
 @Composable
 private fun Notifications(onContinue: () -> Unit) {
-    ChromeStub()
-    Text("Enable Screen Time Notifications!", fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 22.dp))
-    Text("RotRun needs to send you notifications to help you stay on track.", color = Melt.Muted, modifier = Modifier.padding(horizontal = 22.dp, vertical = 6.dp))
-    listOf(
-        "Brain Health Insights" to "Get updates about your brain health and screen usage.",
-        "Daily Stats" to "See how you're doing with your Screen Time goals.",
-        "Excessive Use Alerts" to "Be notified when you're spending too much time on certain apps.",
-        "Intervention Reminders" to "Gentle reminders to take breaks and stay mindful.",
-    ).forEach { (title, body) ->
-        Column(Modifier.padding(horizontal = 22.dp, vertical = 6.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color.White).padding(14.dp)) {
-            Text(title, fontWeight = FontWeight.Bold)
-            Text(body, color = Melt.Muted, fontSize = 14.sp)
+    ScreenFrame(footer = { PrimaryButton("Continue", onClick = onContinue) }) {
+        Text("Enable Screen Time Notifications!", fontSize = 26.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 24.dp))
+        Text("RotRun needs to send you notifications to help you stay on track.", color = Melt.Muted, textAlign = TextAlign.Center, fontSize = 16.sp, modifier = Modifier.fillMaxWidth().padding(horizontal = 28.dp))
+        NotifyCard(title = "Brain Health Insights", body = "Get updates about your brain health and screen usage.") {
+            CartoonBrain(BrainStyle.Spa, Modifier.size(44.dp), animated = false)
+        }
+        NotifyCard(title = "Daily Stats", body = "See how you're doing with your Screen Time goals.") {
+            Icon(Icons.Filled.TrackChanges, null, tint = Melt.House, modifier = Modifier.size(22.dp))
+        }
+        NotifyCard(title = "Excessive Use Alerts", body = "Be notified when you're spending too much time on certain apps.") {
+            Icon(Icons.Filled.Warning, null, tint = Melt.Orange, modifier = Modifier.size(22.dp))
+        }
+        NotifyCard(title = "Intervention Reminders", body = "Gentle reminders to take breaks and stay mindful.") {
+            Icon(Icons.Filled.Alarm, null, tint = Melt.House, modifier = Modifier.size(22.dp))
         }
     }
-    Box(Modifier.padding(horizontal = 20.dp)) { PrimaryButton("Continue", onClick = onContinue) }
 }
 
 @Composable
-private fun ChromeStub() {
-    LinearProgressIndicator(
-        progress = { OnboardingStep.Notifications.progress() },
-        modifier = Modifier.padding(20.dp).fillMaxWidth().height(6.dp).clip(CircleShape),
-        color = Melt.Action,
-    )
-}
-
-@Composable
-private fun RulePreview(repo: RotRunRepository) {
-    Chrome(OnboardingStep.RulePreview, true, repo)
-    Text("Check out your new rule!", fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 22.dp))
-    Text("This is what your rule will look like on the Rules tab.", color = Melt.Muted, modifier = Modifier.padding(horizontal = 22.dp, vertical = 6.dp))
-    Column(Modifier.padding(22.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Color.White).padding(16.dp)) {
-        Text("Brick Mode", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-        Text("All Day", color = Melt.Muted)
-        Text("Active", color = Color(0xFF34C759), fontWeight = FontWeight.Bold)
+private fun NotifyCard(title: String, body: String, icon: @Composable () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp).clip(RoundedCornerShape(16.dp)).background(Melt.Action.copy(alpha = 0.10f)).padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) { icon() }
+        Column(Modifier.padding(start = 8.dp)) {
+            Text(title, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Text(body, color = Melt.Muted, fontSize = 13.sp)
+        }
     }
-    Box(Modifier.padding(horizontal = 20.dp)) { PrimaryButton("Get Started") { repo.advance() } }
 }
 
 @Composable
-private fun TwoActions(step: OnboardingStep, title: String, body: String, primary: String, secondary: String, repo: RotRunRepository, headline: String? = null) {
-    Chrome(step, true, repo)
-    if (headline != null) Text(headline, fontSize = 40.sp, fontWeight = FontWeight.Black, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
-    Text(title, fontSize = 26.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp))
-    Text(body, textAlign = TextAlign.Center, color = Melt.Muted, modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp))
-    CartoonBrain(BrainStyle.Flower, Modifier.size(120.dp).alignCenter())
-    Box(Modifier.padding(horizontal = 20.dp)) { PrimaryButton(primary) { repo.advance() } }
-    Text(secondary, color = Melt.Muted, fontWeight = FontWeight.SemiBold, modifier = Modifier.alignCenter().padding(12.dp).clickable { repo.advance() })
+private fun RulePreview(state: SavedState, repo: RotRunRepository) {
+    ScreenFrame(footer = { PrimaryButton("Get Started") { repo.advance() } }) {
+        Text("Check out your new rule!", fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 24.dp))
+        Text("This is what your rule will look like on the Rules tab.", color = Melt.Muted, textAlign = TextAlign.Center, fontSize = 15.sp, modifier = Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 6.dp))
+        RuleCard(state.peakFocus.ifBlank { "Work Focus" }, peakWindow(state.peakFocus), "Today")
+        CartoonBrain(BrainStyle.Meadow, Modifier.size(140.dp))
+    }
+}
+
+@Composable
+private fun RuleCard(title: String, subtitle: String, badge: String) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp).clip(RoundedCornerShape(26.dp)).background(Color.White).padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(48.dp).clip(RoundedCornerShape(14.dp)).background(Color(0xFFE5E5EA)), contentAlignment = Alignment.Center) {
+            Text("⚙️", fontSize = 22.sp)
+        }
+        Column(Modifier.padding(start = 12.dp).weight(1f)) {
+            Text(title, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+            Text(subtitle, color = Melt.Muted, fontSize = 14.sp)
+        }
+        Text(badge, color = Melt.Orange, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+    }
+}
+
+private fun peakWindow(name: String): String = when (name) {
+    "Mindful Morning" -> "6 am - 9 am"
+    "Evening Wind Down" -> "8 pm - 11 pm"
+    else -> "9 am - 5 pm"
+}
+
+@Composable
+private fun ConnectEdu(repo: RotRunRepository) {
+    ScreenFrame(footer = { PrimaryButton("Continue") { repo.advance() } }) {
+        Spacer(Modifier.height(48.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.zIndex(1f).size(110.dp).offset(x = 12.dp).clip(RoundedCornerShape(28.dp)).background(Melt.Sky),
+                contentAlignment = Alignment.Center,
+            ) { CartoonBrain(BrainStyle.Meadow, Modifier.size(78.dp), animated = false) }
+            Box(
+                Modifier.size(110.dp).offset(x = (-12).dp).clip(RoundedCornerShape(28.dp)).background(Color(0xFF7361D9)),
+                contentAlignment = Alignment.Center,
+            ) { Text("⌛", color = Color.White, fontSize = 42.sp) }
+        }
+        Text("Connect RotRun to Screen Time", fontSize = 26.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp))
+        Text("Your data is completely private and never leaves your device.", color = Melt.Muted, textAlign = TextAlign.Center, fontSize = 16.sp, modifier = Modifier.fillMaxWidth().padding(horizontal = 32.dp))
+    }
+}
+
+@Composable
+private fun PurchaseComplete(state: SavedState, repo: RotRunRepository) {
+    Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(Modifier.padding(horizontal = 20.dp, vertical = 12.dp).fillMaxWidth().height(6.dp).clip(CircleShape).background(Melt.Meadow))
+        Spacer(Modifier.weight(1f))
+        CartoonBrain(BrainStyle.Meadow, Modifier.size(160.dp))
+        Text("Purchase complete!", fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp))
+        Text("RotRun Premium is on. You now have access to every feature.", color = Melt.Muted, textAlign = TextAlign.Center, fontSize = 16.sp, modifier = Modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 8.dp))
+        Spacer(Modifier.weight(1f))
+        Box(Modifier.padding(horizontal = 20.dp).padding(bottom = 16.dp)) {
+            PrimaryButton(if (state.onboardingCompleted) "Continue to app" else "Continue") { repo.advance() }
+        }
+    }
+}
+
+@Composable
+private fun ThemeUnlocked(repo: RotRunRepository) {
+    Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            Modifier.padding(top = 48.dp).size(120.dp).clip(RoundedCornerShape(28.dp)).background(Brush.verticalGradient(listOf(Melt.Sky, Melt.Meadow))),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("☁", color = Color.White, fontSize = 28.sp)
+                Text("🍃", fontSize = 22.sp)
+            }
+        }
+        CartoonBrain(BrainStyle.Meadow, Modifier.size(140.dp))
+        Text("New Theme Unlocked!", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1F2430))
+        Text(
+            "You unlocked the Grassy theme! Check it out in your profile under customization!",
+            textAlign = TextAlign.Center,
+            color = Color(0xFF2E3847),
+            fontSize = 16.sp,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 8.dp),
+        )
+        Spacer(Modifier.weight(1f))
+        Box(Modifier.padding(horizontal = 20.dp)) { PrimaryButton("Go Try it out!", light = true) { repo.advance() } }
+        Text("Maybe Later", color = Color(0xFF1F477A), fontWeight = FontWeight.SemiBold, fontSize = 16.sp, modifier = Modifier.padding(vertical = 16.dp).clickable { repo.advance() })
+    }
+}
+
+@Composable
+private fun StreakReward(repo: RotRunRepository) {
+    Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+        CartoonBrain(BrainStyle.Mug, Modifier.padding(top = 36.dp).size(150.dp))
+        Text("1", color = Color.White, fontSize = 64.sp, fontWeight = FontWeight.Black)
+        Text("day streak", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Text("Reward Unlocked!", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
+        Text("You hit a 1-day streak and unlocked a new reward.", color = Color.White.copy(alpha = 0.92f), textAlign = TextAlign.Center, fontSize = 15.sp, modifier = Modifier.fillMaxWidth().padding(horizontal = 28.dp))
+        Spacer(Modifier.weight(1f))
+        Box(Modifier.padding(horizontal = 20.dp)) { PrimaryButton("Collect Reward", light = true) { repo.advance() } }
+        Text("Maybe Later", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, modifier = Modifier.padding(vertical = 16.dp).clickable { repo.advance() })
+    }
 }
 
 @Composable
 private fun WidgetSteps(repo: RotRunRepository) {
-    Chrome(OnboardingStep.WidgetHowTo, true, repo)
-    listOf(
+    val steps = listOf(
         "Long Press your Home Screen" to "Tap and hold an empty area of your Home Screen until the menu appears.",
-        "Tap Widgets" to "On Android, open the widget picker. iPhone uses a + button in the corner.",
+        "Tap Widgets" to "On Android, open the widget picker from the home screen.",
         "Search for “RotRun”" to "Use the search bar at the top to find RotRun.",
         "Select the RotRun widget" to "Choose the brain health widget from the options.",
         "Tap “Add Widget”" to "Confirm adding the widget to your home screen.",
-    ).forEachIndexed { index, (title, body) ->
-        Row(Modifier.padding(horizontal = 22.dp, vertical = 8.dp)) {
-            Text("${index + 1}", fontWeight = FontWeight.Black, color = Melt.Action, fontSize = 20.sp)
-            Column(Modifier.padding(start = 12.dp)) {
-                Text(title, fontWeight = FontWeight.Bold)
-                Text(body, color = Melt.Muted)
+    )
+    ScreenFrame(footer = { PrimaryButton("Done") { repo.advance() } }) {
+        Column(
+            Modifier.padding(top = 20.dp).clip(RoundedCornerShape(22.dp)).background(Color.White).padding(18.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            CartoonBrain(BrainStyle.Meditating, Modifier.size(72.dp), animated = false)
+            Text("Start Focus", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.padding(top = 10.dp).clip(CircleShape).background(Melt.Action).padding(horizontal = 14.dp, vertical = 6.dp))
+        }
+        steps.forEachIndexed { index, (title, body) ->
+            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)) {
+                Box(Modifier.size(28.dp).clip(CircleShape).background(Melt.Action.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
+                    Text("${index + 1}", color = Melt.Action, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                }
+                Column(Modifier.padding(start = 12.dp)) {
+                    Text(title, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text(body, color = Melt.Muted, fontSize = 13.sp)
+                }
             }
         }
     }
-    Box(Modifier.padding(horizontal = 20.dp)) { PrimaryButton("Done") { repo.advance() } }
 }
 
 @Composable
 private fun SelectApps(state: SavedState, installed: List<TrackedApp>, repo: RotRunRepository) {
     val selected = state.appLists.firstOrNull { it.id == "list.brainmelt" }?.apps.orEmpty()
-    Chrome(OnboardingStep.SelectApps, true, repo)
-    Text("Select your RotRun Apps", fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 22.dp))
-    Text("Select the apps that distract you the most, the ones you open on autopilot.", color = Melt.Muted, modifier = Modifier.padding(horizontal = 22.dp, vertical = 6.dp))
-    Text("RotRun Apps", fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 22.dp))
-    Text("You can update this later in Settings.", color = Melt.Muted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 22.dp, vertical = 4.dp))
-    if (installed.isEmpty()) {
-        Text("Open this screen again after RotRun loads your apps.", modifier = Modifier.padding(22.dp))
-        LaunchedEffect(Unit) { repo.loadInstalled() }
-    }
-    installed.take(40).forEach { app ->
-        val on = selected.any { it.packageName == app.packageName }
-        Text(
-            if (on) "✓  ${app.label}" else app.label,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 6.dp).clickable {
-                repo.update { current ->
-                    val lists = current.appLists.ifEmpty { listOf(AppList("list.brainmelt", "RotRun Apps")) }.map { list ->
-                        if (list.id != "list.brainmelt") list
-                        else {
-                            val apps = if (on) list.apps.filterNot { it.packageName == app.packageName } else list.apps + app
-                            list.copy(apps = apps)
+    ScreenFrame(footer = { PrimaryButton("Continue") { repo.advance() } }) {
+        Text("Select your RotRun Apps", fontSize = 26.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 24.dp, start = 24.dp, end = 24.dp))
+        Text("Select the apps that distract you the most, the ones you open on autopilot.", color = Melt.Muted, textAlign = TextAlign.Center, fontSize = 16.sp, modifier = Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 6.dp))
+        CartoonBrain(BrainStyle.Meadow, Modifier.size(130.dp))
+        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).clip(RoundedCornerShape(20.dp)).background(Color(0xFFE9E9EB)).padding(16.dp)) {
+            Text("RotRun Apps", fontWeight = FontWeight.Bold)
+            Text(if (selected.isEmpty()) "No apps yet" else "${selected.size} selected", color = Melt.Muted, fontSize = 13.sp)
+            if (installed.isEmpty()) {
+                Text("Open this screen again after RotRun loads your apps.", modifier = Modifier.padding(top = 8.dp))
+                LaunchedEffect(Unit) { repo.loadInstalled() }
+            }
+            installed.take(40).forEach { app ->
+                val on = selected.any { it.packageName == app.packageName }
+                Text(
+                    if (on) "✓  ${app.label}" else app.label,
+                    fontWeight = if (on) FontWeight.Bold else FontWeight.Medium,
+                    color = if (on) Melt.Action else Melt.Ink,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp).clickable {
+                        repo.update { current ->
+                            val lists = current.appLists.ifEmpty { listOf(AppList("list.brainmelt", "RotRun Apps")) }.map { list ->
+                                if (list.id != "list.brainmelt") list
+                                else {
+                                    val apps = if (on) list.apps.filterNot { it.packageName == app.packageName } else list.apps + app
+                                    list.copy(apps = apps)
+                                }
+                            }
+                            val apps = lists.first { it.id == "list.brainmelt" }.apps
+                            current.copy(appLists = lists, blockers = current.blockers.map { if (it.id == "brick") it.copy(apps = apps) else it })
                         }
-                    }
-                    val apps = lists.first { it.id == "list.brainmelt" }.apps
-                    current.copy(appLists = lists, blockers = current.blockers.map { if (it.id == "brick") it.copy(apps = apps) else it })
-                }
-            },
-        )
+                    },
+                )
+            }
+        }
+        Text("You can update this later in Settings.", color = Melt.Action, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.padding(top = 12.dp))
     }
-    Box(Modifier.padding(horizontal = 20.dp)) { PrimaryButton("Continue") { repo.advance() } }
 }
 
 @Composable
 private fun ScreenDialog(repo: RotRunRepository, onAllow: () -> Unit) {
-    Chrome(OnboardingStep.ScreenTimeDialog, true, repo)
-    Text("Connect RotRun to Screen Time", fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 22.dp))
-    Text("Your data is completely private and never leaves your device.", color = Melt.Muted, modifier = Modifier.padding(horizontal = 22.dp, vertical = 6.dp))
-    Column(Modifier.padding(22.dp).clip(RoundedCornerShape(20.dp)).background(Color.White).padding(16.dp)) {
-        Text("“RotRun” Would Like to Access Screen Time", fontWeight = FontWeight.Bold)
-        Text("Providing “RotRun” access to Screen Time may allow it to see your activity data, restrict content, and limit the usage of apps and websites.", color = Melt.Muted, modifier = Modifier.padding(top = 8.dp))
-        Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
-            Text("Don't Allow", color = Melt.Action, fontWeight = FontWeight.SemiBold, modifier = Modifier.clickable { repo.advance() })
-            Text("Continue", color = Melt.Action, fontWeight = FontWeight.Bold, modifier = Modifier.clickable { onAllow(); repo.advance() })
+    ScreenFrame(footer = { PrimaryButton("Continue") { onAllow(); repo.advance() } }) {
+        Text("Connect RotRun to Screen Time", fontSize = 24.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 20.dp))
+        Text("Your data is completely private and never leaves your device.", color = Melt.Muted, textAlign = TextAlign.Center, fontSize = 15.sp, modifier = Modifier.fillMaxWidth().padding(horizontal = 28.dp))
+        Column(
+            Modifier.padding(horizontal = 28.dp, vertical = 16.dp).clip(RoundedCornerShape(16.dp)).background(Color.White).padding(18.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text("“RotRun” Would Like to Access Screen Time", fontWeight = FontWeight.SemiBold, fontSize = 17.sp, textAlign = TextAlign.Center)
+            Text("Providing “RotRun” access to Screen Time may allow it to see your activity data, restrict content, and limit the usage of apps and websites.", color = Melt.Muted, fontSize = 13.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp))
+            Row(Modifier.fillMaxWidth().padding(top = 12.dp)) {
+                Text("Continue", fontWeight = FontWeight.SemiBold, fontSize = 17.sp, textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
+                Text("Don't Allow", color = Melt.Action, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, textAlign = TextAlign.Center, modifier = Modifier.weight(1f).clickable { repo.advance() })
+            }
         }
+        CartoonBrain(BrainStyle.Meadow, Modifier.size(120.dp))
     }
 }
 
 @Composable
 private fun EnableRule(repo: RotRunRepository) {
-    Chrome(OnboardingStep.EnableFirstRule, true, repo)
-    Text("Enable Your First Rule", fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 22.dp))
-    Text("Block your RotRun apps every day!", color = Melt.Muted, modifier = Modifier.padding(horizontal = 22.dp, vertical = 6.dp))
-    Column(Modifier.padding(22.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Color.White).padding(16.dp)) {
-        Text("Brick Mode", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-        Text("All Day", color = Melt.Muted)
+    ScreenFrame(footer = { PrimaryButton("Activate Rule") { repo.advance() } }) {
+        Text("Enable Your First Rule", fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 24.dp))
+        Text("Block your RotRun apps every day!", color = Melt.Muted, fontSize = 16.sp)
+        CartoonBrain(BrainStyle.Mug, Modifier.size(140.dp))
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 20.dp).clip(RoundedCornerShape(26.dp)).background(Color.White).padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(Modifier.size(48.dp).clip(RoundedCornerShape(14.dp)).background(Color(0xFFDBD1FA)), contentAlignment = Alignment.Center) {
+                Icon(Icons.Filled.Phone, null, tint = Color(0xFF738CF2))
+            }
+            Column(Modifier.padding(start = 12.dp).weight(1f)) {
+                Text("Brick Mode", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                Text("All Day", color = Melt.Muted)
+            }
+            Text("Active", color = Color(0xFF34C759), fontWeight = FontWeight.Bold)
+        }
     }
-    Box(Modifier.padding(horizontal = 20.dp)) { PrimaryButton("Activate Rule") { repo.advance() } }
 }
-
-private fun Modifier.alignCenter(): Modifier = this.then(Modifier.fillMaxWidth()).padding(top = 4.dp)

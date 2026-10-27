@@ -8,7 +8,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -43,28 +45,30 @@ fun BlockScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunRepo
     val brick = state.blockers.firstOrNull { it.id == "brick" }
     val scheduled = state.blockers.filter { it.id != "brick" }
     Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Block", fontSize = 34.sp, fontWeight = FontWeight.Bold)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("Block", fontSize = 34.sp, fontWeight = FontWeight.Bold, color = Melt.Ink)
             Text(
                 "+ Add Blocker",
-                color = Melt.Action,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.clickable {
+                color = Color.White,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 15.sp,
+                modifier = Modifier.clip(androidx.compose.foundation.shape.CircleShape).background(Melt.Action).clickable {
                     editing = Blocker(id = "new-${System.currentTimeMillis()}", name = "New Blocker", mode = "allDay")
-                },
+                }.padding(horizontal = 14.dp, vertical = 9.dp),
             )
         }
-        SectionLabel("Blocking Now", Melt.Ink)
+        SectionLabel("Blocking Now", Melt.Muted)
         if (brick != null) BlockerCard(brick, active = true) { editing = brick }
         if (scheduled.isNotEmpty()) {
-            SectionLabel("Scheduled Blockers", Melt.Ink)
+            SectionLabel("Scheduled Blockers", Melt.Muted)
             scheduled.forEach { blocker -> BlockerCard(blocker, active = false) { editing = blocker } }
         }
-        SectionLabel("Presets for you", Melt.Ink)
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        SectionLabel("Presets for you", Melt.Muted)
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Presets.catalog.forEach { preset ->
+                val look = presetLook(preset.title)
                 Column(
-                    Modifier.width(180.dp).clip(RoundedCornerShape(18.dp)).background(Color.White).clickable {
+                    Modifier.width(168.dp).height(230.dp).clip(RoundedCornerShape(28.dp)).background(look.first).clickable {
                         editing = Blocker(
                             id = "preset:${preset.title}",
                             name = preset.title,
@@ -73,15 +77,17 @@ fun BlockScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunRepo
                             endHour = preset.end,
                             days = preset.days,
                         )
-                    }.padding(14.dp),
+                    }.padding(horizontal = 10.dp, vertical = 12.dp),
+                    horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
                 ) {
-                    Text(preset.title, fontWeight = FontWeight.Bold)
-                    Text(preset.subtitle, color = Melt.Muted, fontSize = 13.sp)
-                    Text(preset.tags.joinToString(" · "), color = Melt.Action, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+                    CartoonBrain(look.second, Modifier.size(108.dp).height(100.dp), animated = false)
+                    Text(preset.title, fontWeight = FontWeight.Bold, fontSize = 17.sp, color = Color.Black)
+                    Text(preset.subtitle, color = Color.Black.copy(alpha = 0.45f), fontSize = 12.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    Text(preset.tags.joinToString("  "), color = Color.Black.copy(alpha = 0.7f), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 6.dp))
                 }
             }
         }
-        SectionLabel("App Lists", Melt.Ink)
+        SectionLabel("App Lists", Melt.Muted)
         state.appLists.forEach { list ->
             Column(
                 Modifier.fillMaxWidth().padding(vertical = 4.dp).clip(RoundedCornerShape(16.dp)).background(Color.White).clickable { editingList = list }.padding(14.dp),
@@ -126,7 +132,7 @@ private fun BlockerCard(blocker: Blocker, active: Boolean, onClick: () -> Unit) 
         else -> "All Day"
     }
     Column(
-        Modifier.fillMaxWidth().padding(vertical = 4.dp).clip(RoundedCornerShape(18.dp)).background(Color.White).clickable(onClick = onClick).padding(14.dp),
+        Modifier.fillMaxWidth().padding(vertical = 4.dp).clip(RoundedCornerShape(26.dp)).background(Color.White).clickable(onClick = onClick).padding(16.dp),
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(blocker.name, fontWeight = FontWeight.Bold, fontSize = 18.sp)
@@ -244,6 +250,14 @@ private fun AppPicker(installed: List<TrackedApp>, selected: Set<String>, onDone
             )
         }
     }
+}
+
+private fun presetLook(title: String): Pair<Color, BrainStyle> = when (title) {
+    "Bedtime" -> Color(0xFFD1E6FA) to BrainStyle.Sleeping
+    "Touch Grass" -> Color(0xFFD1EDD6) to BrainStyle.Flower
+    "Evening Wind Down" -> Color(0xFFE0D6F5) to BrainStyle.Reading
+    "Mindful Morning" -> Color(0xFFEDE0C7) to BrainStyle.Mug
+    else -> Color(0xFFE0D6F0) to BrainStyle.Newspaper
 }
 
 private fun modeLabel(mode: String) = when (mode) {

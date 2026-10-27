@@ -1,5 +1,6 @@
 package com.ahmed.rotrun.ui
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -7,35 +8,42 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ahmed.rotrun.data.SavedState
 import com.ahmed.rotrun.data.UsageSnapshot
 import com.ahmed.rotrun.logic.BrainHealthLevel
 import com.ahmed.rotrun.logic.Scoring
+import java.time.LocalTime
 
 @Composable
 fun HomeScreen(state: SavedState, usage: UsageSnapshot, refreshing: Boolean, onRefresh: () -> Unit, onConnect: () -> Unit) {
     val look = Looks.byId(state.theme)
+    val scenic = sceneFor(state.theme) != null
     val level = BrainHealthLevel.fromLabel(state.brainHealth)
     val health = Scoring.displayedHealth(Scoring.drainHealth(usage.drainSeconds, level), state.focusMinutesToday(), level.restoreMinutes)
     val style = when (health) {
@@ -43,121 +51,270 @@ fun HomeScreen(state: SavedState, usage: UsageSnapshot, refreshing: Boolean, onR
         in 40..64 -> BrainStyle.Sad
         else -> BrainStyle.Pleading
     }
-    val on = look.onCanvas
-    Column(Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("ROTRUN", color = on, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
-            Spacer(Modifier.weight(1f))
-            IconButton(onClick = onRefresh) { Icon(Icons.Default.Refresh, "Refresh", tint = on) }
-            Text("🔥 ${state.streak.coerceAtLeast(1)}", color = on, fontWeight = FontWeight.Bold)
-        }
-        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            CartoonBrain(style, Modifier.size(150.dp))
-        }
-        Text("BRAIN HEALTH", color = on.copy(alpha = 0.8f), fontWeight = FontWeight.Bold, fontSize = 12.sp, letterSpacing = 1.2.sp, modifier = Modifier.alignCenterText())
-        Text("$health%", color = on, fontWeight = FontWeight.Black, fontSize = 60.sp, modifier = Modifier.alignCenterText())
-        Text(Scoring.caption(health), color = on.copy(alpha = 0.9f), fontWeight = FontWeight.SemiBold, modifier = Modifier.alignCenterText())
-        Box(Modifier.padding(horizontal = 44.dp, vertical = 10.dp).fillMaxWidth().height(12.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.22f))) {
-            Box(Modifier.fillMaxWidth(health / 100f).height(12.dp).clip(CircleShape).background(if (look.light) Melt.Action else Color.White))
-        }
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Metric("Screen Time", Scoring.formatDuration(usage.todaySeconds), Modifier.weight(1f), on)
-            Metric("Pickups", usage.pickups.toString(), Modifier.weight(1f), on)
-            Metric("Focus Time", Scoring.formatDuration(state.focusMinutesToday() * 60L), Modifier.weight(1f), on)
-        }
-        SectionCard("Top Offenders", on) {
-            if (usage.offenders.isEmpty()) Text("No app usage yet today", color = on.copy(alpha = 0.85f))
-            usage.offenders.forEach { app ->
-                Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(app.label, color = on, modifier = Modifier.weight(1f))
-                    Text(Scoring.formatDuration(app.seconds), color = on, fontWeight = FontWeight.Bold)
+    val on = if (scenic) Color.White else Melt.Ink
+    val brainSize = 136.dp
+    Column(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+        Box(Modifier.fillMaxWidth().height(brainSize + 78.dp)) {
+            if (scenic) HeroBackdrop(state.theme, Modifier.fillMaxWidth().fillMaxHeight())
+            Column(Modifier.fillMaxWidth()) {
+                HomeHeader(state.streak.coerceAtLeast(1), refreshing, scenic, on, onRefresh)
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+                    CartoonBrain(style, Modifier.size(brainSize), animated = false)
                 }
             }
         }
-        SectionCard("Highlights", on) {
-            Text(Scoring.paceLine(usage.aheadOfPace), color = on)
-            HourChart(usage.hourlyToday, usage.hourlyAvg, on)
-        }
-        SectionCard("Comparison", on) {
-            Text(Scoring.comparisonLine(usage.todaySeconds, usage.avgSeconds, usage.diffPercent, usage.belowAverage), color = on)
-            Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Metric("Today", Scoring.formatDuration(usage.todaySeconds), Modifier.weight(1f), on)
-                Metric("7-day avg", Scoring.formatDuration(usage.avgSeconds), Modifier.weight(1f), on)
-            }
-        }
-        SectionCard("This week", on) {
-            Text(Scoring.weeklyLine(usage.avgSeconds), color = on)
-            WeekChart(usage.week.map { it.label to (it.seconds / 60f) }, on)
-        }
-        if (!usage.authorized) {
-            Row(
-                Modifier
-                    .padding(16.dp)
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(Color.Black.copy(alpha = 0.18f))
-                    .clickable(onClick = onConnect)
-                    .padding(14.dp),
-                verticalAlignment = Alignment.CenterVertically,
+        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+            Text(
+                "BRAIN HEALTH",
+                color = if (scenic) Color.White.copy(alpha = 0.82f) else Melt.Muted,
+                fontWeight = FontWeight.Bold,
+                fontSize = 12.sp,
+                letterSpacing = 1.3.sp,
+            )
+            Text(
+                "$health%",
+                color = if (scenic) Color.Black else Melt.Ink,
+                fontWeight = FontWeight.Black,
+                fontSize = 60.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Text(
+                Scoring.caption(health),
+                color = if (scenic) Color.White.copy(alpha = 0.9f) else Melt.Muted,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 15.sp,
+            )
+            Box(
+                Modifier.padding(horizontal = 44.dp, vertical = 8.dp).fillMaxWidth().height(12.dp).clip(CircleShape)
+                    .background(if (scenic) Color.Black.copy(alpha = 0.22f) else Color(0xFFE5E5EA)),
             ) {
-                Column(Modifier.weight(1f)) {
-                    Text("Connect Screen Time", color = Color.White, fontWeight = FontWeight.Bold)
-                    Text("Load today’s real usage", color = Color.White.copy(alpha = 0.8f), fontSize = 13.sp)
-                }
-                Text(
-                    if (refreshing) "…" else "Connect",
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.clip(CircleShape).background(Melt.Action).padding(horizontal = 14.dp, vertical = 8.dp),
+                Box(
+                    Modifier.fillMaxWidth((health / 100f).coerceIn(0.04f, 1f)).fillMaxHeight()
+                        .clip(CircleShape)
+                        .background(if (scenic) Color.White else Melt.Action),
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun Metric(label: String, value: String, modifier: Modifier, on: Color) {
-    Column(
-        modifier.clip(RoundedCornerShape(18.dp)).background(Brush.verticalGradient(listOf(Melt.CardTop, Melt.CardBottom))).padding(10.dp),
-    ) {
-        Text(label, color = on.copy(alpha = 0.8f), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-        Text(value, color = on, fontWeight = FontWeight.Black, fontSize = 16.sp)
-    }
-}
-
-@Composable
-private fun SectionCard(title: String, on: Color, content: @Composable () -> Unit) {
-    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Color.Black.copy(alpha = 0.12f)).padding(16.dp)) {
-        Text(title, color = on, fontWeight = FontWeight.Bold, fontSize = 20.sp)
-        Spacer(Modifier.height(8.dp))
-        content()
-    }
-}
-
-@Composable
-private fun HourChart(today: List<Float>, average: List<Float>, on: Color) {
-    val max = (today + average).maxOrNull()?.coerceAtLeast(1f) ?: 1f
-    Row(Modifier.fillMaxWidth().height(72.dp).padding(top = 8.dp), verticalAlignment = Alignment.Bottom) {
-        today.forEachIndexed { index, value ->
-            if (index % 3 == 0) {
-                Box(Modifier.weight(1f).padding(horizontal = 1.dp).height((56f * (value / max)).dp).clip(RoundedCornerShape(3.dp)).background(on))
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            MetricCard("Screen Time", Scoring.formatDuration(usage.todaySeconds), MetricKind.Screen, Modifier.weight(1f))
+            MetricCard("Pickups", usage.pickups.toString(), MetricKind.Pickups, Modifier.weight(1f))
+            MetricCard("Focus Time", Scoring.formatDuration(state.focusMinutesToday() * 60L), MetricKind.Focus, Modifier.weight(1f))
+        }
+        Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            SectionTitle("Top Offenders", scenic)
+            RaisedCard {
+                if (usage.offenders.isEmpty()) {
+                    Text("No app usage yet today", color = Color.White.copy(alpha = 0.85f), fontWeight = FontWeight.Medium, modifier = Modifier.padding(16.dp))
+                } else {
+                    usage.offenders.forEachIndexed { index, app ->
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            AppDot(app.label)
+                            Column(Modifier.padding(start = 12.dp).weight(1f)) {
+                                Text(app.label, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, maxLines = 1)
+                                Text("App", color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp)
+                            }
+                            Text(Scoring.formatDuration(app.seconds), color = Color.White, fontWeight = FontWeight.SemiBold)
+                        }
+                        if (index < usage.offenders.lastIndex) {
+                            Box(Modifier.padding(start = 64.dp).fillMaxWidth().height(1.dp).background(Color.White.copy(alpha = 0.12f)))
+                        }
+                    }
+                }
+            }
+            SectionTitle("Highlights", scenic)
+            RaisedCard {
+                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(Scoring.paceLine(usage.aheadOfPace), color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Legend(Melt.Orange, "Today", Scoring.formatDuration(usage.todaySeconds), Melt.Orange)
+                        Spacer(Modifier.weight(1f))
+                        Legend(Color.White, "Average", Scoring.formatDuration(usage.avgSeconds), Color.White)
+                    }
+                    TrendChart(usage.hourlyToday, usage.hourlyAvg, Modifier.fillMaxWidth().height(120.dp))
+                }
+            }
+            RaisedCard {
+                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Text(Scoring.comparisonLine(usage.todaySeconds, usage.avgSeconds, usage.diffPercent, usage.belowAverage), color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
+                    CompareBar(Scoring.formatDuration(usage.todaySeconds), "Today", usage.todaySeconds, usage.avgSeconds, Melt.Orange)
+                    CompareBar(Scoring.formatDuration(usage.avgSeconds), "7-day avg", usage.avgSeconds, usage.avgSeconds, Color.White.copy(alpha = 0.38f))
+                }
+            }
+            RaisedCard {
+                Column(Modifier.padding(18.dp)) {
+                    Text(Scoring.weeklyLine(usage.avgSeconds), color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
+                    Box(Modifier.padding(vertical = 12.dp).fillMaxWidth().height(1.dp).background(Color.White.copy(alpha = 0.15f)))
+                    WeekBars(usage, Modifier.fillMaxWidth().height(148.dp))
+                }
+            }
+        }
+        if (!usage.authorized) {
+            Row(
+                Modifier.padding(horizontal = 16.dp).fillMaxWidth().clickable(onClick = onConnect),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RaisedCard(Modifier.fillMaxWidth()) {
+                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(36.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
+                            Text("⌛", color = Color.White)
+                        }
+                        Column(Modifier.padding(start = 12.dp).weight(1f)) {
+                            Text("Connect Screen Time", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                            Text("Load today’s real usage", color = Color.White.copy(alpha = 0.8f), fontSize = 13.sp)
+                        }
+                        Text("›", color = Color.White.copy(alpha = 0.7f), fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    }
+                }
             }
         }
     }
-    Text("12 AM          12 PM          11 PM", color = on.copy(alpha = 0.7f), fontSize = 10.sp)
 }
 
 @Composable
-private fun WeekChart(days: List<Pair<String, Float>>, on: Color) {
-    val max = days.maxOfOrNull { it.second }?.coerceAtLeast(1f) ?: 1f
-    Row(Modifier.fillMaxWidth().height(80.dp).padding(top = 8.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        days.forEach { (label, minutes) ->
-            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                Box(Modifier.fillMaxWidth().height((52f * (minutes / max)).dp).clip(RoundedCornerShape(4.dp)).background(on))
-                Text(label, color = on, fontSize = 11.sp)
+private fun HomeHeader(streak: Int, refreshing: Boolean, scenic: Boolean, on: Color, onRefresh: () -> Unit) {
+    Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Text("ROTRUN", color = on, fontWeight = FontWeight.Black, fontSize = 30.sp, modifier = Modifier.align(Alignment.Center))
+        Row(Modifier.align(Alignment.CenterStart), verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                Icons.Default.Refresh,
+                contentDescription = "Refresh",
+                tint = on.copy(alpha = if (refreshing) 0.45f else 1f),
+                modifier = Modifier.size(22.dp).clickable(onClick = onRefresh),
+            )
+        }
+        Column(Modifier.align(Alignment.CenterEnd), horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(Modifier.size(36.dp)) {
+                Box(Modifier.size(36.dp).offset(y = 3.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.28f)))
+                Box(
+                    Modifier.size(36.dp).clip(CircleShape).background(Brush.verticalGradient(listOf(Color(0xFFFFC740), Color(0xFFFF6B1F)))),
+                    contentAlignment = Alignment.Center,
+                ) { Text("🔥", fontSize = 16.sp) }
             }
+            Text("$streak", color = on, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp)
         }
     }
 }
 
-private fun Modifier.alignCenterText(): Modifier = this.then(Modifier.fillMaxWidth()).padding(horizontal = 16.dp)
+private enum class MetricKind { Screen, Pickups, Focus }
+
+@Composable
+private fun MetricCard(title: String, value: String, kind: MetricKind, modifier: Modifier) {
+    RaisedCard(modifier) {
+        Column(Modifier.fillMaxWidth().padding(vertical = 16.dp, horizontal = 6.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(Modifier.size(48.dp)) {
+                Box(Modifier.size(48.dp).offset(y = 4.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.28f)))
+                Box(Modifier.size(48.dp).clip(CircleShape).background(Color.White), contentAlignment = Alignment.Center) {
+                    when (kind) {
+                        MetricKind.Screen -> Text("☠", fontSize = 20.sp)
+                        MetricKind.Pickups -> Box(Modifier.size(width = 16.dp, height = 26.dp).clip(RoundedCornerShape(5.dp)).background(Brush.verticalGradient(listOf(Color(0xFF8CD1FF), Color(0xFF408CF2)))))
+                        MetricKind.Focus -> Text("🔒", fontSize = 18.sp)
+                    }
+                }
+            }
+            Text(value, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 22.sp, maxLines = 1)
+            Text(title, color = Color.White.copy(alpha = 0.9f), fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 1)
+        }
+    }
+}
+
+@Composable
+private fun SectionTitle(title: String, scenic: Boolean) {
+    Text(title, color = if (scenic) Color.White else Melt.Ink, fontWeight = FontWeight.Bold, fontSize = 20.sp, modifier = Modifier.padding(start = 4.dp))
+}
+
+@Composable
+fun RaisedCard(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    Box(modifier.padding(bottom = 8.dp)) {
+        Box(
+            Modifier.matchParentSize().offset(y = 7.dp).clip(RoundedCornerShape(24.dp)).background(Melt.Lip),
+        )
+        Box(
+            Modifier.clip(RoundedCornerShape(24.dp)).background(Brush.verticalGradient(listOf(Melt.CardTop, Melt.CardBottom))),
+        ) { content() }
+    }
+}
+
+@Composable
+private fun AppDot(label: String) {
+    val tint = when {
+        label.contains("instagram", true) -> listOf(Color(0xFFFABF40), Color(0xFFE64073), Color(0xFF7338D9))
+        label.contains("whatsapp", true) -> listOf(Color(0xFF2EBF61), Color(0xFF1A8C47))
+        label.contains("map", true) -> listOf(Color(0xFF40B873), Color(0xFF3373E6))
+        else -> listOf(Color(0xFF8E8E93), Color(0xFF636366))
+    }
+    Box(Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(Brush.linearGradient(tint)))
+}
+
+@Composable
+private fun Legend(dot: Color, label: String, value: String, valueColor: Color) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(8.dp).clip(CircleShape).background(dot))
+        Column(Modifier.padding(start = 8.dp)) {
+            Text(label, color = Color.White.copy(alpha = 0.75f), fontSize = 12.sp)
+            Text(value, color = valueColor, fontWeight = FontWeight.Bold, fontSize = 22.sp)
+        }
+    }
+}
+
+@Composable
+private fun CompareBar(value: String, label: String, amount: Long, maxAmount: Long, tint: Color) {
+    val fraction = if (maxAmount <= 0L) 0.08f else (amount.toFloat() / maxAmount.toFloat()).coerceIn(0.06f, 1f)
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(value, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 26.sp)
+            Text(label, color = Color.White.copy(alpha = 0.8f), fontSize = 15.sp, modifier = Modifier.padding(start = 8.dp, bottom = 3.dp))
+        }
+        Box(Modifier.fillMaxWidth(fraction).height(10.dp).clip(CircleShape).background(tint))
+    }
+}
+
+@Composable
+private fun TrendChart(today: List<Float>, average: List<Float>, modifier: Modifier) {
+    val hour = LocalTime.now().hour
+    Canvas(modifier) {
+        val width = size.width
+        val height = (size.height - 16f).coerceAtLeast(1f)
+        val peak = maxOf(average.maxOrNull() ?: 1f, today.take(hour + 1).maxOrNull() ?: 1f, 1f)
+        fun pathOf(values: List<Float>, limit: Int): Path = Path().apply {
+            values.take(limit).forEachIndexed { index, value ->
+                val x = width * index / 23f
+                val y = height - height * (value / peak)
+                if (index == 0) moveTo(x, y) else lineTo(x, y)
+            }
+        }
+        drawPath(pathOf(average, average.size), Color.White.copy(alpha = 0.5f), style = Stroke(3f, cap = StrokeCap.Round))
+        val todayPath = pathOf(today, hour + 1)
+        drawPath(todayPath, Melt.Orange, style = Stroke(3.5f, cap = StrokeCap.Round))
+        if (today.isNotEmpty()) {
+            val last = hour.coerceIn(0, today.lastIndex)
+            val x = width * last / 23f
+            val y = height - height * (today[last] / peak)
+            drawCircle(Melt.Orange, 4f, Offset(x, y))
+        }
+    }
+    Row(Modifier.fillMaxWidth().offset(y = (-16).dp).padding(horizontal = 2.dp)) {
+        Text("12 AM", color = Color.White.copy(alpha = 0.7f), fontSize = 11.sp)
+        Spacer(Modifier.weight(1f))
+        Text("11 PM", color = Color.White.copy(alpha = 0.7f), fontSize = 11.sp)
+    }
+}
+
+@Composable
+private fun WeekBars(usage: UsageSnapshot, modifier: Modifier) {
+    val max = (usage.week.maxOfOrNull { it.seconds } ?: 1L).coerceAtLeast(usage.avgSeconds).coerceAtLeast(1L)
+    Box(modifier) {
+        Row(Modifier.fillMaxWidth().align(Alignment.BottomCenter), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Bottom) {
+            usage.week.forEach { day ->
+                val fraction = (day.seconds.toFloat() / max.toFloat()).coerceIn(0f, 1f)
+                Box(
+                    Modifier.weight(1f).height((148f * fraction).dp.coerceAtLeast(8.dp)).clip(CircleShape).background(Color.White.copy(alpha = 0.42f)),
+                )
+            }
+        }
+        val avgFraction = (usage.avgSeconds.toFloat() / max.toFloat()).coerceIn(0f, 1f)
+        Box(
+            Modifier.align(Alignment.BottomStart).padding(bottom = (148f * avgFraction).dp).fillMaxWidth().height(3.dp).clip(CircleShape).background(Melt.Orange),
+        )
+    }
+}

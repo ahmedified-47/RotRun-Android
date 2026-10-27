@@ -1,10 +1,69 @@
 package com.ahmed.rotrun.ui
 
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Typography
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontVariation
+import androidx.compose.ui.text.font.FontWeight
+import com.ahmed.rotrun.R
+
+private fun nunito(weight: FontWeight, axis: Int) = Font(
+    R.font.nunito,
+    weight,
+    variationSettings = FontVariation.Settings(FontVariation.weight(axis)),
+)
+
+val Nunito = FontFamily(
+    nunito(FontWeight.Normal, 400),
+    nunito(FontWeight.Medium, 500),
+    nunito(FontWeight.SemiBold, 600),
+    nunito(FontWeight.Bold, 700),
+    nunito(FontWeight.ExtraBold, 800),
+    nunito(FontWeight.Black, 900),
+)
+
+private fun Typography.rounded(): Typography = copy(
+    displayLarge = displayLarge.rounded(),
+    displayMedium = displayMedium.rounded(),
+    displaySmall = displaySmall.rounded(),
+    headlineLarge = headlineLarge.rounded(),
+    headlineMedium = headlineMedium.rounded(),
+    headlineSmall = headlineSmall.rounded(),
+    titleLarge = titleLarge.rounded(),
+    titleMedium = titleMedium.rounded(),
+    titleSmall = titleSmall.rounded(),
+    bodyLarge = bodyLarge.rounded(),
+    bodyMedium = bodyMedium.rounded(),
+    bodySmall = bodySmall.rounded(),
+    labelLarge = labelLarge.rounded(),
+    labelMedium = labelMedium.rounded(),
+    labelSmall = labelSmall.rounded(),
+)
+
+private fun TextStyle.rounded() = copy(fontFamily = Nunito)
+
+@Composable
+fun RotRunTheme(content: @Composable () -> Unit) {
+    MaterialTheme(
+        colorScheme = lightColorScheme(
+            primary = Melt.Action,
+            background = Melt.Grouped,
+            surface = Color.White,
+        ),
+        typography = Typography().rounded(),
+        content = content,
+    )
+}
 
 object Melt {
     val Meadow = Color(0xFF3DB370)
     val MeadowDeep = Color(0xFF2E8C57)
+    val Cucumber = Color(0xFF73C761)
     val Tab = Color(0xFF24754D)
     val Action = Color(0xFF217AFF)
     val Orange = Color(0xFFFF9E2E)
@@ -26,7 +85,29 @@ object Melt {
     val AscendBottom = Color(0xFF293D66)
 }
 
-enum class BrainStyle { Meadow, Sad, Pleading, Spa, Meditating, Reading, Flower, Robe, Mug, Watch }
+enum class BrainStyle {
+    Meadow, Sad, Pleading, Spa, Meditating, Reading, Flower, Robe, Mug, Watch, Sleeping, Newspaper,
+}
+
+data class ScenePalette(
+    val sky: Color,
+    val skyDeep: Color,
+    val ground: Color,
+    val groundDeep: Color,
+    val star: Color,
+    val stars: Boolean,
+    val flowers: Boolean,
+    val moon: Boolean,
+)
+
+fun sceneFor(theme: String): ScenePalette? = when (theme) {
+    "Grassy" -> ScenePalette(Melt.Sky, Color(0xFF6BBDE6), Melt.Meadow, Melt.MeadowDeep, Color.Yellow, true, true, false)
+    "Sunrise" -> ScenePalette(Color(0xFFFFC76B), Color(0xFFFF7A52), Color(0xFF579E5C), Color(0xFF387A47), Color(0xFFFFF2B8), true, true, false)
+    "Zen" -> ScenePalette(Color(0xFFBDE0DB), Color(0xFF8CC7C2), Color(0xFF6BAD94), Color(0xFF478575), Color.White, false, true, false)
+    "Twilight" -> ScenePalette(Color(0xFF8C61C7), Color(0xFF52388C), Color(0xFF47336B), Color(0xFF291F47), Color(0xFFFFEB8C), true, true, false)
+    "Cosmic" -> ScenePalette(Color(0xFF1A1A47), Color(0xFF291A66), Color(0xFF1A1A42), Color(0xFF0F142E), Color.White, true, false, true)
+    else -> null
+}
 
 data class HomeLook(
     val id: String,
