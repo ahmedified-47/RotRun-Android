@@ -1,0 +1,81 @@
+Last updated: 12 September 2026
+
+Acceptance
+
+These Terms & Conditions (“Terms”) govern your use of the RotRun iPhone app, including widgets and Screen Time extensions. By downloading or using RotRun, you agree to these Terms and to the in-app Privacy Policy.
+
+If you do not agree, do not use RotRun.
+
+The service
+
+RotRun provides digital-wellbeing tools (app blocking via Apple Screen Time, Focus, Brick, Ask-my-brain interventions, Brain Health scoring, stats, and widgets) and optional light fitness features (sit-up Couch Reset using the camera, and logging runs or workouts to Apple Health). RotRun Premium is an auto-renewable subscription sold through the App Store and is required to use the app. Access lasts until the current period ends, including after cancellation, and ends when the subscription expires or is revoked.
+
+Features that depend on Apple APIs (Screen Time, Health, Game Center, camera, StoreKit) only work if Apple provides them on your device and you grant the required permissions. Those systems can delay, fail, or be limited by Apple (for example, how many individual apps can be shielded).
+
+Accounts
+
+RotRun does not create its own account. You may use your Apple ID for the App Store and Screen Time authorization, and you may optionally sign in to Game Center for leaderboards. You are responsible for those Apple accounts and for anyone who uses RotRun on your device.
+
+User content
+
+You do not post public social content inside RotRun. Block lists, notes in interventions, and similar choices stay on your device except as described in the Privacy Policy (Apple services, and emails you send us).
+
+If you email rotrunsupport@gmail.com, you grant us permission to use that correspondence to support you and improve RotRun. Do not send information you are not comfortable sharing with the developer.
+
+Game Center names, photos, and scores are Apple user content displayed under Apple’s rules. Optional iMessage or Share Sheet roasts you send (receipts, ransom notes, audio slaps, duels) are your shares of that public Game Center content plus a RotRun link.
+
+Subscriptions
+
+RotRun Premium subscriptions are billed by Apple. Plans (such as monthly and yearly) auto-renew unless you cancel at least 24 hours before the end of the current period. You can cancel or change plans in Manage Subscription inside RotRun or in your Apple ID subscription settings. Prices are shown in the App Store and may vary by region.
+
+Restoring purchases uses Apple’s StoreKit restore. Refunds, if any, are handled by Apple under App Store rules.
+
+Health, exercise, and Brain Health
+
+RotRun is a consumer wellbeing and fitness-style app, not a medical device. Brain Health, Brain Clarity, XP, and similar scores are gamified estimates based on screen time and related activity. They are not medical, psychiatric, or diagnostic advice.
+
+Sit-ups, running, and other physical activity can cause injury. You are responsible for deciding whether exercise is appropriate for you. Consult a qualified professional before starting or changing an exercise routine, especially if you have a medical condition. Use Couch Reset and camera pose tracking in a safe space. RotRun does not guarantee accurate rep counts.
+
+Logging a workout writes data to Apple Health. You are responsible for reviewing that data in Health.
+
+App blocking and your responsibility
+
+You choose which apps and categories to block. Blocking can hide or delay access to apps you may need (messages, maps, work tools, or others). You are responsible for your block lists, excluded apps, and for keeping access to anything you consider essential, including emergency communications.
+
+RotRun is not a parental-control product with a separate child account. The person who authorizes Screen Time on the iPhone controls the feature.
+
+Acceptable use
+
+You agree not to misuse RotRun, interfere with Apple Screen Time or other users, attempt to reverse-engineer the app except where allowed by law, or use RotRun in any way that is unlawful. Leaderboards must follow Apple Game Center rules.
+
+Disclaimers
+
+RotRun is provided “as is” and “as available.” To the fullest extent permitted by law, we disclaim warranties of merchantability, fitness for a particular purpose, and non-infringement. We do not warrant that blocking, notifications, Health sync, pose tracking, or leaderboards will be uninterrupted, timely, or error-free.
+
+Apple, the App Store, Screen Time, Health, Game Center, and related trademarks are Apple’s. RotRun is not affiliated with or endorsed by Apple except as an independent App Store application.
+
+Limitation of liability
+
+To the fullest extent permitted by law, the developer of RotRun is not liable for indirect, incidental, special, consequential, or punitive damages, or for lost profits, data, or device access, arising from your use of RotRun — including missed messages or work because an app was blocked, inaccurate sit-up or Health data, or Game Center scores.
+
+Our total liability for any claim relating to RotRun will not exceed the amount you paid for RotRun Premium in the twelve months before the claim, or if you paid nothing, the minimum amount required by applicable law.
+
+Some places do not allow certain limitations. In those places, our liability is limited to the maximum extent permitted.
+
+Termination
+
+You may stop using RotRun at any time by deleting the app and cancelling any subscription with Apple. We may stop offering RotRun or particular features. Provisions that should survive (including disclaimers, liability limits, and governing law) remain in effect.
+
+Governing law
+
+These Terms are governed by the laws applicable where the operator of RotRun is established, without regard to conflict-of-law rules. If you are a consumer, mandatory consumer-protection laws in your country of residence still apply and may give you additional rights that these Terms cannot override.
+
+If a court finds a part of these Terms unenforceable, the rest remains in effect.
+
+Changes
+
+We may update these Terms in the app. The “Last updated” date will change. If you continue to use RotRun after an update, the new Terms apply. If you do not agree, stop using the app and cancel any subscription with Apple.
+
+Contact
+
+Questions about these Terms: rotrunsupport@gmail.com.

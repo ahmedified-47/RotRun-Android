@@ -1,0 +1,121 @@
+Last updated: 12 September 2026
+
+Introduction
+
+RotRun is a digital-wellbeing and light fitness app for iPhone. It helps you limit distracting apps with Apple Screen Time, run Focus sessions, score “Brain Health,” complete sit-up “Couch Reset” unlocks, and optionally log runs to Apple Health.
+
+This policy describes the information RotRun processes on your device and through Apple services. RotRun is provided by an independent developer. We do not run a RotRun account system or a RotRun cloud backend for your usage data.
+
+If something is not listed here, we do not collect it.
+
+Information we process
+
+On your device (and in RotRun’s app extensions, via an App Group), RotRun stores settings and activity needed to run the app, including:
+
+• Apps and categories you choose to block or exclude, Focus and Brick lists, and shield state.
+• Screen Time totals and app names Apple’s Device Activity APIs provide, used for stats, Brain Health, XP, and widgets.
+• Focus session state, streak, Brain Health difficulty, theme, app icon, and intervention-style preferences.
+• Brain state such as daily XP, Ask-my-brain counts, and related scores.
+• Whether you have an active RotRun Premium entitlement (product identifier and renewal date from StoreKit), stored locally.
+
+RotRun does not create its own user profile or require you to register an email or password with us.
+
+Screen Time and blocking
+
+With your permission, RotRun uses Apple’s Family Controls, Managed Settings, and Device Activity (Screen Time) APIs. That lets RotRun show usage, apply shields to apps you select, and refresh blocking.
+
+Apple’s Screen Time authorization may ask you to confirm with Face ID or your device passcode. RotRun does not receive biometric templates or Face ID data.
+
+Usage figures and the names of apps you use or try to open are processed on-device and in RotRun’s widget, Device Activity report, and shield extensions. We do not operate a website or server that receives a dashboard of your Screen Time.
+
+Health and fitness
+
+If you grant Apple Health access, RotRun may:
+
+• Read walking and running distance, active energy, and workouts for the current day, to award XP and update Brain Clarity.
+• Write a running workout, walking/running distance, and active energy when you log a run or workout in RotRun, so it can appear in Apple Health.
+
+Workouts may be marked as outdoor running in Health metadata. RotRun does not use Core Location and does not request GPS or precise location permission.
+
+Brain Health is a gamified score based on screen time and related activity. It is not a medical or mental-health diagnosis.
+
+Camera
+
+If you grant camera access, RotRun uses the camera:
+
+• For hands-free sit-up counting (on-device pose detection with Apple’s Vision framework).
+• For FaceTime-style Brain Call interventions that show a live front-camera preview.
+
+Camera frames are processed on the device for those features. RotRun does not record, save, or upload photos or video from the camera.
+
+Notifications, widgets, and Live Activities
+
+RotRun can schedule local notifications (for example Ask-my-brain). These are delivered by iOS on your device. RotRun does not use remote push notifications.
+
+A notification may include the display name of an app you were trying to open, so the intervention can continue.
+
+If you add RotRun widgets or start a Live Activity, they show local data such as Brain Health, rank, XP, and Focus state. That data stays in the App Group on your device.
+
+Game Center
+
+Leaderboards are optional and use Apple Game Center. If you sign in, Apple may share with RotRun your Game Center display name, player identifier, avatar, and scores. RotRun submits Daily XP to Apple’s Game Center leaderboard and can show other players’ public Game Center names, ranks, and photos.
+
+Friend roast tools on the leaderboard use those public names and Daily XP scores only. If you share a receipt, ransom note, audio slap, or duel through the system Share Sheet or iMessage, that share can include a friend’s public Game Center name, their public Daily XP and rank title, and a RotRun link. RotRun does not read another person’s Screen Time and does not keep a friend database on a server. Cameos from those links stay in the App Group on the device that opened the link until local midnight.
+
+Game Center data is governed by Apple’s privacy policy. You can manage Game Center in iOS Settings.
+
+Purchases
+
+RotRun Premium is sold as auto-renewable subscriptions through Apple’s App Store (StoreKit). Apple processes payment. RotRun receives entitlement information such as product identifier, whether the subscription is active, and renewal date. We do not receive your full payment card number.
+
+Apple’s privacy policy applies to App Store billing.
+
+How we use information
+
+We use the information above to:
+
+• Provide blocking, Focus, interventions, stats, widgets, and fitness features you request.
+• Remember your settings and streak rewards.
+• Process Premium purchases through Apple.
+• Respond if you email us.
+
+We do not use your Screen Time, Health, or camera data to serve third-party advertising. We do not currently include third-party analytics, advertising, or crash-reporting SDKs in RotRun.
+
+Sharing
+
+RotRun does not sell your personal information.
+
+Information may be processed by Apple when you use Apple services the app relies on: Screen Time / Family Controls, Apple Health, Game Center, App Store / StoreKit, notifications, widgets, and Live Activities.
+
+If you share a leaderboard roast (receipt, ransom, audio slap, or duel) through iMessage or the Share Sheet, you are sending Game Center public names and scores plus an optional RotRun link to people you choose. RotRun does not operate a social backend for those shares.
+
+If you send Help, Feedback, a bug report, or Contact mail, that message (including any diagnostics you leave in the template, such as app version, iOS version, and device model) goes to rotrunsupport@gmail.com so we can reply. We do not share those emails with advertisers.
+
+Retention
+
+On-device RotRun data remains until you change settings, delete the app, or reset the device. Uninstalling RotRun removes the app’s local store; data you wrote to Apple Health, Game Center, or App Store remains with Apple under Apple’s policies.
+
+Emails you send to rotrunsupport@gmail.com are kept as needed to handle your request and for ordinary correspondence.
+
+Your choices and rights
+
+You can:
+
+• Turn off Screen Time, Health, Camera, or Notifications for RotRun in iOS Settings.
+• Sign out of Game Center or hide your profile through Apple.
+• Cancel or manage RotRun Premium in Apple’s subscription settings (Manage Subscription in the app, or Settings → Apple ID → Subscriptions).
+• Delete the app to remove RotRun’s local data.
+
+Depending on where you live, you may have rights to access, correct, or delete personal information we hold (for example emails you sent us). Contact rotrunsupport@gmail.com. We will not be able to retrieve Screen Time or Health samples that exist only on your device or in Apple’s systems; use iOS and Apple’s tools for those.
+
+Children
+
+RotRun is not directed at children under 13, and we do not knowingly collect personal information from children under 13. Screen Time features are designed for the person who authorizes Family Controls on the device. If you believe a child has sent us personal information, email rotrunsupport@gmail.com and we will delete it from our inbox where reasonably possible.
+
+Changes
+
+We may update this Privacy Policy in the app when RotRun’s practices change. The “Last updated” date at the top of this screen will change. Continued use after an update means the revised policy applies to that use. Material changes will appear in this in-app policy.
+
+Contact
+
+For privacy questions or requests, email rotrunsupport@gmail.com.

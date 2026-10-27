@@ -1,0 +1,12 @@
+<resources>
+    <string name="app_name">RotRun</string>
+    <string name="widget_name">RotRun</string>
+    <string name="widget_description">Brain health and your streak.</string>
+    <color name="meadow">#3DB370</color>
+    <color name="ic_launcher_background">#3DB370</color>
+    <style name="Theme.RotRun" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>
