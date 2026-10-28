@@ -1,5 +1,9 @@
 package com.ahmed.rotrun.data
 
+import com.ahmed.rotrun.logic.CatalogStatus
+import com.ahmed.rotrun.logic.PaywallGate
+import com.ahmed.rotrun.logic.PlayCatalog
+import com.ahmed.rotrun.logic.Products
 import com.ahmed.rotrun.logic.Scoring
 
 enum class OnboardingStep(val raw: Int) {
@@ -48,10 +52,14 @@ enum class OnboardingStep(val raw: Int) {
     fun progress(): Float = if (this == GetAccess) 0.82f else raw / 39f
 
     fun skipped(state: SavedState): Boolean = when (this) {
-        LimitedOffer, ChoosePlan -> true
+        SeeForYourself, ConnectScreenTime, ScreenTimeDialog, LimitedOffer, ChoosePlan -> true
         PurchaseComplete -> !state.premiumActive()
-        GetAccess -> state.premiumActive()
-        OneTimeOffer -> state.premiumActive() || !state.declinedGetAccess || state.skippedOneTimeOffer
+        GetAccess -> !PaywallGate.shows || state.premiumActive() || PlayCatalog.status.value == CatalogStatus.Unavailable
+        OneTimeOffer -> {
+            if (!PaywallGate.shows || state.premiumActive() || state.yearly70Dismissed) true
+            else if (PlayCatalog.status.value == CatalogStatus.Unavailable) true
+            else PlayCatalog.status.value == CatalogStatus.Ready && PlayCatalog.quote(Products.YEARLY70) == null
+        }
         else -> false
     }
 
@@ -90,9 +98,14 @@ data class SavedState(
     val premium: Boolean = false,
     val productId: String? = null,
     val premiumUntil: Long = 0L,
+    val lifetime: Boolean = false,
     val introUsed: Boolean = false,
     val declinedGetAccess: Boolean = false,
     val skippedOneTimeOffer: Boolean = false,
+    val yearly70Dismissed: Boolean = false,
+    val upgradeReminders: Boolean = false,
+    val chatDay: String = "",
+    val chatCount: Int = 0,
     val persona: String? = null,
     val screenTimeAffect: String? = null,
     val triedReduce: String? = null,
@@ -131,9 +144,9 @@ data class SavedState(
     val duelUntil: Long = 0L,
     val lastAskToken: Long = 0L,
     val bailoutFrom: String = "",
-    val workoutsLogged: Int = 0,
 ) {
-    fun premiumActive(now: Long = System.currentTimeMillis()): Boolean = premium && premiumUntil > now
+    fun premiumActive(now: Long = System.currentTimeMillis()): Boolean =
+        premium && (lifetime || productId == Products.LIFETIME || premiumUntil > now)
 
     fun cameoToday(day: String = Scoring.dayKey()): Boolean = cameoName.isNotBlank() && cameoDay == day
 

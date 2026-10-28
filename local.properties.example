@@ -1,0 +1,7 @@
+sdk.dir=/Users/you/Library/Android/sdk
+# Same value as iOS SupabaseConfig.anonKey. Publishable key only. Never a service-role key.
+SUPABASE_PUBLISHABLE_KEY=
+# Web client ID from an existing Google Cloud OAuth client. Leave blank until Ahmed adds one.
+GOOGLE_WEB_CLIENT_ID=
+# Set false to ship a test build with the paywall and premium gates off.
+# rotrun.showPaywall=false

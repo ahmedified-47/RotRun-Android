@@ -28,8 +28,14 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        if (RotRunGraph.ready()) RotRunGraph.repo.attach(this)
         handle(intent)
         setContent { RotRunTheme { RotRunRoot(RotRunGraph.repo) } }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (RotRunGraph.ready()) RotRunGraph.repo.attach(this)
     }
 
     override fun onNewIntent(intent: Intent) {

@@ -38,6 +38,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -333,14 +334,15 @@ private fun Mirror(friend: String?, onDismiss: () -> Unit, onUnlock: (Int) -> Un
                 context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:${context.packageName}")))
             })
         } else {
-            Text("YOU", modifier = Modifier.padding(8.dp).clip(RoundedCornerShape(16.dp)).background(Color.Black).padding(24.dp), color = Color.White)
+            MirrorPreview(Modifier.padding(8.dp).fillMaxWidth().height(220.dp).clip(RoundedCornerShape(16.dp)))
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Pill("Decline") { onDismiss() }
             Pill("Accept") { accepted = true }
         }
     } else {
-        Text("YOU", color = Color.White, modifier = Modifier.clip(RoundedCornerShape(16.dp)).background(Color.Black).padding(20.dp))
+        if (granted) MirrorPreview(Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(16.dp)))
+        else Text("YOU", color = Color.White, modifier = Modifier.clip(RoundedCornerShape(16.dp)).background(Color.Black).padding(20.dp))
         if (step == 1) {
             Bubble("You really wanna keep scrolling?")
             Pill("Nah, you're right") { onDismiss() }
@@ -351,6 +353,32 @@ private fun Mirror(friend: String?, onDismiss: () -> Unit, onUnlock: (Int) -> Un
             Pill("Actually, never mind") { onDismiss() }
         }
     }
+}
+
+@Composable
+private fun MirrorPreview(modifier: Modifier) {
+    val owner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    AndroidView(
+        modifier = modifier,
+        factory = { ctx ->
+            val view = androidx.camera.view.PreviewView(ctx)
+            val future = androidx.camera.lifecycle.ProcessCameraProvider.getInstance(ctx)
+            future.addListener({
+                val provider = future.get()
+                val preview = androidx.camera.core.Preview.Builder().build()
+                preview.surfaceProvider = view.surfaceProvider
+                runCatching {
+                    provider.unbindAll()
+                    provider.bindToLifecycle(
+                        owner,
+                        androidx.camera.core.CameraSelector.DEFAULT_FRONT_CAMERA,
+                        preview,
+                    )
+                }
+            }, androidx.core.content.ContextCompat.getMainExecutor(ctx))
+            view
+        },
+    )
 }
 
 @Composable

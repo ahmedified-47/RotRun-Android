@@ -1,12 +1,14 @@
 <resources>
     <string name="app_name">RotRun</string>
     <string name="widget_name">RotRun</string>
-    <string name="widget_description">Brain health and your streak.</string>
+    <string name="widget_description">Brain health and top offenders.</string>
+    <string name="accessibility_disclosure">RotRun uses Accessibility to see which app is in front and show your block screen for apps you chose. It does not read what you type and it does not record the screen.</string>
     <color name="meadow">#3DB370</color>
     <color name="ic_launcher_background">#3DB370</color>
     <style name="Theme.RotRun" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowBackground">@drawable/splash_window</item>
     </style>
 </resources>

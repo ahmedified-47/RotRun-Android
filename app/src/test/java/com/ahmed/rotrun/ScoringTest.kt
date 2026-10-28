@@ -47,8 +47,16 @@ class ScoringTest {
     }
 
     @Test
-    fun yearlySavePercentMatchesStoreKitPrices() {
-        assertEquals(5, Scoring.savePercent(Products.YEARLY_CENTS))
+    fun savePercentUsesTwelveMonthsOfTheMonthlyPrice() {
+        assertEquals(50, Scoring.savePercent(1_000_000L, 6_000_000L))
+        assertEquals(0, Scoring.savePercent(1_000_000L, 12_000_000L))
+        assertEquals(70, Scoring.discountPercent(10_000_000L, 3_000_000L))
+    }
+
+    @Test
+    fun oneAndAHalfHoursAtMediumIsSeventyFive() {
+        assertEquals(75, Scoring.drainHealth((1.5 * 3600).toLong(), BrainHealthLevel.Medium))
+        assertEquals("Holding steady", Scoring.caption(75))
     }
 
     @Test

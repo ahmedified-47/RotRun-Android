@@ -22,7 +22,7 @@ import com.ahmed.rotrun.logic.InterventionCopy
 
 object WatchController {
     fun sync(context: Context, state: SavedState) {
-        val watching = state.focus != null || brickHasApps(state)
+        val watching = state.focus != null || state.blockers.any { it.apps.isNotEmpty() } || state.appLists.any { it.apps.isNotEmpty() }
         val intent = Intent(context, BlockWatchService::class.java)
         if (watching) {
             if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(intent) else context.startService(intent)
@@ -52,7 +52,7 @@ class BlockWatchService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startInForeground()
+        startInForeground("RotRun is watching the apps you chose.")
         handler.removeCallbacks(tick)
         handler.post(tick)
         return START_STICKY
@@ -63,8 +63,8 @@ class BlockWatchService : Service() {
         super.onDestroy()
     }
 
-    private fun startInForeground() {
-        val notification = buildNotification("RotRun is watching the apps you chose.")
+    private fun startInForeground(text: String = "RotRun is watching the apps you chose.") {
+        val notification = buildNotification(text)
         if (Build.VERSION.SDK_INT >= 34) {
             startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         } else {
@@ -76,6 +76,15 @@ class BlockWatchService : Service() {
         if (!RotRunGraph.ready()) return
         val repo = RotRunGraph.repo
         repo.maybeExpireFocus()
+        val focus = repo.state.value.focus
+        val watching = if (focus == null) {
+            "RotRun is watching the apps you chose."
+        } else {
+            val elapsed = System.currentTimeMillis() - focus.startedAt
+            val left = focus.targetMinutes?.let { (it * 60_000L - elapsed).coerceAtLeast(0) }
+            if (left == null) "Focus is running" else "Focus · ${left / 60_000}m left"
+        }
+        startInForeground(watching)
         val packageName = UsageReader.foreground(this) ?: return
         if (!repo.isBlocked(packageName, repo.safetyPackages())) return
         val now = System.currentTimeMillis()

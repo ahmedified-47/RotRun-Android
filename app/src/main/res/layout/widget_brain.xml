@@ -30,6 +30,19 @@
         android:text="Looking sharp today"
         android:textColor="#E6FFFFFF" />
 
+    <ImageView
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:contentDescription="@string/app_name"
+        android:src="@drawable/rot_mascot" />
+
+    <TextView
+        android:id="@+id/widget_offenders"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Not in yet"
+        android:textColor="#FFFFFF" />
+
     <TextView
         android:id="@+id/widget_streak"
         android:layout_width="wrap_content"

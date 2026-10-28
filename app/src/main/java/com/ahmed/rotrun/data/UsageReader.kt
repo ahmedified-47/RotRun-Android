@@ -117,6 +117,14 @@ object UsageReader {
         return packages
     }
 
+    fun todaySeconds(context: Context, packageName: String): Long {
+        if (!hasAccess(context)) return 0L
+        val manager = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager ?: return 0L
+        val start = LocalDate.now().atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        val stats = manager.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, start, System.currentTimeMillis()).orEmpty()
+        return (stats.firstOrNull { it.packageName == packageName }?.totalTimeInForeground ?: 0L) / 1000L
+    }
+
     fun label(context: Context, packageName: String): String = runCatching {
         val info = context.packageManager.getApplicationInfo(packageName, 0)
         context.packageManager.getApplicationLabel(info).toString()

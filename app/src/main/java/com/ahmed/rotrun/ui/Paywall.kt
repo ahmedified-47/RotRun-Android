@@ -25,10 +25,12 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ahmed.rotrun.data.SavedState
+import com.ahmed.rotrun.logic.PlayCatalog
 import com.ahmed.rotrun.logic.Products
 import com.ahmed.rotrun.logic.Scoring
 
@@ -70,17 +72,10 @@ fun GetAccessPaywall(
         )
         if (settingsStyle) {
             Text(
-                "Plans renew automatically until you cancel. Prices match RotRun’s App Store plans.",
+                "Free includes 3 chats with Rot a day. Voice is Premium. Prices come from Google Play.",
                 color = Melt.Muted,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(top = 8.dp, start = 12.dp, end = 12.dp),
-            )
-            Text(
-                "This Android build saves Premium on your device until Google Play products are connected.",
-                color = Melt.Muted,
-                fontSize = 12.sp,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(top = 6.dp),
             )
         }
         Spacer(Modifier.height(16.dp))
@@ -89,10 +84,12 @@ fun GetAccessPaywall(
             Text("Current plan: ${Products.planName(state.productId ?: Products.YEARLY)}", color = Melt.Muted)
             Spacer(Modifier.height(8.dp))
         }
-        val plans = if (settingsStyle) listOf(Products.YEARLY, Products.YEARLY70, Products.MONTHLY) else listOf(Products.YEARLY, Products.MONTHLY)
-        plans.forEach { id ->
-            PlanCard(id, selected == id, state.introUsed) { onSelect(id) }
-            Spacer(Modifier.height(10.dp))
+        val plans = listOf(Products.YEARLY, Products.MONTHLY, Products.LIFETIME)
+        if (!state.lifetime) {
+            plans.forEach { id ->
+                PlanCard(id, selected == id) { onSelect(id) }
+                Spacer(Modifier.height(10.dp))
+            }
         }
         if (showDiscountLink) {
             Text(
@@ -108,17 +105,20 @@ fun GetAccessPaywall(
         if (!settingsStyle) {
             FeatureRow("🔒", Melt.Orange, "Block unlimited apps", "Create custom schedules for different app categories")
             FeatureRow("📅", Melt.Action, "Track your progress", "Get detailed weekly reports showing your improvement")
-            FeatureRow("🧠", Melt.BrainPink, "Personalized brain score", "See how your digital habits affect cognitive health")
+            FeatureRow("", Melt.BrainPink, "Personalized brain score", "See how your digital habits affect cognitive health", mascot = true)
         }
-        val title = when {
-            settingsStyle && state.premiumActive() && state.productId == selected -> "Current Plan"
-            settingsStyle && state.premiumActive() -> "Change Plan"
-            settingsStyle -> "Subscribe"
-            selected == Products.MONTHLY -> "Unlock monthly"
-            else -> "Unlock yearly"
+        if (!state.lifetime) {
+            val title = when {
+                settingsStyle && state.premiumActive() && state.productId == selected -> "Current Plan"
+                settingsStyle && state.premiumActive() -> "Change Plan"
+                settingsStyle -> "Subscribe"
+                selected == Products.MONTHLY -> "Unlock monthly"
+                selected == Products.LIFETIME -> "Unlock lifetime"
+                else -> "Unlock yearly"
+            }
+            val locked = settingsStyle && state.premiumActive() && state.productId == selected
+            PrimaryButton(title, enabled = !locked) { if (!locked) onPurchase(selected) }
         }
-        val locked = settingsStyle && state.premiumActive() && state.productId == selected
-        PrimaryButton(title, enabled = !locked) { if (!locked) onPurchase(selected) }
         Text(
             "Restore Purchases",
             color = Melt.Action,
@@ -162,27 +162,25 @@ fun OneTimeOffer(
                 ) { Text("✕", fontWeight = FontWeight.Bold, fontSize = 14.sp) }
             }
         }
-        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(
-                Scoring.usd(Products.YEARLY_CENTS),
-                color = Melt.Muted,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.SemiBold,
-                textDecoration = TextDecoration.LineThrough,
-            )
-            Text(Scoring.usd(Products.YEARLY70_INTRO_CENTS), fontWeight = FontWeight.Bold, fontSize = 34.sp)
+        val offer = PlayCatalog.quote(Products.YEARLY70)
+        val yearly = PlayCatalog.quote(Products.YEARLY)
+        val regularMicros = yearly?.renewalMicros ?: yearly?.priceMicros
+        val off = if (offer != null && regularMicros != null) Scoring.discountPercent(regularMicros, offer.priceMicros) else 0
+        Text(offer?.formattedPrice ?: "Price from Google Play", fontWeight = FontWeight.Bold, fontSize = 34.sp)
+        Text("A one-time yearly offer", color = Melt.Muted, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+        Text("This offer shows once. Prices come from Google Play.", color = Melt.Muted, fontSize = 14.sp)
+        if (offer?.renewalFormatted != null) {
+            Text("then ${offer.renewalFormatted}${Products.periodLabel(Products.YEARLY70)}", color = Melt.Muted, fontSize = 14.sp)
         }
-        Text("70% off the first year", color = Melt.Muted, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-        Text("then ${Scoring.usd(Products.YEARLY_CENTS)}/year", color = Melt.Muted, fontSize = 14.sp)
-        Text(
-            "70% OFF",
+        if (off > 0) Text(
+            "$off% OFF",
             color = Color.White,
             fontWeight = FontWeight.Black,
             fontSize = 13.sp,
             modifier = Modifier.padding(top = 12.dp).rotate(-6f).clip(CircleShape).background(Melt.Orange).padding(horizontal = 14.dp, vertical = 6.dp),
         )
         CartoonBrain(BrainStyle.Meadow, Modifier.padding(top = 8.dp).size(88.dp), animated = false)
-        Text("70% off your first year", fontWeight = FontWeight.Bold, fontSize = 22.sp, textAlign = TextAlign.Center)
+        Text(if (off > 0) "$off% off your first year" else "A one-time yearly offer", fontWeight = FontWeight.Bold, fontSize = 22.sp, textAlign = TextAlign.Center)
         Text(
             "Pay up front for the first year. Then it renews automatically.",
             color = Melt.Muted,
@@ -203,9 +201,13 @@ fun OneTimeOffer(
             Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("Yearly", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                    Text("then ${Scoring.usd(Products.YEARLY_CENTS)}/year", color = Melt.Muted, fontSize = 13.sp)
+                    Text(
+                        offer?.renewalFormatted?.let { "then $it${Products.periodLabel(Products.YEARLY70)}" } ?: "Prices come from Google Play",
+                        color = Melt.Muted,
+                        fontSize = 13.sp,
+                    )
                 }
-                Text(Scoring.usd(Products.YEARLY70_INTRO_CENTS), fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Text(offer?.formattedPrice ?: "—", fontWeight = FontWeight.Bold, fontSize = 18.sp)
             }
         }
         Text("Cancel anytime • Money back guarantee", color = Melt.Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 12.dp))
@@ -228,27 +230,21 @@ fun OneTimeOffer(
 }
 
 @Composable
-private fun PlanCard(id: String, selected: Boolean, introUsed: Boolean, onClick: () -> Unit) {
-    val intro = !introUsed && (id == Products.YEARLY || id == Products.YEARLY70)
-    val cents = when {
-        id == Products.MONTHLY -> Products.MONTHLY_CENTS
-        id == Products.YEARLY70 && intro -> Products.YEARLY70_INTRO_CENTS
-        id == Products.YEARLY && intro -> Products.YEARLY_INTRO_CENTS
-        else -> Products.YEARLY_CENTS
-    }
-    val price = when (id) {
-        Products.MONTHLY -> "${Scoring.usd(cents)}/mo"
-        else -> Scoring.usd(cents)
-    }
+private fun PlanCard(id: String, selected: Boolean, onClick: () -> Unit) {
+    val plans by PlayCatalog.plans.collectAsState()
+    val quote = plans[id]
+    val monthly = plans[Products.MONTHLY]
+    val price = quote?.let { it.formattedPrice + Products.periodLabel(id) } ?: "Price from Google Play"
     val subtitle = when {
         id == Products.MONTHLY -> "Billed every month"
-        intro -> "then ${Scoring.usd(Products.YEARLY_CENTS)}/year"
-        else -> "12 months • ${Scoring.usd(Products.YEARLY_CENTS)}"
+        id == Products.LIFETIME -> "One-time purchase. Does not renew."
+        quote?.renewalFormatted != null -> "then ${quote.renewalFormatted}${Products.periodLabel(id)}"
+        else -> "Billed yearly"
     }
-    val badge = if (id == Products.MONTHLY || !intro) {
-        Scoring.savePercent(Products.YEARLY_CENTS)
+    val badge = if (id == Products.YEARLY && quote != null && monthly != null) {
+        Scoring.savePercent(monthly.priceMicros, quote.priceMicros)
     } else {
-        ((Products.YEARLY_CENTS - cents) * 100.0 / Products.YEARLY_CENTS).toInt()
+        0
     }
     Column(
         Modifier
@@ -278,9 +274,13 @@ private fun PlanCard(id: String, selected: Boolean, introUsed: Boolean, onClick:
 }
 
 @Composable
-private fun FeatureRow(symbol: String, tint: Color, title: String, body: String) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp)) {
-        Text(symbol, color = tint, fontSize = 22.sp, modifier = Modifier.width(32.dp))
+private fun FeatureRow(symbol: String, tint: Color, title: String, body: String, mascot: Boolean = false) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (mascot) {
+            CartoonBrain(BrainStyle.Meadow, Modifier.padding(end = 8.dp).size(32.dp), animated = false)
+        } else {
+            Text(symbol, color = tint, fontSize = 22.sp, modifier = Modifier.width(32.dp))
+        }
         Column {
             Text(title, fontWeight = FontWeight.Bold, fontSize = 17.sp)
             Text(body, color = Melt.Muted, fontSize = 14.sp)

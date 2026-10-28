@@ -41,10 +41,11 @@ import com.ahmed.rotrun.logic.Scoring
 import java.time.LocalTime
 
 @Composable
-fun HomeScreen(state: SavedState, usage: UsageSnapshot, refreshing: Boolean, onRefresh: () -> Unit, onConnect: () -> Unit) {
+fun HomeScreen(state: SavedState, usage: UsageSnapshot, refreshing: Boolean, onRefresh: () -> Unit, onTalk: () -> Unit, onConnect: () -> Unit) {
     val look = Looks.byId(state.theme)
     val scenic = sceneFor(state.theme) != null
     val level = BrainHealthLevel.fromLabel(state.brainHealth)
+    val scored = usage.authorized && usage.drainSeconds >= 60
     val health = Scoring.displayedHealth(Scoring.drainHealth(usage.drainSeconds, level), state.focusMinutesToday(), level.restoreMinutes)
     val style = when (health) {
         in 65..100 -> look.brain
@@ -57,7 +58,7 @@ fun HomeScreen(state: SavedState, usage: UsageSnapshot, refreshing: Boolean, onR
         Box(Modifier.fillMaxWidth().height(brainSize + 78.dp)) {
             if (scenic) HeroBackdrop(state.theme, Modifier.fillMaxWidth().fillMaxHeight())
             Column(Modifier.fillMaxWidth()) {
-                HomeHeader(state.streak.coerceAtLeast(1), refreshing, scenic, on, onRefresh)
+                HomeHeader(state.streak.coerceAtLeast(1), refreshing, scenic, on, onRefresh, onTalk)
                 Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
                     CartoonBrain(style, Modifier.size(brainSize), animated = false)
                 }
@@ -72,15 +73,15 @@ fun HomeScreen(state: SavedState, usage: UsageSnapshot, refreshing: Boolean, onR
                 letterSpacing = 1.3.sp,
             )
             Text(
-                "$health%",
+                if (scored) "$health%" else "Not in yet",
                 color = if (scenic) Color.Black else Melt.Ink,
                 fontWeight = FontWeight.Black,
-                fontSize = 60.sp,
+                fontSize = if (scored) 60.sp else 36.sp,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth(),
             )
             Text(
-                Scoring.caption(health),
+                if (scored) Scoring.caption(health) else "Waiting on a real reading",
                 color = if (scenic) Color.White.copy(alpha = 0.9f) else Melt.Muted,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 15.sp,
@@ -97,17 +98,18 @@ fun HomeScreen(state: SavedState, usage: UsageSnapshot, refreshing: Boolean, onR
             }
         }
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            MetricCard("Screen Time", Scoring.formatDuration(usage.todaySeconds), MetricKind.Screen, Modifier.weight(1f))
-            MetricCard("Pickups", usage.pickups.toString(), MetricKind.Pickups, Modifier.weight(1f))
-            MetricCard("Focus Time", Scoring.formatDuration(state.focusMinutesToday() * 60L), MetricKind.Focus, Modifier.weight(1f))
+            MetricCard("Screen Time", Scoring.visibleDuration(usage.todaySeconds), MetricKind.Screen, Modifier.weight(1f))
+            MetricCard("Pickups", Scoring.visibleCount(usage.pickups), MetricKind.Pickups, Modifier.weight(1f))
+            MetricCard("Focus Time", Scoring.visibleDuration(state.focusMinutesToday() * 60L), MetricKind.Focus, Modifier.weight(1f))
         }
         Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             SectionTitle("Top Offenders", scenic)
             RaisedCard {
-                if (usage.offenders.isEmpty()) {
-                    Text("No app usage yet today", color = Color.White.copy(alpha = 0.85f), fontWeight = FontWeight.Medium, modifier = Modifier.padding(16.dp))
+                val offenders = usage.offenders.filter { it.seconds >= 60 }
+                if (offenders.isEmpty()) {
+                    Text("Not in yet", color = Color.White.copy(alpha = 0.85f), fontWeight = FontWeight.Medium, modifier = Modifier.padding(16.dp))
                 } else {
-                    usage.offenders.forEachIndexed { index, app ->
+                    offenders.forEachIndexed { index, app ->
                         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                             AppDot(app.label)
                             Column(Modifier.padding(start = 12.dp).weight(1f)) {
@@ -116,7 +118,7 @@ fun HomeScreen(state: SavedState, usage: UsageSnapshot, refreshing: Boolean, onR
                             }
                             Text(Scoring.formatDuration(app.seconds), color = Color.White, fontWeight = FontWeight.SemiBold)
                         }
-                        if (index < usage.offenders.lastIndex) {
+                        if (index < offenders.lastIndex) {
                             Box(Modifier.padding(start = 64.dp).fillMaxWidth().height(1.dp).background(Color.White.copy(alpha = 0.12f)))
                         }
                     }
@@ -127,9 +129,9 @@ fun HomeScreen(state: SavedState, usage: UsageSnapshot, refreshing: Boolean, onR
                 Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(Scoring.paceLine(usage.aheadOfPace), color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Legend(Melt.Orange, "Today", Scoring.formatDuration(usage.todaySeconds), Melt.Orange)
+                        Legend(Melt.Orange, "Today", Scoring.visibleDuration(usage.todaySeconds), Melt.Orange)
                         Spacer(Modifier.weight(1f))
-                        Legend(Color.White, "Average", Scoring.formatDuration(usage.avgSeconds), Color.White)
+                        Legend(Color.White, "Average", Scoring.visibleDuration(usage.avgSeconds), Color.White)
                     }
                     TrendChart(usage.hourlyToday, usage.hourlyAvg, Modifier.fillMaxWidth().height(120.dp))
                 }
@@ -137,8 +139,8 @@ fun HomeScreen(state: SavedState, usage: UsageSnapshot, refreshing: Boolean, onR
             RaisedCard {
                 Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     Text(Scoring.comparisonLine(usage.todaySeconds, usage.avgSeconds, usage.diffPercent, usage.belowAverage), color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
-                    CompareBar(Scoring.formatDuration(usage.todaySeconds), "Today", usage.todaySeconds, usage.avgSeconds, Melt.Orange)
-                    CompareBar(Scoring.formatDuration(usage.avgSeconds), "7-day avg", usage.avgSeconds, usage.avgSeconds, Color.White.copy(alpha = 0.38f))
+                    CompareBar(Scoring.visibleDuration(usage.todaySeconds), "Today", usage.todaySeconds, usage.avgSeconds, Melt.Orange)
+                    CompareBar(Scoring.visibleDuration(usage.avgSeconds), "7-day avg", usage.avgSeconds, usage.avgSeconds, Color.White.copy(alpha = 0.38f))
                 }
             }
             RaisedCard {
@@ -172,10 +174,11 @@ fun HomeScreen(state: SavedState, usage: UsageSnapshot, refreshing: Boolean, onR
 }
 
 @Composable
-private fun HomeHeader(streak: Int, refreshing: Boolean, scenic: Boolean, on: Color, onRefresh: () -> Unit) {
+private fun HomeHeader(streak: Int, refreshing: Boolean, scenic: Boolean, on: Color, onRefresh: () -> Unit, onTalk: () -> Unit) {
     Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
         Text("ROTRUN", color = on, fontWeight = FontWeight.Black, fontSize = 30.sp, modifier = Modifier.align(Alignment.Center))
         Row(Modifier.align(Alignment.CenterStart), verticalAlignment = Alignment.CenterVertically) {
+            Text("Talk", color = on, fontWeight = FontWeight.Bold, modifier = Modifier.padding(end = 8.dp).clickable(onClick = onTalk))
             Icon(
                 Icons.Default.Refresh,
                 contentDescription = "Refresh",

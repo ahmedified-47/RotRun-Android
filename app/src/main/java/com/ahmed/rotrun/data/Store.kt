@@ -1,10 +1,17 @@
 package com.ahmed.rotrun.data
 
+import android.app.Activity
 import android.content.Context
+import com.ahmed.rotrun.billing.PlayBilling
+import com.ahmed.rotrun.logic.PaywallGate
 import com.ahmed.rotrun.logic.Products
 import com.ahmed.rotrun.logic.Scoring
+import com.ahmed.rotrun.watch.BlockScheduler
 import com.ahmed.rotrun.watch.WatchController
+import com.ahmed.rotrun.watch.scheduleCovers
 import com.ahmed.rotrun.widget.BrainWidgetProvider
+import java.lang.ref.WeakReference
+import java.time.ZonedDateTime
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -24,6 +31,8 @@ import java.time.ZoneId
 sealed interface UiPulse {
     data object OpenFocusChooser : UiPulse
     data object ShowAudioSlap : UiPulse
+    data object OpenPaywall : UiPulse
+    data object OpenChat : UiPulse
 }
 
 class RotRunRepository(context: Context) {
@@ -49,6 +58,17 @@ class RotRunRepository(context: Context) {
 
     private val _pulses = MutableSharedFlow<UiPulse>(extraBufferCapacity = 8)
     val pulses: SharedFlow<UiPulse> = _pulses.asSharedFlow()
+    private var host: WeakReference<Activity>? = null
+    val backend = Backend(app, this)
+    private val billing = PlayBilling(app, ::applyEntitlement, ::toast)
+
+    fun attach(activity: Activity) {
+        host = WeakReference(activity)
+    }
+
+    fun requestPaywall() {
+        if (PaywallGate.shows) _pulses.tryEmit(UiPulse.OpenPaywall)
+    }
 
     fun clearToast() {
         _toast.value = null
@@ -63,16 +83,21 @@ class RotRunRepository(context: Context) {
             var next = rollDay(current)
             next = expireFocus(next)
             next = clampRewards(next)
-            if (!next.onboardingCompleted) {
-                val step = OnboardingStep.fromRaw(next.onboardingStep)
-                if (!next.premiumActive() && step.raw > OnboardingStep.OneTimeOffer.raw) {
-                    next = next.copy(pendingResumeStep = step.raw, onboardingStep = OnboardingStep.GetAccess.raw)
-                }
-            }
             next
         }
+        billing.start()
+        backend.restore()
+        BlockScheduler.scheduleNext(app, _state.value)
+        com.ahmed.rotrun.watch.RefreshWork.enqueue(app)
         refreshUsage()
         loadInstalled()
+    }
+
+    fun onForeground() {
+        refreshUsage()
+        billing.start()
+        com.ahmed.rotrun.watch.UpgradeReminders.sync(app, _state.value)
+        com.ahmed.rotrun.watch.RotNudges.consider(app, this)
     }
 
     fun refreshUsage() {
@@ -108,44 +133,62 @@ class RotRunRepository(context: Context) {
     fun back() = update { stepBack(it) }
 
     fun declineAccess() = update { current ->
-        if (current.skippedOneTimeOffer) current
-        else current.copy(declinedGetAccess = true, onboardingStep = OnboardingStep.OneTimeOffer.raw)
+        val offerMissing = OnboardingStep.OneTimeOffer.skipped(current.copy(yearly70Dismissed = false, premium = false))
+        if (current.yearly70Dismissed || offerMissing) {
+            stepForward(current.copy(declinedGetAccess = true, onboardingStep = OnboardingStep.OneTimeOffer.raw))
+        } else {
+            current.copy(declinedGetAccess = true, onboardingStep = OnboardingStep.OneTimeOffer.raw)
+        }
     }
 
-    fun leaveOffer() = update { it.copy(skippedOneTimeOffer = true, onboardingStep = OnboardingStep.GetAccess.raw) }
+    fun leaveOffer() = update { current ->
+        val marked = current.copy(yearly70Dismissed = true, skippedOneTimeOffer = true, declinedGetAccess = true)
+        stepForward(marked.copy(onboardingStep = OnboardingStep.OneTimeOffer.raw))
+    }
+
+    fun dismissYearly70() = update { it.copy(yearly70Dismissed = true, skippedOneTimeOffer = true) }
 
     fun purchase(productId: String) {
-        update { current ->
-            val days = if (productId == Products.MONTHLY) 30L else 365L
-            val until = System.currentTimeMillis() + days * 24L * 60L * 60L * 1000L
-            var next = current.copy(
-                premium = true,
-                productId = productId,
-                premiumUntil = until,
-                introUsed = true,
-            )
-            if (!next.onboardingCompleted) {
-                val pending = next.pendingResumeStep
-                next = if (pending != null) {
-                    next.copy(onboardingStep = pending, pendingResumeStep = null)
-                } else {
-                    stepForward(next)
-                }
-            }
-            next
+        val activity = host?.get()
+        if (activity == null) {
+            toast("Open RotRun and try that purchase again.")
+            return
         }
-        toast("RotRun Premium is on.")
+        billing.buy(activity, productId)
     }
 
-    fun restore() {
-        val active = _state.value.premiumActive()
-        toast(
-            if (active) "Purchases restored."
-            else "No active RotRun Premium purchase found for this account.",
-        )
+    fun restore() = billing.restore()
+
+    private fun applyEntitlement(productId: String?, lifetime: Boolean, active: Boolean) {
+        update { current ->
+            if (!active) {
+                current.copy(premium = false, lifetime = false, productId = null, premiumUntil = 0L)
+            } else {
+                val next = current.copy(
+                    premium = true,
+                    lifetime = lifetime,
+                    productId = productId,
+                    premiumUntil = if (lifetime) Long.MAX_VALUE / 4 else System.currentTimeMillis() + 400L * 24 * 60 * 60 * 1000,
+                )
+                if (!next.onboardingCompleted && OnboardingStep.fromRaw(next.onboardingStep).let {
+                        it == OnboardingStep.GetAccess || it == OnboardingStep.OneTimeOffer || it == OnboardingStep.PurchaseComplete
+                    }
+                ) {
+                    stepForward(next.copy(onboardingStep = OnboardingStep.PurchaseComplete.raw - 1))
+                } else {
+                    next
+                }
+            }
+        }
+        if (active) toast("RotRun Premium is on.")
     }
 
     fun saveBlocker(blocker: Blocker) {
+        if (overFreeCap(blocker.apps.map { it.packageName }.toSet(), exceptBlocker = blocker.id, exceptList = if (blocker.id == "brick") blocker.appListId else null)) {
+            toast("Free includes 1 blocked app. Premium blocks unlimited apps.")
+            requestPaywall()
+            return
+        }
         update { current ->
             val without = current.blockers.filterNot { it.id == blocker.id }
             val lists = if (blocker.id == "brick") {
@@ -169,6 +212,11 @@ class RotRunRepository(context: Context) {
     }
 
     fun saveList(list: AppList) {
+        if (overFreeCap(list.apps.map { it.packageName }.toSet(), exceptList = list.id)) {
+            toast("Free includes 1 blocked app. Premium blocks unlimited apps.")
+            requestPaywall()
+            return
+        }
         update { current ->
             val lists = current.appLists.toMutableList()
             val index = lists.indexOfFirst { it.id == list.id }
@@ -256,11 +304,6 @@ class RotRunRepository(context: Context) {
 
     fun connectPlayGames() = update { it.copy(playGamesConnected = true) }
 
-    fun logWorkout() {
-        update { it.copy(workoutsLogged = it.workoutsLogged + 1) }
-        toast("Saved on this device")
-    }
-
     fun requestFocusChooser() {
         _pulses.tryEmit(UiPulse.OpenFocusChooser)
     }
@@ -286,7 +329,36 @@ class RotRunRepository(context: Context) {
         if (focus != null) {
             return if (focus.scope == "brainrot") brainrotPackages(current).contains(packageName) else true
         }
-        return brickPackages(current).contains(packageName)
+        val now = ZonedDateTime.now()
+        val seconds = UsageReader.todaySeconds(app, packageName)
+        return current.blockers.any { blocker ->
+            val apps = if (blocker.apps.isNotEmpty()) blocker.apps else {
+                current.appLists.firstOrNull { it.id == blocker.appListId }?.apps.orEmpty()
+            }
+            if (apps.none { it.packageName == packageName }) return@any false
+            when (blocker.mode) {
+                "schedule" -> scheduleCovers(blocker, now)
+                "dailyLimit" -> scheduleCovers(blocker.copy(mode = "allDay"), now) && seconds >= blocker.limitMinutes * 60L
+                else -> scheduleCovers(blocker.copy(mode = "allDay"), now)
+            }
+        }
+    }
+
+    private fun overFreeCap(proposed: Set<String>, exceptBlocker: String? = null, exceptList: String? = null): Boolean {
+        if (!PaywallGate.shows || _state.value.premiumActive()) return false
+        val current = _state.value
+        val excluded = current.excluded.map { it.packageName }.toSet()
+        val existing = buildSet {
+            current.blockers.forEach { blocker ->
+                if (blocker.id == exceptBlocker) return@forEach
+                addAll(blocker.apps.map { it.packageName })
+            }
+            current.appLists.forEach { list ->
+                if (list.id == exceptList) return@forEach
+                addAll(list.apps.map { it.packageName })
+            }
+        } - excluded
+        return ((existing + proposed) - excluded).size > 1
     }
 
     fun safetyPackages(): Set<String> = UsageReader.safetyPackages(app)
@@ -341,10 +413,15 @@ class RotRunRepository(context: Context) {
         val current = _state.value
         val level = com.ahmed.rotrun.logic.BrainHealthLevel.fromLabel(current.brainHealth)
         val drain = Scoring.drainHealth(_usage.value.drainSeconds, level)
+        val known = _usage.value.authorized && _usage.value.drainSeconds >= 60
         val health = Scoring.displayedHealth(drain, current.focusMinutesToday(), level.restoreMinutes)
+        val offenders = _usage.value.offenders.filter { it.seconds >= 60 }.take(3)
+            .joinToString("\n") { "${it.label}  ${Scoring.formatDuration(it.seconds)}" }
         prefs.edit()
+            .putBoolean("widget_known", known)
             .putInt("widget_health", health)
-            .putString("widget_caption", Scoring.caption(health))
+            .putString("widget_caption", if (known) Scoring.caption(health) else "Not in yet")
+            .putString("widget_offenders", offenders.ifBlank { "Not in yet" })
             .putInt("widget_streak", current.streak)
             .apply()
         BrainWidgetProvider.updateAll(app)
@@ -366,9 +443,14 @@ class RotRunRepository(context: Context) {
         put("premium", state.premium)
         put("productId", state.productId ?: "")
         put("premiumUntil", state.premiumUntil)
+        put("lifetime", state.lifetime)
         put("introUsed", state.introUsed)
         put("declinedGetAccess", state.declinedGetAccess)
         put("skippedOneTimeOffer", state.skippedOneTimeOffer)
+        put("yearly70Dismissed", state.yearly70Dismissed)
+        put("upgradeReminders", state.upgradeReminders)
+        put("chatDay", state.chatDay)
+        put("chatCount", state.chatCount)
         put("persona", state.persona ?: "")
         put("screenTimeAffect", state.screenTimeAffect ?: "")
         put("triedReduce", state.triedReduce ?: "")
@@ -407,7 +489,6 @@ class RotRunRepository(context: Context) {
         put("duelUntil", state.duelUntil)
         put("lastAskToken", state.lastAskToken)
         put("bailoutFrom", state.bailoutFrom)
-        put("workoutsLogged", state.workoutsLogged)
     }
 
     private fun decode(json: JSONObject): SavedState {
@@ -422,9 +503,14 @@ class RotRunRepository(context: Context) {
             premium = json.optBoolean("premium"),
             productId = json.optString("productId").ifBlank { null },
             premiumUntil = json.optLong("premiumUntil"),
+            lifetime = json.optBoolean("lifetime") || json.optString("productId") == Products.LIFETIME,
             introUsed = json.optBoolean("introUsed"),
             declinedGetAccess = json.optBoolean("declinedGetAccess"),
             skippedOneTimeOffer = json.optBoolean("skippedOneTimeOffer"),
+            yearly70Dismissed = json.optBoolean("yearly70Dismissed") || json.optBoolean("skippedOneTimeOffer"),
+            upgradeReminders = json.optBoolean("upgradeReminders"),
+            chatDay = json.optString("chatDay"),
+            chatCount = json.optInt("chatCount"),
             persona = json.optString("persona").ifBlank { null },
             screenTimeAffect = json.optString("screenTimeAffect").ifBlank { null },
             triedReduce = json.optString("triedReduce").ifBlank { null },
@@ -470,7 +556,6 @@ class RotRunRepository(context: Context) {
             duelUntil = json.optLong("duelUntil"),
             lastAskToken = json.optLong("lastAskToken"),
             bailoutFrom = json.optString("bailoutFrom"),
-            workoutsLogged = json.optInt("workoutsLogged"),
         )
     }
 }
@@ -492,26 +577,13 @@ fun iconStreak(icon: String): Int = when (icon) {
 }
 
 fun stepForward(state: SavedState): SavedState {
-    val step = OnboardingStep.fromRaw(state.onboardingStep)
-    if (!state.premiumActive() && step.raw > OnboardingStep.OneTimeOffer.raw) {
-        return state.copy(onboardingStep = OnboardingStep.GetAccess.raw, pendingResumeStep = step.raw)
-    }
-    if (!state.premiumActive() && step in setOf(
-            OnboardingStep.GetAccess,
-            OnboardingStep.OneTimeOffer,
-            OnboardingStep.LimitedOffer,
-            OnboardingStep.ChoosePlan,
-        )
-    ) {
-        return state
-    }
-    var cursor = step.raw + 1
+    var cursor = state.onboardingStep + 1
     while (cursor <= OnboardingStep.EnableFirstRule.raw) {
         val next = OnboardingStep.fromRaw(cursor)
         if (!next.skipped(state)) return state.copy(onboardingStep = next.raw)
         cursor++
     }
-    return if (state.premiumActive()) state.copy(onboardingCompleted = true) else state.copy(onboardingStep = OnboardingStep.GetAccess.raw)
+    return state.copy(onboardingCompleted = true)
 }
 
 fun stepBack(state: SavedState): SavedState {

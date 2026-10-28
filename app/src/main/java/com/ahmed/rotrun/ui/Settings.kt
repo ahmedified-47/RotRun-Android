@@ -31,8 +31,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ahmed.rotrun.R
 import com.ahmed.rotrun.data.RotRunRepository
 import com.ahmed.rotrun.data.SavedState
 import com.ahmed.rotrun.data.TrackedApp
@@ -41,12 +43,16 @@ import com.ahmed.rotrun.data.themeStreak
 import com.ahmed.rotrun.logic.BrainHealthLevel
 import com.ahmed.rotrun.logic.Products
 import com.ahmed.rotrun.logic.SupportCopy
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun SettingsScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunRepository) {
     var page by remember { mutableStateOf("root") }
     var plan by remember { mutableStateOf(state.productId ?: Products.YEARLY) }
     var authError by remember { mutableStateOf(false) }
+    var accessChoice by remember { mutableStateOf(false) }
     val context = LocalContext.current
     when (page) {
         "privacy" -> LegalPage("privacy", "Privacy Policy") { page = "support" }
@@ -61,6 +67,7 @@ fun SettingsScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunR
         "feedback" -> MailPage("Feedback / Bug Report", "RotRun Feedback", feedbackBody(context)) { page = "support" }
         "contact" -> MailPage("Contact Us", "RotRun Contact", contactBody(context)) { page = "support" }
         "widget" -> WidgetPage { page = "root" }
+        "memory" -> MemoryPage(repo) { page = "root" }
         "subscription" -> Column(Modifier.padding(12.dp)) {
             Text("‹ Manage Subscription", color = Melt.Action, modifier = Modifier.clickable { page = "support" })
             GetAccessPaywall(
@@ -68,10 +75,28 @@ fun SettingsScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunR
                 onPurchase = repo::purchase, onRestore = repo::restore, selected = plan, onSelect = { plan = it }, settingsStyle = true,
             )
         }
-        else -> RootSettings(state, repo, { page = it }) {
-            val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
-            runCatching { context.startActivity(intent) }.onFailure { authError = true }
-        }
+        else -> RootSettings(state, repo, { page = it }, onAccess = { accessChoice = true })
+    }
+    if (accessChoice) {
+        AlertDialog(
+            onDismissRequest = { accessChoice = false },
+            title = { Text("Usage and blocking") },
+            text = { Text(stringResource(R.string.accessibility_disclosure)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    accessChoice = false
+                    runCatching { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+                        .onFailure { authError = true }
+                }) { Text("Accessibility") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    accessChoice = false
+                    runCatching { context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) }
+                        .onFailure { authError = true }
+                }) { Text("Usage access") }
+            },
+        )
     }
     if (authError) {
         AlertDialog(
@@ -85,6 +110,7 @@ fun SettingsScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunR
 
 @Composable
 private fun RootSettings(state: SavedState, repo: RotRunRepository, open: (String) -> Unit, onAccess: () -> Unit) {
+    val context = LocalContext.current
     val look = Looks.byId(state.theme)
     Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         androidx.compose.foundation.layout.Box(
@@ -95,6 +121,16 @@ private fun RootSettings(state: SavedState, repo: RotRunRepository, open: (Strin
         CardGroup {
             RowLink("Brain Health", state.brainHealth, Color(0xFFFF3B30)) { open("brain") }
             RowLink("Excluded Apps", tint = Color(0xFF59B8F2)) { open("excluded") }
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Upgrade reminders", fontWeight = FontWeight.SemiBold)
+                    Text("One local note a day from Rot about RotRun Premium. Off until you turn this on.", color = Melt.Muted, fontSize = 12.sp)
+                }
+                Switch(checked = state.upgradeReminders, onCheckedChange = { enabled ->
+                    repo.update { it.copy(upgradeReminders = enabled) }
+                    com.ahmed.rotrun.watch.UpgradeReminders.sync(context, repo.state.value)
+                })
+            }
         }
         CardGroup {
             RowLink("Intervention Style", tint = Color(0xFF598CF2)) { open("styles") }
@@ -104,9 +140,31 @@ private fun RootSettings(state: SavedState, repo: RotRunRepository, open: (Strin
         CardGroup {
             RowLink("Support & Feedback", tint = Color(0xFFF25973)) { open("support") }
             RowLink("Home Screen Widget", tint = Color(0xFF598CF2)) { open("widget") }
+            RowLink("Rot's memory", tint = Color(0xFF3DB370)) { open("memory") }
         }
-        Text("Request Screen Time & Health access", color = Melt.Muted, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 16.dp).clickable(onClick = onAccess))
+        Text("Request usage & blocking access", color = Melt.Muted, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 16.dp).clickable(onClick = onAccess))
     }
+}
+
+@Composable
+private fun MemoryPage(repo: RotRunRepository, onBack: () -> Unit) {
+    var note by remember { mutableStateOf<String?>(null) }
+    BackHeader("Rot's memory", onBack)
+    Text("Rot can remember facts you share in chat. Forgetting clears those memories. Streak and XP stay.", color = Melt.Muted, modifier = Modifier.padding(horizontal = 20.dp))
+    Text(
+        "Forget everything Rot remembers",
+        color = Color(0xFFFF3B30),
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier.padding(20.dp).clickable {
+            kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+                val error = repo.backend.forgetAll()
+                withContext(Dispatchers.Main) {
+                    note = error ?: "Rot forgot what it had saved."
+                }
+            }
+        },
+    )
+    note?.let { Text(it, modifier = Modifier.padding(horizontal = 20.dp), color = Melt.Muted) }
 }
 
 @Composable
@@ -154,7 +212,7 @@ private fun StylesPage(state: SavedState, repo: RotRunRepository, onBack: () -> 
     StyleToggle("Breathing Exercise", "4-2-4 then a question", state.breathingExercise) { value -> repo.update { it.copy(breathingExercise = value) } }
     StyleToggle("Mirror Mode", "FaceTime from your brain, requires camera", state.mirrorMode) { value -> repo.update { it.copy(mirrorMode = value) } }
     StyleToggle("Quick Check", "Need this? Then how long?", state.quickCheck) { value -> repo.update { it.copy(quickCheck = value) } }
-    StyleToggle("Friend cameo", "A roast from a Game Center friend, when they sent you one today", state.friendCameo) { value -> repo.update { it.copy(friendCameo = value) } }
+    StyleToggle("Friend cameo", "A roast from a friend, when they sent you one today", state.friendCameo) { value -> repo.update { it.copy(friendCameo = value) } }
 }
 
 @Composable

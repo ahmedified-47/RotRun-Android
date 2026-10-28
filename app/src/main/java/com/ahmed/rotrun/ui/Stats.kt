@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -26,10 +27,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ahmed.rotrun.BuildConfig
 import com.ahmed.rotrun.data.RotRunRepository
 import com.ahmed.rotrun.data.SavedState
 import com.ahmed.rotrun.logic.InterventionCopy
 import com.ahmed.rotrun.logic.Scoring
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -114,17 +118,18 @@ private fun LeaderboardBody(state: SavedState, screenMinutes: Int, repo: RotRunR
     var ransom by remember { mutableStateOf(false) }
     val xp = Scoring.dailyXp(screenMinutes, state.goalHours * 60, state.askBrainCount, state.ransomDebit)
     val rank = Scoring.rank(xp)
+    var rows by remember { mutableStateOf<List<Pair<String, Int>>>(emptyList()) }
+    LaunchedEffect(xp, repo.backend.signedIn) {
+        rows = withContext(Dispatchers.IO) {
+            repo.backend.syncXp(xp, "You")
+            repo.backend.leaderboard()
+        }
+    }
     Text("Leaderboard", fontSize = 28.sp, fontWeight = FontWeight.Bold)
     Text("See how your Daily XP stacks up.", color = Melt.Muted)
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 8.dp)) {
         Toggle("Daily XP", !friends) { friends = false }
         Toggle("Friends", friends) { friends = true }
-    }
-    if (!state.playGamesConnected) {
-        Text("Sign in to Google Play Games", fontWeight = FontWeight.Bold, fontSize = 20.sp)
-        Text("Connect Play Games so RotRun can rank your Daily XP with friends and the world. Game Center isn’t available on Android, so this stays on your device.", color = Melt.Muted)
-        PrimaryButton("Connect Play Games") { repo.connectPlayGames() }
-        return
     }
     if (state.duelName.isNotBlank() && state.duelUntil > System.currentTimeMillis()) {
         val left = ((state.duelUntil - System.currentTimeMillis()) / 60000).toInt()
@@ -133,11 +138,25 @@ private fun LeaderboardBody(state: SavedState, screenMinutes: Int, repo: RotRunR
         Text("You ${xp} XP    ${state.duelName} ${state.duelScore} XP")
     }
     if (friends) {
-        Text("No friends on the board yet", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp))
-        Text("Refresh after a friend joins RotRun on this device’s local board.", color = Melt.Muted)
+        Text("Friends", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp))
+        Text(
+            if (BuildConfig.PLAY_GAMES_FRIENDS) "Play Games friends show up on this tab."
+            else "Friends is off in this build. Daily XP stays on the RotRun board.",
+            color = Melt.Muted,
+        )
     } else {
-        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Color.White).padding(14.dp)) {
-            Text("1", fontWeight = FontWeight.Black, color = Melt.Orange)
+        if (!repo.backend.signedIn) {
+            Text("Sign in with Google from Talk to Brain to join the shared Daily XP board.", color = Melt.Muted)
+        }
+        val board = if (rows.isEmpty()) listOf("You" to xp) else rows
+        board.forEachIndexed { index, (name, score) ->
+            Column(Modifier.padding(vertical = 4.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Color.White).padding(14.dp)) {
+                Text("${index + 1}", fontWeight = FontWeight.Black, color = Melt.Orange)
+                Text(name.ifBlank { "Someone" }, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Text("$score XP", color = Melt.Muted)
+            }
+        }
+        Column(Modifier.padding(top = 8.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Color.White).padding(14.dp)) {
             Text("You", fontWeight = FontWeight.Bold, fontSize = 18.sp)
             Text("$xp XP · ${rank.title}", color = Melt.Muted)
             Text(rank.flavor, modifier = Modifier.padding(top = 4.dp))
@@ -162,7 +181,7 @@ private fun LeaderboardBody(state: SavedState, screenMinutes: Int, repo: RotRunR
     if (ransom) {
         Column(Modifier.padding(top = 12.dp).clip(RoundedCornerShape(16.dp)).background(Color.White).padding(14.dp)) {
             Text("Pay the ransom", fontWeight = FontWeight.Bold, fontSize = 20.sp)
-            Text("Strike a silly hero pose and hold this button for 8 seconds. No sit-ups. No camera. Then a friend gets a thank-you — not a workout.")
+            Text("Hold this button for 8 seconds. A friend gets a thank-you.")
             Text("Minus 100 of my Daily XP", fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp))
             Text("Floors at 0. You have $xp XP today.", color = Melt.Muted)
             PrimaryButton("Hold to be a hero") { repo.payRansom(); ransom = false }

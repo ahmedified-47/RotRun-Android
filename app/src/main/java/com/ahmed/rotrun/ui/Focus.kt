@@ -36,7 +36,7 @@ import com.ahmed.rotrun.logic.Scoring
 import kotlinx.coroutines.delay
 
 @Composable
-fun FocusChooser(onClose: () -> Unit, onCouch: () -> Unit, repo: RotRunRepository) {
+fun FocusChooser(onClose: () -> Unit, repo: RotRunRepository) {
     var minutes by remember { mutableIntStateOf(30) }
     var scope by remember { mutableStateOf("all") }
     var legendary by remember { mutableStateOf(false) }
@@ -73,7 +73,6 @@ fun FocusChooser(onClose: () -> Unit, onCouch: () -> Unit, repo: RotRunRepositor
                 repo.startFocus(if (legendary) null else minutes, legendary, scope)
                 onClose()
             }
-            Text("Start Couch Reset", color = Melt.Action, fontWeight = FontWeight.Bold, modifier = Modifier.clickable(onClick = onCouch))
         }
         CartoonBrain(BrainStyle.Meditating, Modifier.align(Alignment.TopCenter).offset(y = (-78).dp).size(168.dp), animated = false)
     }
@@ -118,24 +117,3 @@ fun FocusOverlay(session: FocusSession, repo: RotRunRepository) {
     }
 }
 
-@Composable
-fun CouchReset(onClose: () -> Unit, repo: RotRunRepository) {
-    var reps by remember { mutableIntStateOf(0) }
-    Column(Modifier.fillMaxSize().background(Color(0xFF0A0A0F)).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("Couch Reset", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
-        Text("Do 10 Sit-ups to unlock 5 mins", color = Color.White.copy(alpha = 0.7f), textAlign = TextAlign.Center)
-        Text("$reps / 10", color = Color.White, fontSize = 64.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(vertical = 20.dp))
-        Text("Tap once per sit-up. Camera pose tracking isn’t on Android yet.", color = Color.White.copy(alpha = 0.6f), textAlign = TextAlign.Center)
-        PrimaryButton(if (reps >= 10) "Unlock 5 mins" else "Count a sit-up") {
-            if (reps >= 10) {
-                repo.grantUnlock(5)
-                onClose()
-            } else {
-                reps += 1
-            }
-        }
-        Text("Log Run / Workout", color = Color.White, modifier = Modifier.padding(top = 16.dp).clickable { repo.logWorkout() })
-        Text("Saved on this device", color = Color.White.copy(alpha = 0.5f), fontSize = 13.sp)
-        Text("Close", color = Melt.Muted, modifier = Modifier.padding(top = 12.dp).clickable(onClick = onClose))
-    }
-}

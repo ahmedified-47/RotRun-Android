@@ -40,10 +40,12 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.TrackChanges
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -51,6 +53,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -93,6 +96,10 @@ fun OnboardingScreen(repo: RotRunRepository) {
     var legal by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
     val askNotify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { repo.advance() }
+    val catalog by com.ahmed.rotrun.logic.PlayCatalog.status.collectAsState()
+    androidx.compose.runtime.LaunchedEffect(catalog, state.onboardingStep, state.premium, state.yearly70Dismissed) {
+        if (step.skipped(repo.state.value)) repo.advance()
+    }
     if (legal != null) {
         LegalPage(if (legal == "terms") "terms" else "privacy", if (legal == "terms") "Terms & Conditions" else "Privacy Policy") {
             legal = null
@@ -172,7 +179,7 @@ fun OnboardingScreen(repo: RotRunRepository) {
     }
 }
 
-private val personaOptions = listOf("Builder / Creator" to "⚙️", "Knowledge worker" to "🔍", "Founder / Entrepreneur" to "✈️", "Sports / Athlete" to "🏃", "Student" to "📚", "Just trying to live better" to "❤️")
+private val personaOptions = listOf("Builder / Creator" to "⚙️", "Knowledge worker" to "🔍", "Founder / Entrepreneur" to "✈️", "Sports / Athlete" to "⭐", "Student" to "📚", "Just trying to live better" to "❤️")
 private val affectOptions = listOf("No focus / procrastination" to "🌀", "Anxiety / overstimulation" to "👀", "Bad sleep" to "🌙", "Productivity loss" to "📉", "I feel mentally fried" to "🔥", "Less time with friends / family" to "👥")
 private val triedOptions = listOf("Yes, didn't stick" to "↩", "Yes, briefly worked" to "✓", "No, first time" to "✦")
 private val loseOptions = listOf("Mornings" to "🌅", "During the day" to "☀️", "Evenings" to "🌆", "All day" to "🔁", "Not sure" to "？")
@@ -467,7 +474,14 @@ private fun Hours(state: SavedState, repo: RotRunRepository, goal: Boolean) {
             value = value.toFloat(),
             onValueChange = { next ->
                 val hours = next.toInt()
-                repo.update { if (goal) it.copy(goalHours = hours.coerceIn(1, 8)) else it.copy(estimatedDailyHours = hours.coerceIn(0, 12)) }
+                repo.update {
+                    if (goal) {
+                        val chosen = hours.coerceIn(1, 8)
+                        it.copy(goalHours = chosen, brainHealth = com.ahmed.rotrun.logic.BrainHealthLevel.matching(chosen).label)
+                    } else {
+                        it.copy(estimatedDailyHours = hours.coerceIn(0, 12))
+                    }
+                }
             },
             valueRange = if (goal) 1f..8f else 0f..12f,
             modifier = Modifier.padding(horizontal = 28.dp),
@@ -513,27 +527,22 @@ private fun BeforeAfter(repo: RotRunRepository) {
     ScreenFrame(footer = { PrimaryButton("Continue") { repo.advance() } }) {
         CartoonBrain(BrainStyle.Meadow, Modifier.padding(top = 16.dp).size(72.dp))
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.Top) {
-            CompareColumn("Before RotRun", "6h 32m", true, Modifier.weight(1f))
+            CompareColumn("Before RotRun", true, Modifier.weight(1f))
             Box(Modifier.padding(horizontal = 8.dp).width(1.dp).height(120.dp).background(Color(0xFFC6C6C8)))
-            CompareColumn("After RotRun", "1h 49m", false, Modifier.weight(1f))
+            CompareColumn("After RotRun", false, Modifier.weight(1f))
         }
-        Text("Use RotRun and gain 2+ Hours back", fontWeight = FontWeight.Bold, fontSize = 20.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 8.dp))
+        Text("Use RotRun to take hours back", fontWeight = FontWeight.Bold, fontSize = 20.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 8.dp))
         Benefit(BrainStyle.Watch, "Focus, uninterrupted.", "Finally do your best work yet.")
         Benefit(BrainStyle.Reading, "Own your time.", "And fill your days with more intention.")
         Benefit(BrainStyle.Spa, "Be fully present.", "Because life isn't happening on your screen.")
-        Row(Modifier.padding(top = 12.dp)) {
-            repeat(5) { Icon(Icons.Filled.Star, null, tint = Melt.Orange, modifier = Modifier.size(16.dp)) }
-        }
-        Text("10,000+ Reviews", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-        Text("Join users using RotRun", color = Melt.Muted, fontSize = 14.sp)
+        Text("Built for people who want their time back", color = Melt.Muted, fontSize = 14.sp, modifier = Modifier.padding(top = 12.dp))
     }
 }
 
 @Composable
-private fun CompareColumn(title: String, average: String, tall: Boolean, modifier: Modifier) {
+private fun CompareColumn(title: String, tall: Boolean, modifier: Modifier) {
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         Text(title, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, textAlign = TextAlign.Center)
-        Text("Daily Average $average", color = Melt.Muted, fontSize = 12.sp, textAlign = TextAlign.Center)
         Row(Modifier.height(90.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
             val count = if (tall) 5 else 3
             repeat(count) { index ->
@@ -680,15 +689,7 @@ private fun SocialProof(repo: RotRunRepository) {
                 }
             }
         }
-        Row(Modifier.padding(top = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("❧", color = Melt.Orange, fontSize = 28.sp)
-            Text("4.7", color = Melt.Orange, fontSize = 34.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 8.dp))
-            Text("❧", color = Melt.Orange, fontSize = 28.sp, modifier = Modifier.rotate(180f))
-        }
-        Row {
-            repeat(5) { Icon(Icons.Filled.Star, null, tint = Melt.Orange, modifier = Modifier.size(18.dp)) }
-        }
-        Text("650K+ RotRun users", fontWeight = FontWeight.SemiBold, fontSize = 15.sp, modifier = Modifier.padding(top = 6.dp))
+        Text("Your screen time, your rules.", color = Melt.Muted, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, modifier = Modifier.padding(top = 6.dp))
     }
 }
 
@@ -1009,7 +1010,9 @@ private fun ScreenDialog(repo: RotRunRepository, onAllow: () -> Unit) {
 
 @Composable
 private fun EnableRule(repo: RotRunRepository) {
-    ScreenFrame(footer = { PrimaryButton("Activate Rule") { repo.advance() } }) {
+    val context = LocalContext.current
+    var ask by remember { mutableStateOf(false) }
+    ScreenFrame(footer = { PrimaryButton("Activate Rule") { ask = true } }) {
         Text("Enable Your First Rule", fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 24.dp))
         Text("Block your RotRun apps every day!", color = Melt.Muted, fontSize = 16.sp)
         CartoonBrain(BrainStyle.Mug, Modifier.size(140.dp))
@@ -1026,5 +1029,22 @@ private fun EnableRule(repo: RotRunRepository) {
             }
             Text("Active", color = Color(0xFF34C759), fontWeight = FontWeight.Bold)
         }
+    }
+    if (ask) {
+        AlertDialog(
+            onDismissRequest = { ask = false },
+            title = { Text("Blocking access") },
+            text = { Text(stringResource(com.ahmed.rotrun.R.string.accessibility_disclosure)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    ask = false
+                    runCatching { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+                    repo.advance()
+                }) { Text("Open settings") }
+            },
+            dismissButton = {
+                TextButton(onClick = { ask = false; repo.advance() }) { Text("Not now") }
+            },
+        )
     }
 }

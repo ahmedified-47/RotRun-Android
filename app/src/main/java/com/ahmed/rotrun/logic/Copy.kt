@@ -70,8 +70,8 @@ object SupportCopy {
             "Tap Refresh Blocking System. Then re-select apps in Excluded Apps or Block.",
         ),
         Faq(
-            "Why do I see 'Too many individual apps selected'?",
-            "Apple limits how many individual apps can be shielded. Group them into categories when possible.",
+            "Why can I only block one app?",
+            "Free RotRun blocks one app. Premium blocks as many as you pick. Excluded Apps do not count toward that one.",
         ),
         Faq(
             "How does brain health work?",

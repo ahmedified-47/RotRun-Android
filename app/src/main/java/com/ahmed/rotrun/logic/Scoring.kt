@@ -43,6 +43,13 @@ enum class BrainHealthLevel(
 
     companion object {
         fun fromLabel(raw: String): BrainHealthLevel = entries.firstOrNull { it.label == raw } ?: Medium
+
+        /** Goal hours from onboarding: 2 or under is Hard, 3–4 is Medium, otherwise Easy. */
+        fun matching(hours: Int): BrainHealthLevel = when {
+            hours <= 2 -> Hard
+            hours <= 4 -> Medium
+            else -> Easy
+        }
     }
 }
 
@@ -51,23 +58,6 @@ enum class BrainRank(val title: String, val badge: String, val flavor: String, v
     Sloth("Sloth", "IDLE", "Half-awake. Stay under your goal.", "Half-awake. Participation trophy energy."),
     Active("Active", "LOCKED IN", "Locked in. Keep rotting blocked.", "Somehow locked in. Keep it that way."),
     CosmicMind("Cosmic Mind", "COSMIC", "Clarity is maxed. Protect the streak.", "Cosmic. This receipt is a compliment."),
-}
-
-object Products {
-    const val MONTHLY = "com.ahmed.rotrun.subscription.monthly"
-    const val YEARLY = "com.ahmed.rotrun.subscription.yearly"
-    const val YEARLY70 = "com.ahmed.rotrun.subscription.yearly70"
-    const val MONTHLY_CENTS = 699
-    const val YEARLY_CENTS = 7999
-    const val YEARLY_INTRO_CENTS = 3999
-    const val YEARLY70_INTRO_CENTS = 2399
-
-    fun planName(id: String): String = when (id) {
-        MONTHLY -> "Monthly"
-        YEARLY -> "Yearly"
-        YEARLY70 -> "Yearly offer"
-        else -> "RotRun Premium"
-    }
 }
 
 object Scoring {
@@ -144,13 +134,22 @@ object Scoring {
         }
     }
 
-    fun usd(cents: Int): String = "$" + String.format(Locale.US, "%.2f", cents / 100.0)
-
-    fun savePercent(priceCents: Int): Int {
-        val base = Products.MONTHLY_CENTS * 12
-        if (priceCents >= base) return 0
-        return ((base - priceCents) * 100.0 / base).roundToInt()
+    /** Percent saved by a yearly price versus 12 times the monthly price. Zero when it is not cheaper. */
+    fun savePercent(monthlyMicros: Long, yearlyMicros: Long): Int {
+        val annual = monthlyMicros * 12
+        if (annual <= 0L || yearlyMicros <= 0L || yearlyMicros >= annual) return 0
+        return ((annual - yearlyMicros) * 100.0 / annual).roundToInt()
     }
+
+    /** Whole percent off a regular price. Zero when there is no real saving. */
+    fun discountPercent(regularMicros: Long, offerMicros: Long): Int {
+        if (regularMicros <= 0L || offerMicros <= 0L || offerMicros >= regularMicros) return 0
+        return ((regularMicros - offerMicros) * 100.0 / regularMicros).roundToInt()
+    }
+
+    fun visibleDuration(seconds: Long): String = if (seconds < 60L) "Not in yet" else formatDuration(seconds)
+
+    fun visibleCount(count: Int): String = if (count <= 0) "Not in yet" else count.toString()
 
     fun comparisonLine(todaySeconds: Long, avgSeconds: Long, diffPercent: Int, below: Boolean): String {
         if (todaySeconds <= 0 && avgSeconds <= 0) return "Waiting for this week’s Screen Time."

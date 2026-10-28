@@ -55,6 +55,8 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import com.ahmed.rotrun.data.RotRunRepository
 import com.ahmed.rotrun.data.UiPulse
 import com.ahmed.rotrun.logic.BrainHealthLevel
+import com.ahmed.rotrun.logic.PaywallGate
+import com.ahmed.rotrun.logic.PlayCatalog
 import com.ahmed.rotrun.logic.Products
 import com.ahmed.rotrun.logic.Scoring
 import kotlinx.coroutines.delay
@@ -74,7 +76,6 @@ fun RotRunRoot(repo: RotRunRepository) {
     Box(Modifier.fillMaxSize()) {
         when {
             !state.onboardingCompleted -> OnboardingScreen(repo)
-            !state.premiumActive() -> Gate(repo)
             else -> MainShell(repo)
         }
         if (toast != null) {
@@ -132,19 +133,28 @@ private fun MainShell(repo: RotRunRepository) {
     val installed by repo.installed.collectAsState()
     var tab by remember { mutableStateOf(Tab.Home) }
     var focusSheet by remember { mutableStateOf(false) }
-    var couch by remember { mutableStateOf(false) }
     var audio by remember { mutableStateOf(false) }
+    var talk by remember { mutableStateOf(false) }
+    var upgrade by remember { mutableStateOf(false) }
+    var offer by remember { mutableStateOf(false) }
+    var plan by remember { mutableStateOf(Products.YEARLY) }
+    val offerNow by androidx.compose.runtime.rememberUpdatedState(offer)
     val context = LocalContext.current
     val look = Looks.byId(state.theme)
     val level = BrainHealthLevel.fromLabel(state.brainHealth)
     val health = Scoring.displayedHealth(Scoring.drainHealth(usage.drainSeconds, level), state.focusMinutesToday(), level.restoreMinutes)
     val screenMinutes = (usage.todaySeconds / 60).toInt()
-    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { repo.refreshUsage() }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        repo.onForeground()
+        if (com.ahmed.rotrun.logic.PaywallGate.shows && !repo.state.value.premiumActive() && !offerNow) upgrade = true
+    }
     LaunchedEffect(Unit) {
         repo.pulses.collect { pulse ->
             when (pulse) {
                 UiPulse.OpenFocusChooser -> focusSheet = true
                 UiPulse.ShowAudioSlap -> audio = true
+                UiPulse.OpenPaywall -> upgrade = true
+                UiPulse.OpenChat -> talk = true
             }
         }
     }
@@ -157,7 +167,7 @@ private fun MainShell(repo: RotRunRepository) {
     Box(Modifier.fillMaxSize().background(canvas)) {
         Column(Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState()).padding(bottom = 132.dp)) {
             when (tab) {
-                Tab.Home -> HomeScreen(state, usage, refreshing, repo::refreshUsage) {
+                Tab.Home -> HomeScreen(state, usage, refreshing, repo::refreshUsage, { talk = true }) {
                     context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
                 }
                 Tab.Block -> BlockScreen(state, installed, repo)
@@ -179,11 +189,38 @@ private fun MainShell(repo: RotRunRepository) {
         if (focusSheet) {
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)).clickable { focusSheet = false })
             Box(Modifier.align(Alignment.BottomCenter).padding(12.dp).navigationBarsPadding()) {
-                FocusChooser(onClose = { focusSheet = false }, onCouch = { focusSheet = false; couch = true }, repo = repo)
+                FocusChooser(onClose = { focusSheet = false }, repo = repo)
             }
         }
         state.focus?.let { FocusOverlay(it, repo) }
-        if (couch) CouchReset(onClose = { couch = false }, repo = repo)
+        if (talk) TalkSheet(repo) { talk = false }
+        if (offer && PaywallGate.shows && !state.yearly70Dismissed) {
+            Box(Modifier.fillMaxSize().background(Color.White)) {
+                OneTimeOffer(
+                    onRedeem = { repo.purchase(Products.YEARLY70) },
+                    onOther = { repo.dismissYearly70(); offer = false },
+                    showClose = true,
+                    onClose = { repo.dismissYearly70(); offer = false },
+                )
+            }
+        } else if (upgrade && PaywallGate.shows && !state.premiumActive()) {
+            Box(Modifier.fillMaxSize().background(Color.White).verticalScroll(rememberScrollState())) {
+                GetAccessPaywall(
+                    state = state,
+                    showClose = true,
+                    showDiscountLink = false,
+                    onClose = {
+                        upgrade = false
+                        if (!state.yearly70Dismissed && PlayCatalog.quote(Products.YEARLY70) != null) offer = true
+                    },
+                    onDiscount = {},
+                    onPurchase = repo::purchase,
+                    onRestore = repo::restore,
+                    selected = plan,
+                    onSelect = { plan = it },
+                )
+            }
+        }
         if (audio) {
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.55f)), contentAlignment = Alignment.Center) {
                 AudioSlap(state.cameoName.ifBlank { "a friend" }) { audio = false }
