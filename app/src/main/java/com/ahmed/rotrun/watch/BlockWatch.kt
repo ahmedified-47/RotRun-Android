@@ -12,6 +12,9 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.provider.Settings
+import android.view.View
+import android.view.WindowManager
 import androidx.core.app.NotificationCompat
 import com.ahmed.rotrun.InterventionActivity
 import com.ahmed.rotrun.R
@@ -19,6 +22,7 @@ import com.ahmed.rotrun.data.RotRunGraph
 import com.ahmed.rotrun.data.SavedState
 import com.ahmed.rotrun.data.UsageReader
 import com.ahmed.rotrun.logic.InterventionCopy
+import com.ahmed.rotrun.widget.FocusWidgetProvider
 
 object WatchController {
     fun sync(context: Context, state: SavedState) {
@@ -30,18 +34,14 @@ object WatchController {
             context.stopService(intent)
         }
     }
-
-    private fun brickHasApps(state: SavedState): Boolean {
-        val brick = state.blockers.firstOrNull { it.id == "brick" }
-        if (brick != null && brick.apps.isNotEmpty()) return true
-        val list = state.appLists.firstOrNull { it.id == "list.brainmelt" }
-        return list?.apps?.isNotEmpty() == true
-    }
 }
 
 class BlockWatchService : Service() {
     private val handler = Handler(Looper.getMainLooper())
     private val shownAt = HashMap<String, Long>()
+    private var overlay: View? = null
+    private var shownFor: String? = null
+    private var lastFocusWidget = 0L
     private val tick = object : Runnable {
         override fun run() {
             checkForeground()
@@ -60,7 +60,17 @@ class BlockWatchService : Service() {
 
     override fun onDestroy() {
         handler.removeCallbacks(tick)
+        hideOverlay()
         super.onDestroy()
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        val restart = Intent(applicationContext, BlockWatchService::class.java)
+        runCatching {
+            if (Build.VERSION.SDK_INT >= 26) applicationContext.startForegroundService(restart)
+            else applicationContext.startService(restart)
+        }
+        super.onTaskRemoved(rootIntent)
     }
 
     private fun startInForeground(text: String = "RotRun is watching the apps you chose.") {
@@ -84,17 +94,46 @@ class BlockWatchService : Service() {
             val left = focus.targetMinutes?.let { (it * 60_000L - elapsed).coerceAtLeast(0) }
             if (left == null) "Focus is running" else "Focus · ${left / 60_000}m left"
         }
-        startInForeground(watching)
-        val packageName = UsageReader.foreground(this) ?: return
-        if (!repo.isBlocked(packageName, repo.safetyPackages())) return
         val now = System.currentTimeMillis()
+        if (focus != null && now - lastFocusWidget > 15_000) {
+            lastFocusWidget = now
+            FocusWidgetProvider.updateAll(this)
+        }
+        startInForeground(watching)
+        if (BlockAccessibilityService.connected) {
+            hideOverlay()
+            return
+        }
+        val packageName = UsageReader.foreground(this) ?: run {
+            hideOverlay()
+            return
+        }
+        if (!repo.isBlocked(packageName, repo.safetyPackages())) {
+            hideOverlay()
+            return
+        }
+        val label = UsageReader.label(this, packageName)
+        if (Settings.canDrawOverlays(this)) {
+            if (shownFor != packageName || overlay == null) {
+                hideOverlay()
+                overlay = ShieldOverlay.show(
+                    context = this,
+                    type = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                    packageName = packageName,
+                    label = label,
+                    onAsk = { openAsk(packageName, label) },
+                )
+                shownFor = if (overlay == null) null else packageName
+            }
+            return
+        }
         if (now - (shownAt[packageName] ?: 0L) < 20_000) return
         shownAt[packageName] = now
-        val label = UsageReader.label(this, packageName)
-        val copy = InterventionCopy.forApp(label)
+        val copy = InterventionCopy.forPackage(packageName, label)
         val open = Intent(this, InterventionActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             putExtra(InterventionActivity.EXTRA_APP, label)
+            putExtra(InterventionActivity.EXTRA_PACKAGE, packageName)
             putExtra(InterventionActivity.EXTRA_MODE, "shield")
         }
         val pending = PendingIntent.getActivity(
@@ -103,12 +142,26 @@ class BlockWatchService : Service() {
             open,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val manager = getSystemService(NotificationManager::class.java)
-        manager.notify(
-            ALERT_ID,
-            buildNotification(copy.headline, pending),
-        )
+        getSystemService(NotificationManager::class.java).notify(ALERT_ID, buildNotification(copy.headline, pending))
+    }
+
+    private fun openAsk(packageName: String, label: String) {
+        hideOverlay()
+        if (!RotRunGraph.ready()) return
+        val mode = RotRunGraph.repo.pickStyle() ?: "standard"
+        val open = Intent(this, InterventionActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            putExtra(InterventionActivity.EXTRA_APP, label)
+            putExtra(InterventionActivity.EXTRA_PACKAGE, packageName)
+            putExtra(InterventionActivity.EXTRA_MODE, mode)
+        }
         runCatching { startActivity(open) }
+    }
+
+    private fun hideOverlay() {
+        ShieldOverlay.hide(this, overlay)
+        overlay = null
+        shownFor = null
     }
 
     private fun buildNotification(text: String, tap: PendingIntent? = null): Notification {

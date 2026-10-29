@@ -107,7 +107,16 @@ fun HomeScreen(state: SavedState, usage: UsageSnapshot, refreshing: Boolean, onR
             RaisedCard {
                 val offenders = usage.offenders.filter { it.seconds >= 60 }
                 if (offenders.isEmpty()) {
-                    Text("Not in yet", color = Color.White.copy(alpha = 0.85f), fontWeight = FontWeight.Medium, modifier = Modifier.padding(16.dp))
+                    repeat(3) { index ->
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            AppDot("?")
+                            Text("Not in yet", color = Color.White.copy(alpha = 0.85f), fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = 12.dp).weight(1f))
+                            Text("Not in yet", color = Color.White.copy(alpha = 0.7f))
+                        }
+                        if (index < 2) {
+                            Box(Modifier.padding(start = 64.dp).fillMaxWidth().height(1.dp).background(Color.White.copy(alpha = 0.12f)))
+                        }
+                    }
                 } else {
                     offenders.forEachIndexed { index, app ->
                         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {

@@ -78,6 +78,7 @@ class InterventionActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val appName = intent.getStringExtra(EXTRA_APP) ?: "this app"
+        val packageName = intent.getStringExtra(EXTRA_PACKAGE).orEmpty()
         val mode = intent.getStringExtra(EXTRA_MODE) ?: "style"
         val token = intent.getLongExtra(EXTRA_TOKEN, 0L).takeIf { it != 0L } ?: System.currentTimeMillis().also {
             intent.putExtra(EXTRA_TOKEN, it)
@@ -89,6 +90,7 @@ class InterventionActivity : ComponentActivity() {
                 InterventionFlow(
                     appName = appName,
                     startMode = mode,
+                    packageName = packageName,
                     repo = RotRunGraph.repo,
                     onDismiss = { goHome() },
                     onUnlock = { minutes ->
@@ -110,6 +112,7 @@ class InterventionActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_APP = "app"
+        const val EXTRA_PACKAGE = "package"
         const val EXTRA_MODE = "mode"
         const val EXTRA_TOKEN = "token"
     }

@@ -82,7 +82,12 @@ data class Blocker(
     val limitMinutes: Int = 30,
     val days: List<Int> = (0..6).toList(),
     val apps: List<TrackedApp> = emptyList(),
-)
+    val modeApps: Map<String, List<TrackedApp>> = emptyMap(),
+) {
+    /** Active apps first, then apps stashed on the other modes. */
+    fun packageOrder(): List<String> =
+        apps.map { it.packageName } + modeApps.values.flatten().map { it.packageName }
+}
 
 data class FocusSession(
     val startedAt: Long,
@@ -125,6 +130,7 @@ data class SavedState(
     val quickCheck: Boolean = true,
     val friendCameo: Boolean = true,
     val streak: Int = 1,
+    val longestStreak: Int = 1,
     val lastOpenDay: String = "",
     val askBrainCount: Int = 0,
     val ransomDebit: Int = 0,

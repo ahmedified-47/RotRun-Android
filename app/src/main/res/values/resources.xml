@@ -2,6 +2,8 @@
     <string name="app_name">RotRun</string>
     <string name="widget_name">RotRun</string>
     <string name="widget_description">Brain health and top offenders.</string>
+    <string name="focus_widget_name">Focus</string>
+    <string name="focus_widget_description">Start a 15, 30, 45, or 60 minute Focus session.</string>
     <string name="accessibility_disclosure">RotRun uses Accessibility to see which app is in front and show your block screen for apps you chose. It does not read what you type and it does not record the screen.</string>
     <color name="meadow">#3DB370</color>
     <color name="ic_launcher_background">#3DB370</color>

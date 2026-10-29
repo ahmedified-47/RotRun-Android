@@ -7,7 +7,11 @@ import com.ahmed.rotrun.data.RotRunGraph
 
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
+        if (intent?.action != Intent.ACTION_BOOT_COMPLETED) return
         if (!RotRunGraph.ready()) return
-        WatchController.sync(context, RotRunGraph.repo.state.value)
+        val state = RotRunGraph.repo.state.value
+        WatchController.sync(context, state)
+        BlockScheduler.scheduleNext(context, state)
+        RefreshWork.enqueue(context)
     }
 }

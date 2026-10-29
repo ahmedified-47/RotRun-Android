@@ -6,20 +6,24 @@ import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.ahmed.rotrun.BuildConfig
+import com.ahmed.rotrun.logic.BlockBackup
 import com.ahmed.rotrun.logic.FreeTier
 import com.ahmed.rotrun.logic.PaywallGate
 import com.ahmed.rotrun.logic.Scoring
+import com.ahmed.rotrun.logic.ScreenTimeSync
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.net.URLEncoder
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 class Backend(private val app: Context, private val repo: RotRunRepository) {
@@ -130,7 +134,7 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
         if (code == "consent_required") return "Rot needs your OK before chatting."
         if (code == "daily_limit" || code == "hourly_limit") return FreeTier.serverChatDone
         if (code == "monthly_limit" || code == "budget_exhausted" || code == "user_budget_exhausted") {
-            return if (resets.isNotBlank()) "You’ve used your chats with Rot for this period. Back on $resets." else FreeTier.serverChatDone
+            return if (resets.isNotBlank()) "You’ve used your chats with Rot for this period. Back on ${dayLabel(resets)}." else FreeTier.serverChatDone
         }
         if (response.code !in 200..299) return payload?.optString("error").takeUnless { it.isNullOrBlank() } ?: FreeTier.tryAgain
         val answer = payload?.optString("text").orEmpty()
@@ -160,7 +164,11 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
         val payload = response.json
         val code = payload?.optString("error_code").orEmpty()
         if (code == "voice_daily_limit" || code == "voice_monthly_limit" || code == "budget_exhausted" || response.code == 429) {
-            val message = if (code == "voice_monthly_limit") "Voice limit reached, resets on ${payload?.optString("budget_resets_at")}" else "Voice limit reached, resets tomorrow"
+            val message = if (code == "voice_monthly_limit") {
+                "Voice limit reached, resets on ${dayLabel(payload?.optString("budget_resets_at").orEmpty())}"
+            } else {
+                "Voice limit reached, resets tomorrow"
+            }
             session.edit().putString("voice_limit_message", message).putLong("voice_limit_until", nextReset(payload)).apply()
             return message
         }
@@ -207,6 +215,175 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
             .put("xp", xp)
             .put("display_name", name.ifBlank { "You" })
         call("POST", "/rest/v1/daily_xp?on_conflict=user_id,day", body.toString(), accessToken(), "resolution=merge-duplicates,return=minimal")
+    }
+
+    fun syncAccount(state: SavedState, allowPull: Boolean) {
+        if (!signedIn) return
+        ensureProfile()
+        if (allowPull && !hasBlockedApps(state)) {
+            val remote = pullAndroidBlocks()
+            if (remote != null && (remote.first.any { it.apps.isNotEmpty() } || remote.second.any { it.apps.isNotEmpty() })) {
+                repo.applyRemoteBlocks(remote.first, remote.second)
+                syncStreak(repo.state.value)
+                return
+            }
+        }
+        pushBlockers(state)
+        syncStreak(state)
+    }
+
+    fun pushBlockers(state: SavedState) {
+        if (!signedIn) return
+        val id = userId ?: return
+        ensureProfile()
+        val lists = JSONArray()
+        state.appLists.forEachIndexed { index, list ->
+            lists.put(
+                BlockBackup.listJson(
+                    BlockBackup.ListRow(
+                        id = list.id,
+                        name = list.name,
+                        apps = list.apps.map { BlockBackup.AppRef(it.packageName, it.label) },
+                        builtin = list.id == "list.brainmelt",
+                        sort = index,
+                    ),
+                ).put("user_id", id),
+            )
+        }
+        if (lists.length() > 0) {
+            call(
+                "POST",
+                "/rest/v1/blocker_lists?on_conflict=user_id,client_id",
+                lists.toString(),
+                accessToken(),
+                "resolution=merge-duplicates,return=minimal",
+            )
+        }
+        val rules = JSONArray()
+        state.blockers.forEach { blocker ->
+            rules.put(
+                BlockBackup.ruleJson(
+                    BlockBackup.RuleRow(
+                        id = blocker.id,
+                        name = blocker.name,
+                        mode = blocker.mode,
+                        appListId = blocker.appListId,
+                        startHour = blocker.startHour,
+                        endHour = blocker.endHour,
+                        limitMinutes = blocker.limitMinutes,
+                        days = blocker.days,
+                        apps = blocker.apps.map { BlockBackup.AppRef(it.packageName, it.label) },
+                        modeApps = blocker.modeApps.mapValues { (_, apps) ->
+                            apps.map { BlockBackup.AppRef(it.packageName, it.label) }
+                        },
+                    ),
+                ).put("user_id", id),
+            )
+        }
+        if (rules.length() > 0) {
+            call(
+                "POST",
+                "/rest/v1/blocker_rules?on_conflict=user_id,client_id",
+                rules.toString(),
+                accessToken(),
+                "resolution=merge-duplicates,return=minimal",
+            )
+        }
+        retireMissing("blocker_lists", state.appLists.map { BlockBackup.clientId(it.id) }, "selection_data")
+        retireMissing("blocker_rules", state.blockers.map { BlockBackup.clientId(it.id) }, "config")
+    }
+
+    fun syncStreak(state: SavedState) {
+        val id = userId ?: return
+        val existing = call("GET", "/rest/v1/user_streaks?select=longest_streak,extra&user_id=eq.$id", null, accessToken())
+        val row = existing.array?.optJSONObject(0)
+        val extra = row?.optJSONObject("extra") ?: JSONObject()
+        val focusSeconds = state.focusMinutesByDay.values.sum() * 60
+        extra.put("focus_time_seconds", focusSeconds)
+        val longest = maxOf(state.longestStreak, state.streak, row?.optInt("longest_streak") ?: 0)
+        val body = JSONObject()
+            .put("user_id", id)
+            .put("current_streak", state.streak)
+            .put("longest_streak", longest)
+            .put("last_active_day", state.lastOpenDay.ifBlank { Scoring.dayKey() })
+            .put("extra", extra)
+        call(
+            "POST",
+            "/rest/v1/user_streaks?on_conflict=user_id",
+            body.toString(),
+            accessToken(),
+            "resolution=merge-duplicates,return=minimal",
+        )
+    }
+
+    fun syncScreenTime(snapshot: UsageSnapshot) {
+        val id = userId ?: return
+        if (!snapshot.authorized || snapshot.todaySeconds < 60L) return
+        val reading = ScreenTimeSync.reading(
+            ScreenTimeSync.UsageView(
+                authorized = true,
+                todaySeconds = snapshot.todaySeconds,
+                pickups = snapshot.pickups,
+                avgSeconds = snapshot.avgSeconds,
+                ahead = snapshot.aheadOfPace,
+                offenders = snapshot.offenders.map { it.label to it.seconds },
+                hourlyToday = snapshot.hourlyToday,
+                hourlyAvg = snapshot.hourlyAvg,
+                week = snapshot.week.map { it.day to it.seconds },
+            ),
+        ) ?: return
+        val offenders = JSONArray()
+        reading.offenders.forEach { row ->
+            offenders.put(JSONObject().put("name", row.name).put("minutes", row.minutes))
+        }
+        val hourly = JSONArray()
+        reading.hourly.forEach { row ->
+            hourly.put(
+                JSONObject()
+                    .put("hour", row.hour)
+                    .put("today_minutes", row.todayMinutes)
+                    .put("average_minutes", row.averageMinutes),
+            )
+        }
+        val categories = JSONArray()
+        snapshot.offenders.filter { it.seconds >= 60 }.forEach { app ->
+            val category = categoryOf(app.packageName) ?: return@forEach
+            val name = app.label.trim().take(80)
+            if (name.isBlank() || name.lowercase() in setOf("unknown", "app", "website")) return@forEach
+            categories.put(JSONObject().put("name", name).put("category", category))
+        }
+        val body = JSONObject()
+            .put("user_id", id)
+            .put("today_minutes", reading.todayMinutes)
+            .put("pickups", reading.pickups)
+            .put("captured_at", ZonedDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME))
+            .put("ahead_of_usual_pace", reading.ahead)
+        reading.topApp?.let { body.put("top_app", it) }
+        reading.topAppMinutes?.let { body.put("top_app_minutes", it) }
+        reading.paceAverageMinutes?.let { body.put("pace_average_minutes", it) }
+        if (offenders.length() > 0) body.put("top_offenders", offenders)
+        if (hourly.length() > 0) body.put("hourly_trend", hourly)
+        if (categories.length() > 0) body.put("top_offender_categories", categories)
+        call(
+            "POST",
+            "/rest/v1/screen_time_readings?on_conflict=user_id",
+            body.toString(),
+            accessToken(),
+            "resolution=merge-duplicates,return=minimal",
+        )
+        if (reading.days.isNotEmpty()) {
+            val days = JSONArray()
+            reading.days.forEach { day ->
+                days.put(JSONObject().put("user_id", id).put("day", day.day).put("minutes", day.minutes))
+            }
+            call(
+                "POST",
+                "/rest/v1/screen_time_days?on_conflict=user_id,day",
+                days.toString(),
+                accessToken(),
+                "resolution=merge-duplicates,return=minimal",
+            )
+        }
     }
 
     fun leaderboard(): List<Pair<String, Int>> {
@@ -263,6 +440,116 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
             .putLong("expires", System.currentTimeMillis() + payload.optLong("expires_in") * 1000)
             .putString("user_id", user?.optString("id") ?: userId)
             .apply()
+    }
+
+    private fun ensureProfile() {
+        val id = userId ?: return
+        val body = JSONObject().put("user_id", id).put("timezone", ZoneId.systemDefault().id)
+        call(
+            "POST",
+            "/rest/v1/profiles?on_conflict=user_id",
+            body.toString(),
+            accessToken(),
+            "resolution=merge-duplicates,return=minimal",
+        )
+    }
+
+    private fun pullAndroidBlocks(): Pair<List<AppList>, List<Blocker>>? {
+        val listFilter = URLEncoder.encode("android:*", "UTF-8")
+        val listsResponse = call(
+            "GET",
+            "/rest/v1/blocker_lists?select=client_id,name,is_builtin,selection_data,sort_order&client_id=like.$listFilter&deleted_at=is.null",
+            null,
+            accessToken(),
+        )
+        val rulesResponse = call(
+            "GET",
+            "/rest/v1/blocker_rules?select=client_id,list_client_id,name,schedule,config&client_id=like.$listFilter&deleted_at=is.null",
+            null,
+            accessToken(),
+        )
+        val lists = listsResponse.array ?: return null
+        val rules = rulesResponse.array ?: return null
+        val parsedLists = buildList {
+            for (index in 0 until lists.length()) {
+                val row = BlockBackup.parseList(lists.optJSONObject(index) ?: continue) ?: continue
+                add(AppList(row.id, row.name, row.apps.map { TrackedApp(it.packageName, it.label) }))
+            }
+        }
+        val parsedRules = buildList {
+            for (index in 0 until rules.length()) {
+                val row = BlockBackup.parseRule(rules.optJSONObject(index) ?: continue) ?: continue
+                add(
+                    Blocker(
+                        id = row.id,
+                        name = row.name,
+                        mode = row.mode,
+                        appListId = row.appListId,
+                        startHour = row.startHour,
+                        endHour = row.endHour,
+                        limitMinutes = row.limitMinutes,
+                        days = row.days,
+                        apps = row.apps.map { TrackedApp(it.packageName, it.label) },
+                        modeApps = row.modeApps.mapValues { (_, apps) -> apps.map { TrackedApp(it.packageName, it.label) } },
+                    ),
+                )
+            }
+        }
+        return parsedLists to parsedRules
+    }
+
+    private fun retireMissing(table: String, keep: List<String>, payloadColumn: String) {
+        val filter = URLEncoder.encode("android:*", "UTF-8")
+        val response = call(
+            "GET",
+            "/rest/v1/$table?select=client_id,$payloadColumn&client_id=like.$filter&deleted_at=is.null",
+            null,
+            accessToken(),
+        )
+        val rows = response.array ?: return
+        val keepSet = keep.toSet()
+        val now = ZonedDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
+        for (index in 0 until rows.length()) {
+            val row = rows.optJSONObject(index) ?: continue
+            val clientId = row.optString("client_id")
+            if (!clientId.startsWith(BlockBackup.PREFIX) || clientId in keepSet) continue
+            val payload = if (payloadColumn == "config") row.optJSONObject("config")?.toString() else row.optString(payloadColumn)
+            if (!payload.isNullOrBlank() && !BlockBackup.isAndroidOwned(payload)) continue
+            val encoded = URLEncoder.encode(clientId, "UTF-8")
+            call(
+                "PATCH",
+                "/rest/v1/$table?client_id=eq.$encoded",
+                JSONObject().put("deleted_at", now).toString(),
+                accessToken(),
+                "return=minimal",
+            )
+        }
+    }
+
+    private fun hasBlockedApps(state: SavedState): Boolean =
+        state.blockers.any { it.apps.isNotEmpty() } || state.appLists.any { it.apps.isNotEmpty() }
+
+    private fun categoryOf(packageName: String): String? {
+        val info = runCatching { app.packageManager.getApplicationInfo(packageName, 0) }.getOrNull() ?: return null
+        if (android.os.Build.VERSION.SDK_INT < 26) return null
+        return when (info.category) {
+            android.content.pm.ApplicationInfo.CATEGORY_GAME -> "Game"
+            android.content.pm.ApplicationInfo.CATEGORY_AUDIO -> "Audio"
+            android.content.pm.ApplicationInfo.CATEGORY_VIDEO -> "Video"
+            android.content.pm.ApplicationInfo.CATEGORY_IMAGE -> "Image"
+            android.content.pm.ApplicationInfo.CATEGORY_SOCIAL -> "Social"
+            android.content.pm.ApplicationInfo.CATEGORY_NEWS -> "News"
+            android.content.pm.ApplicationInfo.CATEGORY_MAPS -> "Maps"
+            android.content.pm.ApplicationInfo.CATEGORY_PRODUCTIVITY -> "Productivity"
+            else -> null
+        }
+    }
+
+    private fun dayLabel(raw: String): String {
+        if (raw.isBlank()) return "later"
+        val parsed = runCatching { java.time.OffsetDateTime.parse(raw) }.getOrNull()
+            ?: runCatching { java.time.Instant.parse(raw).atZone(ZoneId.systemDefault()).toOffsetDateTime() }.getOrNull()
+        return parsed?.format(DateTimeFormatter.ofPattern("MMM d", Locale.US)) ?: raw
     }
 
     private fun canSend(state: SavedState): Boolean {

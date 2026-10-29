@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ahmed.rotrun.data.RotRunRepository
 import com.ahmed.rotrun.logic.InterventionCopy
+import com.ahmed.rotrun.logic.ShieldPalette
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -57,18 +58,20 @@ fun InterventionFlow(
     repo: RotRunRepository,
     onDismiss: () -> Unit,
     onUnlock: (Int) -> Unit,
+    packageName: String = "",
 ) {
     val state by repo.state.collectAsState()
     var mode by remember { mutableStateOf(startMode) }
     val name = InterventionCopy.displayName(appName)
     val friend = state.cameoName.takeIf { state.cameoToday() }
-    val shield = if (mode == "shield") shieldColors(InterventionCopy.forApp(name).id) else null
+    val shieldCopy = InterventionCopy.forPackage(packageName, name)
+    val shield = if (mode == "shield") shieldColors(shieldCopy.id) else null
     if (mode == "shield") {
         Column(
             Modifier.fillMaxSize().background(shield?.second ?: Color(0xFF3D1A28)).padding(horizontal = 28.dp, vertical = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Shield(name, shield?.first ?: Melt.Action, onAsk = {
+            Shield(name, packageName, shield?.first ?: Melt.Action, onAsk = {
                 val style = repo.pickStyle() ?: "standard"
                 repo.chargeAskBrain(System.currentTimeMillis())
                 mode = style
@@ -95,8 +98,8 @@ fun InterventionFlow(
 }
 
 @Composable
-private fun ColumnScope.Shield(appName: String, accent: Color, onAsk: () -> Unit) {
-    val copy = InterventionCopy.forApp(appName)
+private fun ColumnScope.Shield(appName: String, packageName: String, accent: Color, onAsk: () -> Unit) {
+    val copy = InterventionCopy.forPackage(packageName, appName)
     Spacer(Modifier.weight(1f))
     CartoonBrain(BrainStyle.Meadow, Modifier.size(196.dp))
     Text(copy.headline, color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 28.dp))
@@ -113,29 +116,8 @@ private fun ColumnScope.Shield(appName: String, accent: Color, onAsk: () -> Unit
     )
 }
 
-private fun shieldColors(id: String): Pair<Color, Color> {
-    val accent = when (id) {
-        "stop-scrolling", "brain-first" -> Color(0xFFE6389E)
-        "read-anything" -> Color(0xFF8C6147)
-        "hydrate" -> Color(0xFF38B8D1)
-        "cheap-dopamine", "lock-in" -> Color(0xFF617AB3)
-        "how-many-hours" -> Color(0xFF8F5CC7)
-        "future-self" -> Color(0xFF387A52)
-        "touch-grass" -> Color(0xFF249E94)
-        "brain-rest" -> Color(0xFFF2857A)
-        "how-much-today", "melting" -> Color(0xFFF28538)
-        "zoned-out" -> Color(0xFF8C8CE6)
-        "not-again" -> Color(0xFFF26B6B)
-        else -> Color(0xFFB84747)
-    }
-    return accent to Color(android.graphics.Color.HSVToColor(floatArrayOf(accent.toHsvHue(), 0.62f, 0.24f)))
-}
-
-private fun Color.toHsvHue(): Float {
-    val hsv = FloatArray(3)
-    android.graphics.Color.RGBToHSV((red * 255).toInt(), (green * 255).toInt(), (blue * 255).toInt(), hsv)
-    return hsv[0]
-}
+private fun shieldColors(id: String): Pair<Color, Color> =
+    Color(ShieldPalette.accent(id)) to Color(ShieldPalette.background(id))
 
 @Composable
 private fun Standard(appName: String, friend: String?, kind: String, onDismiss: () -> Unit, onUnlock: (Int) -> Unit) {

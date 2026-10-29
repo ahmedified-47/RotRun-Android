@@ -2,6 +2,8 @@ package com.ahmed.rotrun.ui
 
 import android.content.Intent
 import android.provider.Settings
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -52,6 +54,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
+import com.ahmed.rotrun.data.DeviceAccessReader
 import com.ahmed.rotrun.data.RotRunRepository
 import com.ahmed.rotrun.data.UiPulse
 import com.ahmed.rotrun.logic.BrainHealthLevel
@@ -131,6 +134,7 @@ private fun MainShell(repo: RotRunRepository) {
     val usage by repo.usage.collectAsState()
     val refreshing by repo.refreshing.collectAsState()
     val installed by repo.installed.collectAsState()
+    val batteryAsk by repo.batteryAsk.collectAsState()
     var tab by remember { mutableStateOf(Tab.Home) }
     var focusSheet by remember { mutableStateOf(false) }
     var audio by remember { mutableStateOf(false) }
@@ -220,6 +224,20 @@ private fun MainShell(repo: RotRunRepository) {
                     onSelect = { plan = it },
                 )
             }
+        }
+        if (batteryAsk) {
+            AlertDialog(
+                onDismissRequest = repo::dismissBatteryAsk,
+                title = { Text("Keep blocking on") },
+                text = { Text("Allow RotRun to ignore battery optimisation so blocks survive a restart and stay up after you swipe the app away.") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        repo.dismissBatteryAsk()
+                        DeviceAccessReader.open(context, DeviceAccessReader.batteryIntent(context))
+                    }) { Text("Allow") }
+                },
+                dismissButton = { TextButton(onClick = repo::dismissBatteryAsk) { Text("Not now") } },
+            )
         }
         if (audio) {
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.55f)), contentAlignment = Alignment.Center) {

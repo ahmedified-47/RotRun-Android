@@ -3,9 +3,11 @@ package com.ahmed.rotrun.data
 import android.app.AppOpsManager
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
+import android.app.usage.UsageStats
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.pm.ResolveInfo
 import android.os.Build
 import android.os.Process
 import com.ahmed.rotrun.logic.Scoring
@@ -39,15 +41,16 @@ object UsageReader {
         val todayApps = mutableListOf<Offender>()
         val stats = manager.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, weekStart, now).orEmpty()
         for (stat in stats) {
-            if (stat.packageName == own || stat.totalTimeInForeground <= 0L) continue
-            val day = Instant.ofEpochMilli(stat.firstTimeStamp).atZone(zone).toLocalDate()
+            val seconds = visibleMillis(stat) / 1000L
+            if (stat.packageName == own || seconds <= 0L) continue
+            val day = Instant.ofEpochMilli(stat.lastTimeUsed).atZone(zone).toLocalDate()
             if (day.isBefore(today.minusDays(6)) || day.isAfter(today)) continue
-            daily[day] = (daily[day] ?: 0L) + stat.totalTimeInForeground
+            daily[day] = (daily[day] ?: 0L) + seconds
             if (stat.packageName !in excluded) {
-                drainDaily[day] = (drainDaily[day] ?: 0L) + stat.totalTimeInForeground
+                drainDaily[day] = (drainDaily[day] ?: 0L) + seconds
             }
-            if (day == today) {
-                todayApps += Offender(stat.packageName, label(context, stat.packageName), stat.totalTimeInForeground)
+            if (day == today && stat.packageName !in excluded) {
+                todayApps += Offender(stat.packageName, label(context, stat.packageName), seconds)
             }
         }
         val todaySeconds = daily[today] ?: 0L
@@ -88,14 +91,19 @@ object UsageReader {
         return stats.filter { it.lastTimeUsed >= end - 8_000 }.maxByOrNull { it.lastTimeUsed }?.packageName
     }
 
+    /**
+     * Launchable apps via MAIN/LAUNCHER. Flags must be 0.
+     * MATCH_ALL returns an empty list on Android 11+ unless the app holds QUERY_ALL_PACKAGES.
+     */
     fun installedApps(context: Context): List<TrackedApp> {
+        val hidden = safetyPackages(context)
         val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-        val flags = PackageManager.MATCH_ALL
-        return context.packageManager.queryIntentActivities(intent, flags)
+        return resolve(context, intent)
             .mapNotNull { info ->
                 val packageName = info.activityInfo?.packageName ?: return@mapNotNull null
-                if (packageName == context.packageName) return@mapNotNull null
-                TrackedApp(packageName, info.loadLabel(context.packageManager).toString())
+                if (packageName in hidden) return@mapNotNull null
+                val label = info.loadLabel(context.packageManager).toString().ifBlank { return@mapNotNull null }
+                TrackedApp(packageName, label)
             }
             .distinctBy { it.packageName }
             .sortedBy { it.label.lowercase() }
@@ -107,14 +115,32 @@ object UsageReader {
             "android",
             "com.android.systemui",
             "com.android.settings",
+            "com.android.phone",
+            "com.android.dialer",
+            "com.google.android.dialer",
+            "com.samsung.android.dialer",
+            "com.android.server.telecom",
         )
         val home = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
-        context.packageManager.resolveActivity(home, PackageManager.MATCH_DEFAULT_ONLY)
-            ?.activityInfo?.packageName?.let(packages::add)
+        resolve(context, home).forEach { info -> info.activityInfo?.packageName?.let(packages::add) }
         val dial = Intent(Intent.ACTION_DIAL)
-        context.packageManager.resolveActivity(dial, PackageManager.MATCH_DEFAULT_ONLY)
-            ?.activityInfo?.packageName?.let(packages::add)
+        resolve(context, dial).forEach { info -> info.activityInfo?.packageName?.let(packages::add) }
         return packages
+    }
+
+    private fun resolve(context: Context, intent: Intent): List<ResolveInfo> {
+        val manager = context.packageManager
+        return if (Build.VERSION.SDK_INT >= 33) {
+            manager.queryIntentActivities(intent, PackageManager.ResolveInfoFlags.of(0))
+        } else {
+            @Suppress("DEPRECATION")
+            manager.queryIntentActivities(intent, 0)
+        }
+    }
+
+    private fun visibleMillis(stat: UsageStats): Long {
+        val visible = if (Build.VERSION.SDK_INT >= 29) stat.totalTimeVisible else 0L
+        return maxOf(stat.totalTimeInForeground, visible)
     }
 
     fun todaySeconds(context: Context, packageName: String): Long {
@@ -122,7 +148,8 @@ object UsageReader {
         val manager = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager ?: return 0L
         val start = LocalDate.now().atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
         val stats = manager.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, start, System.currentTimeMillis()).orEmpty()
-        return (stats.firstOrNull { it.packageName == packageName }?.totalTimeInForeground ?: 0L) / 1000L
+        val stat = stats.firstOrNull { it.packageName == packageName } ?: return 0L
+        return visibleMillis(stat) / 1000L
     }
 
     fun label(context: Context, packageName: String): String = runCatching {
@@ -187,12 +214,16 @@ object UsageReader {
     private fun countPickups(manager: UsageStatsManager, start: Long, end: Long, own: String): Int {
         val events = manager.queryEvents(start, end)
         val event = UsageEvents.Event()
-        val resume = if (Build.VERSION.SDK_INT >= 29) UsageEvents.Event.ACTIVITY_RESUMED else UsageEvents.Event.MOVE_TO_FOREGROUND
-        var count = 0
+        var keyguard = 0
+        var interactive = 0
         while (events.hasNextEvent()) {
             events.getNextEvent(event)
-            if (event.eventType == resume && event.packageName != own) count++
+            if (event.packageName == own) continue
+            when (event.eventType) {
+                UsageEvents.Event.KEYGUARD_HIDDEN -> keyguard++
+                UsageEvents.Event.SCREEN_INTERACTIVE -> interactive++
+            }
         }
-        return count
+        return if (keyguard > 0) keyguard else interactive
     }
 }

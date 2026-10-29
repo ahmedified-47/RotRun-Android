@@ -212,7 +212,7 @@ fun OneTimeOffer(
         }
         Text("Cancel anytime • Money back guarantee", color = Melt.Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 12.dp))
         Spacer(Modifier.height(8.dp))
-        PrimaryButton("Redeem 70% Off", onClick = onRedeem)
+        PrimaryButton(if (off > 0) "Redeem $off% Off" else "Redeem offer", onClick = onRedeem)
         if (onTerms != null && onPrivacy != null) {
             Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text("Terms of Use", color = Melt.Action, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.clickable(onClick = onTerms))

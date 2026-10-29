@@ -3,13 +3,14 @@ package com.ahmed.rotrun.data
 import android.app.Activity
 import android.content.Context
 import com.ahmed.rotrun.billing.PlayBilling
+import com.ahmed.rotrun.logic.BlockRules
 import com.ahmed.rotrun.logic.PaywallGate
 import com.ahmed.rotrun.logic.Products
 import com.ahmed.rotrun.logic.Scoring
 import com.ahmed.rotrun.watch.BlockScheduler
 import com.ahmed.rotrun.watch.WatchController
-import com.ahmed.rotrun.watch.scheduleCovers
 import com.ahmed.rotrun.widget.BrainWidgetProvider
+import com.ahmed.rotrun.widget.FocusWidgetProvider
 import java.lang.ref.WeakReference
 import java.time.ZonedDateTime
 import kotlinx.coroutines.CoroutineScope
@@ -56,6 +57,12 @@ class RotRunRepository(context: Context) {
     private val _installed = MutableStateFlow<List<TrackedApp>>(emptyList())
     val installed: StateFlow<List<TrackedApp>> = _installed.asStateFlow()
 
+    private val _access = MutableStateFlow(DeviceAccess())
+    val access: StateFlow<DeviceAccess> = _access.asStateFlow()
+
+    private val _batteryAsk = MutableStateFlow(false)
+    val batteryAsk: StateFlow<Boolean> = _batteryAsk.asStateFlow()
+
     private val _pulses = MutableSharedFlow<UiPulse>(extraBufferCapacity = 8)
     val pulses: SharedFlow<UiPulse> = _pulses.asSharedFlow()
     private var host: WeakReference<Activity>? = null
@@ -89,15 +96,29 @@ class RotRunRepository(context: Context) {
         backend.restore()
         BlockScheduler.scheduleNext(app, _state.value)
         com.ahmed.rotrun.watch.RefreshWork.enqueue(app)
+        refreshAccess()
         refreshUsage()
         loadInstalled()
+        considerBatteryPrompt(_state.value)
+        scope.launch(Dispatchers.IO) { backend.syncAccount(_state.value, allowPull = true) }
     }
 
     fun onForeground() {
+        refreshAccess()
         refreshUsage()
+        loadInstalled()
         billing.start()
         com.ahmed.rotrun.watch.UpgradeReminders.sync(app, _state.value)
         com.ahmed.rotrun.watch.RotNudges.consider(app, this)
+    }
+
+    fun refreshAccess() {
+        _access.value = DeviceAccessReader.read(app)
+    }
+
+    fun dismissBatteryAsk() {
+        app.getSharedPreferences("rotrun.flags", Context.MODE_PRIVATE).edit().putBoolean("battery.prompted", true).apply()
+        _batteryAsk.value = false
     }
 
     fun refreshUsage() {
@@ -107,6 +128,12 @@ class RotRunRepository(context: Context) {
             _usage.value = snapshot
             publishWidget()
             _refreshing.value = false
+            withContext(Dispatchers.IO) {
+                backend.syncScreenTime(snapshot)
+                backend.syncStreak(_state.value)
+                val xp = Scoring.dailyXp((snapshot.todaySeconds / 60).toInt(), _state.value.goalHours * 60, _state.value.askBrainCount, _state.value.ransomDebit)
+                backend.syncXp(xp, "You")
+            }
         }
     }
 
@@ -118,14 +145,33 @@ class RotRunRepository(context: Context) {
     }
 
     fun update(block: (SavedState) -> SavedState) {
+        val previous: SavedState
         val next: SavedState
         synchronized(lock) {
-            next = block(_state.value)
+            previous = _state.value
+            next = block(previous)
             _state.value = next
             persist(next)
         }
         publishWidget()
         WatchController.sync(app, next)
+        if (previous.blockers != next.blockers || previous.appLists != next.appLists) {
+            considerBatteryPrompt(next)
+            scope.launch(Dispatchers.IO) { backend.pushBlockers(next) }
+        }
+    }
+
+    fun wouldExceedFreeCap(proposed: Set<String>, exceptBlocker: String? = null, exceptList: String? = null): Boolean =
+        overFreeCap(proposed, exceptBlocker, exceptList)
+
+    fun applyRemoteBlocks(lists: List<AppList>, blockers: List<Blocker>) {
+        if (lists.isEmpty() && blockers.isEmpty()) return
+        update { current ->
+            current.copy(
+                appLists = lists.ifEmpty { current.appLists },
+                blockers = blockers.ifEmpty { current.blockers },
+            )
+        }
     }
 
     fun advance() = update { stepForward(it) }
@@ -184,8 +230,9 @@ class RotRunRepository(context: Context) {
     }
 
     fun saveBlocker(blocker: Blocker) {
-        if (overFreeCap(blocker.apps.map { it.packageName }.toSet(), exceptBlocker = blocker.id, exceptList = if (blocker.id == "brick") blocker.appListId else null)) {
-            toast("Free includes 1 blocked app. Premium blocks unlimited apps.")
+        val proposed = blocker.packageOrder().toSet()
+        if (overFreeCap(proposed, exceptBlocker = blocker.id, exceptList = if (blocker.id == "brick") blocker.appListId else null)) {
+            toast(BlockRules.FREE_LIMIT_MESSAGE)
             requestPaywall()
             return
         }
@@ -213,7 +260,7 @@ class RotRunRepository(context: Context) {
 
     fun saveList(list: AppList) {
         if (overFreeCap(list.apps.map { it.packageName }.toSet(), exceptList = list.id)) {
-            toast("Free includes 1 blocked app. Premium blocks unlimited apps.")
+            toast(BlockRules.FREE_LIMIT_MESSAGE)
             requestPaywall()
             return
         }
@@ -253,10 +300,15 @@ class RotRunRepository(context: Context) {
     }
 
     fun chargeAskBrain(token: Long) {
+        var charged = false
         update { current ->
             if (token == current.lastAskToken) current
-            else current.copy(askBrainCount = current.askBrainCount + 1, lastAskToken = token)
+            else {
+                charged = true
+                current.copy(askBrainCount = current.askBrainCount + 1, lastAskToken = token)
+            }
         }
+        if (charged) toast("−20 XP · caught rotting")
     }
 
     fun grantUnlock(minutes: Int): Boolean {
@@ -322,43 +374,70 @@ class RotRunRepository(context: Context) {
 
     fun isBlocked(packageName: String, safety: Set<String>): Boolean {
         val current = _state.value
-        if (packageName in safety) return false
-        if (System.currentTimeMillis() < current.unlockUntil) return false
-        if (current.excluded.any { it.packageName == packageName }) return false
-        val focus = current.focus
-        if (focus != null) {
-            return if (focus.scope == "brainrot") brainrotPackages(current).contains(packageName) else true
+        val excluded = current.excluded.map { it.packageName }.toSet()
+        val ordered = buildList {
+            current.blockers.forEach { addAll(it.packageOrder()) }
+            current.appLists.forEach { list -> addAll(list.apps.map { it.packageName }) }
         }
-        val now = ZonedDateTime.now()
-        val seconds = UsageReader.todaySeconds(app, packageName)
-        return current.blockers.any { blocker ->
-            val apps = if (blocker.apps.isNotEmpty()) blocker.apps else {
+        val allowed = BlockRules.freeAllowed(ordered, current.premiumActive(), PaywallGate.shows)
+        val windows = current.blockers.map { blocker ->
+            val active = blocker.apps.ifEmpty {
                 current.appLists.firstOrNull { it.id == blocker.appListId }?.apps.orEmpty()
             }
-            if (apps.none { it.packageName == packageName }) return@any false
-            when (blocker.mode) {
-                "schedule" -> scheduleCovers(blocker, now)
-                "dailyLimit" -> scheduleCovers(blocker.copy(mode = "allDay"), now) && seconds >= blocker.limitMinutes * 60L
-                else -> scheduleCovers(blocker.copy(mode = "allDay"), now)
-            }
+            BlockRules.Window(
+                packages = active.map { it.packageName }.filter { it in allowed }.toSet(),
+                mode = blocker.mode,
+                days = blocker.days.toSet(),
+                startHour = blocker.startHour,
+                endHour = blocker.endHour,
+                limitMinutes = blocker.limitMinutes,
+            )
         }
+        val focus = current.focus?.let {
+            BlockRules.FocusGate(allApps = it.scope != "brainrot", brainrot = brickPackages(current))
+        }
+        val nowMillis = System.currentTimeMillis()
+        val seconds = if (focus == null && packageName !in safety && packageName !in excluded && nowMillis >= current.unlockUntil) {
+            UsageReader.todaySeconds(app, packageName)
+        } else {
+            0L
+        }
+        return BlockRules.isBlocked(
+            packageName = packageName,
+            safety = safety,
+            excluded = excluded,
+            focus = focus,
+            unlockUntil = current.unlockUntil,
+            nowMillis = nowMillis,
+            now = ZonedDateTime.now(),
+            usageSeconds = seconds,
+            windows = windows,
+        )
     }
 
     private fun overFreeCap(proposed: Set<String>, exceptBlocker: String? = null, exceptList: String? = null): Boolean {
-        if (!PaywallGate.shows || _state.value.premiumActive()) return false
         val current = _state.value
         val excluded = current.excluded.map { it.packageName }.toSet()
         val existing = buildSet {
             current.blockers.forEach { blocker ->
                 if (blocker.id == exceptBlocker) return@forEach
-                addAll(blocker.apps.map { it.packageName })
+                addAll(blocker.packageOrder())
             }
             current.appLists.forEach { list ->
                 if (list.id == exceptList) return@forEach
                 addAll(list.apps.map { it.packageName })
             }
-        } - excluded
-        return ((existing + proposed) - excluded).size > 1
+        }
+        return BlockRules.overFreeCap(existing, proposed, excluded, current.premiumActive(), PaywallGate.shows)
+    }
+
+    private fun considerBatteryPrompt(state: SavedState) {
+        val hasApps = state.blockers.any { it.apps.isNotEmpty() } || state.appLists.any { it.apps.isNotEmpty() }
+        if (!hasApps) return
+        val prompted = app.getSharedPreferences("rotrun.flags", Context.MODE_PRIVATE).getBoolean("battery.prompted", false)
+        if (prompted) return
+        if (DeviceAccessReader.read(app).batteryUnrestricted) return
+        _batteryAsk.value = true
     }
 
     fun safetyPackages(): Set<String> = UsageReader.safetyPackages(app)
@@ -381,7 +460,7 @@ class RotRunRepository(context: Context) {
             yesterday -> current.streak + 1
             else -> 1
         }
-        var next = current.copy(streak = streak, lastOpenDay = today)
+        var next = current.copy(streak = streak, longestStreak = maxOf(current.longestStreak, streak), lastOpenDay = today)
         if (next.xpDay != today) {
             next = next.copy(xpDay = today, askBrainCount = 0, ransomDebit = 0)
         }
@@ -417,14 +496,19 @@ class RotRunRepository(context: Context) {
         val health = Scoring.displayedHealth(drain, current.focusMinutesToday(), level.restoreMinutes)
         val offenders = _usage.value.offenders.filter { it.seconds >= 60 }.take(3)
             .joinToString("\n") { "${it.label}  ${Scoring.formatDuration(it.seconds)}" }
+        val focus = current.focus
         prefs.edit()
             .putBoolean("widget_known", known)
             .putInt("widget_health", health)
             .putString("widget_caption", if (known) Scoring.caption(health) else "Not in yet")
             .putString("widget_offenders", offenders.ifBlank { "Not in yet" })
             .putInt("widget_streak", current.streak)
+            .putBoolean("widget_focus_on", focus != null)
+            .putLong("widget_focus_started", focus?.startedAt ?: 0L)
+            .putInt("widget_focus_target", focus?.targetMinutes ?: 0)
             .apply()
         BrainWidgetProvider.updateAll(app)
+        FocusWidgetProvider.updateAll(app)
     }
 
     private fun load(): SavedState {
@@ -470,6 +554,7 @@ class RotRunRepository(context: Context) {
         put("quickCheck", state.quickCheck)
         put("friendCameo", state.friendCameo)
         put("streak", state.streak)
+        put("longestStreak", state.longestStreak)
         put("lastOpenDay", state.lastOpenDay)
         put("askBrainCount", state.askBrainCount)
         put("ransomDebit", state.ransomDebit)
@@ -530,6 +615,7 @@ class RotRunRepository(context: Context) {
             quickCheck = json.optBoolean("quickCheck", true),
             friendCameo = json.optBoolean("friendCameo", true),
             streak = json.optInt("streak", 1),
+            longestStreak = json.optInt("longestStreak", json.optInt("streak", 1)),
             lastOpenDay = json.optString("lastOpenDay"),
             askBrainCount = json.optInt("askBrainCount"),
             ransomDebit = json.optInt("ransomDebit"),
@@ -614,6 +700,11 @@ private fun encodeBlocker(blocker: Blocker) = JSONObject()
     .put("limitMinutes", blocker.limitMinutes)
     .put("days", JSONArray(blocker.days))
     .put("apps", JSONArray().apply { blocker.apps.forEach { put(encodeApp(it)) } })
+    .put("modeApps", JSONObject().apply {
+        blocker.modeApps.forEach { (mode, apps) ->
+            put(mode, JSONArray().apply { apps.forEach { put(encodeApp(it)) } })
+        }
+    })
 
 private fun encodeFocus(session: FocusSession) = JSONObject()
     .put("startedAt", session.startedAt)
@@ -665,8 +756,20 @@ private fun JSONArray?.toBlockers(): List<Blocker> {
                     limitMinutes = item.optInt("limitMinutes", 30),
                     days = days,
                     apps = item.optJSONArray("apps").toApps(),
+                    modeApps = item.optJSONObject("modeApps").toModeApps(),
                 ),
             )
+        }
+    }
+}
+
+private fun JSONObject?.toModeApps(): Map<String, List<TrackedApp>> {
+    if (this == null) return emptyMap()
+    return buildMap {
+        val keys = keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            put(key, optJSONArray(key).toApps())
         }
     }
 }

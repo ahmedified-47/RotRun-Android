@@ -80,6 +80,10 @@ import com.ahmed.rotrun.data.OnboardingStep
 import com.ahmed.rotrun.data.RotRunRepository
 import com.ahmed.rotrun.data.SavedState
 import com.ahmed.rotrun.data.TrackedApp
+import com.ahmed.rotrun.data.UiPulse
+import com.ahmed.rotrun.logic.BlockRules
+import com.ahmed.rotrun.logic.Marketing
+import com.ahmed.rotrun.logic.PaywallGate
 import com.ahmed.rotrun.logic.Products
 import com.ahmed.rotrun.logic.Scoring
 import kotlinx.coroutines.coroutineScope
@@ -94,6 +98,12 @@ fun OnboardingScreen(repo: RotRunRepository) {
     val step = OnboardingStep.fromRaw(state.onboardingStep)
     var plan by remember { mutableStateOf(Products.YEARLY) }
     var legal by remember { mutableStateOf<String?>(null) }
+    var upgrade by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        repo.pulses.collect { pulse ->
+            if (pulse == UiPulse.OpenPaywall) upgrade = true
+        }
+    }
     val context = LocalContext.current
     val askNotify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { repo.advance() }
     val catalog by com.ahmed.rotrun.logic.PlayCatalog.status.collectAsState()
@@ -174,6 +184,22 @@ fun OnboardingScreen(repo: RotRunRepository) {
             OnboardingStep.EnableFirstRule -> EnableRule(repo)
             OnboardingStep.LimitedOffer, OnboardingStep.ChoosePlan -> {
                 LaunchedEffect(step) { repo.advance() }
+            }
+        }
+        val plansAlreadyShowing = step == OnboardingStep.GetAccess || step == OnboardingStep.OneTimeOffer
+        if (upgrade && PaywallGate.shows && !state.premiumActive() && !plansAlreadyShowing) {
+            Column(Modifier.fillMaxSize().background(Color.White).verticalScroll(rememberScrollState())) {
+                GetAccessPaywall(
+                    state = state,
+                    showClose = true,
+                    showDiscountLink = false,
+                    onClose = { upgrade = false },
+                    onDiscount = { upgrade = false },
+                    onPurchase = repo::purchase,
+                    onRestore = repo::restore,
+                    selected = plan,
+                    onSelect = { plan = it },
+                )
             }
         }
     }
@@ -527,22 +553,35 @@ private fun BeforeAfter(repo: RotRunRepository) {
     ScreenFrame(footer = { PrimaryButton("Continue") { repo.advance() } }) {
         CartoonBrain(BrainStyle.Meadow, Modifier.padding(top = 16.dp).size(72.dp))
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.Top) {
-            CompareColumn("Before RotRun", true, Modifier.weight(1f))
+            CompareColumn("Before RotRun", Marketing.beforeAverage, true, Modifier.weight(1f))
             Box(Modifier.padding(horizontal = 8.dp).width(1.dp).height(120.dp).background(Color(0xFFC6C6C8)))
-            CompareColumn("After RotRun", false, Modifier.weight(1f))
+            CompareColumn("After RotRun", Marketing.afterAverage, false, Modifier.weight(1f))
         }
-        Text("Use RotRun to take hours back", fontWeight = FontWeight.Bold, fontSize = 20.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 8.dp))
+        Text(
+            "Use RotRun and gain ${Marketing.hoursBack} back",
+            fontWeight = FontWeight.Bold,
+            fontSize = 20.sp,
+            textAlign = TextAlign.Center,
+            color = Melt.Ink,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 8.dp),
+        )
         Benefit(BrainStyle.Watch, "Focus, uninterrupted.", "Finally do your best work yet.")
         Benefit(BrainStyle.Reading, "Own your time.", "And fill your days with more intention.")
         Benefit(BrainStyle.Spa, "Be fully present.", "Because life isn't happening on your screen.")
-        Text("Built for people who want their time back", color = Melt.Muted, fontSize = 14.sp, modifier = Modifier.padding(top = 12.dp))
+        Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            repeat(5) { Icon(Icons.Filled.Star, null, tint = Melt.Orange, modifier = Modifier.size(16.dp)) }
+        }
+        Text(Marketing.reviews, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+        Text(Marketing.joinUsers, color = Melt.Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 2.dp))
     }
 }
 
 @Composable
-private fun CompareColumn(title: String, tall: Boolean, modifier: Modifier) {
+private fun CompareColumn(title: String, time: String, tall: Boolean, modifier: Modifier) {
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         Text(title, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, textAlign = TextAlign.Center)
+        Text("Daily Average", color = Melt.Muted, fontSize = 12.sp)
+        Text(time, fontWeight = FontWeight.Black, fontSize = 22.sp)
         Row(Modifier.height(90.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
             val count = if (tall) 5 else 3
             repeat(count) { index ->
@@ -681,15 +720,12 @@ private fun SocialProof(repo: RotRunRepository) {
         Chrome(OnboardingStep.SocialProof, true, repo, mascot = false)
         Spacer(Modifier.height(12.dp))
         CartoonBrain(BrainStyle.Meadow, Modifier.size(150.dp))
-        Text("RotRun was made for people like you.", fontSize = 24.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy((-10).dp)) {
-            listOf(Melt.Orange, Melt.Action, Melt.Meadow).forEach { color ->
-                Box(Modifier.size(44.dp).clip(CircleShape).background(color.copy(alpha = 0.85f)).borderCircle(), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Filled.Person, null, tint = Color.White)
-                }
-            }
+        Text(Marketing.madeFor, fontSize = 24.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 12.dp))
+        Text(Marketing.rating, color = Melt.Orange, fontSize = 42.sp, fontWeight = FontWeight.Black)
+        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            repeat(5) { Icon(Icons.Filled.Star, null, tint = Melt.Orange, modifier = Modifier.size(18.dp)) }
         }
-        Text("Your screen time, your rules.", color = Melt.Muted, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, modifier = Modifier.padding(top = 6.dp))
+        Text(Marketing.users, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, modifier = Modifier.padding(top = 8.dp))
     }
 }
 
@@ -923,7 +959,7 @@ private fun WidgetSteps(repo: RotRunRepository) {
         "Long Press your Home Screen" to "Tap and hold an empty area of your Home Screen until the menu appears.",
         "Tap Widgets" to "On Android, open the widget picker from the home screen.",
         "Search for “RotRun”" to "Use the search bar at the top to find RotRun.",
-        "Select the RotRun widget" to "Choose the brain health widget from the options.",
+        "Select the RotRun widget" to "Choose Brain Health or Focus from the RotRun widgets.",
         "Tap “Add Widget”" to "Confirm adding the widget to your home screen.",
     )
     ScreenFrame(footer = { PrimaryButton("Done") { repo.advance() } }) {
@@ -951,40 +987,43 @@ private fun WidgetSteps(repo: RotRunRepository) {
 @Composable
 private fun SelectApps(state: SavedState, installed: List<TrackedApp>, repo: RotRunRepository) {
     val selected = state.appLists.firstOrNull { it.id == "list.brainmelt" }?.apps.orEmpty()
+    var picking by remember { mutableStateOf(false) }
     ScreenFrame(footer = { PrimaryButton("Continue") { repo.advance() } }) {
         Text("Select your RotRun Apps", fontSize = 26.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 24.dp, start = 24.dp, end = 24.dp))
         Text("Select the apps that distract you the most, the ones you open on autopilot.", color = Melt.Muted, textAlign = TextAlign.Center, fontSize = 16.sp, modifier = Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 6.dp))
         CartoonBrain(BrainStyle.Meadow, Modifier.size(130.dp))
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).clip(RoundedCornerShape(20.dp)).background(Color(0xFFE9E9EB)).padding(16.dp)) {
             Text("RotRun Apps", fontWeight = FontWeight.Bold)
-            Text(if (selected.isEmpty()) "No apps yet" else "${selected.size} selected", color = Melt.Muted, fontSize = 13.sp)
+            Text(if (selected.isEmpty()) "No apps yet" else selected.joinToString { it.label }, color = Melt.Muted, fontSize = 13.sp)
             if (installed.isEmpty()) {
                 Text("Open this screen again after RotRun loads your apps.", modifier = Modifier.padding(top = 8.dp))
                 LaunchedEffect(Unit) { repo.loadInstalled() }
             }
-            installed.take(40).forEach { app ->
-                val on = selected.any { it.packageName == app.packageName }
-                Text(
-                    if (on) "✓  ${app.label}" else app.label,
-                    fontWeight = if (on) FontWeight.Bold else FontWeight.Medium,
-                    color = if (on) Melt.Action else Melt.Ink,
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp).clickable {
-                        repo.update { current ->
-                            val lists = current.appLists.ifEmpty { listOf(AppList("list.brainmelt", "RotRun Apps")) }.map { list ->
-                                if (list.id != "list.brainmelt") list
-                                else {
-                                    val apps = if (on) list.apps.filterNot { it.packageName == app.packageName } else list.apps + app
-                                    list.copy(apps = apps)
-                                }
-                            }
-                            val apps = lists.first { it.id == "list.brainmelt" }.apps
-                            current.copy(appLists = lists, blockers = current.blockers.map { if (it.id == "brick") it.copy(apps = apps) else it })
-                        }
-                    },
-                )
-            }
+            Text("Add Apps", color = Melt.Action, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp).clickable { picking = true })
         }
-        Text("You can update this later in Settings.", color = Melt.Action, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.padding(top = 12.dp))
+        Text("You can update this later in Block.", color = Melt.Action, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.padding(top = 12.dp))
+    }
+    if (picking) {
+        AppPickerDialog(
+            apps = installed,
+            selected = selected,
+            onDismiss = { picking = false },
+            onSave = { chosen ->
+                repo.update { current ->
+                    val lists = current.appLists.ifEmpty { listOf(AppList("list.brainmelt", "RotRun Apps")) }.map { list ->
+                        if (list.id == "list.brainmelt") list.copy(apps = chosen) else list
+                    }
+                    current.copy(appLists = lists, blockers = current.blockers.map { if (it.id == "brick") it.copy(apps = chosen) else it })
+                }
+                picking = false
+            },
+            exceedsCap = { proposed -> repo.wouldExceedFreeCap(proposed, exceptBlocker = "brick", exceptList = "list.brainmelt") },
+            onUpgrade = {
+                picking = false
+                repo.toast(BlockRules.FREE_LIMIT_MESSAGE)
+                repo.requestPaywall()
+            },
+        )
     }
 }
 

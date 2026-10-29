@@ -94,8 +94,12 @@ private fun FocusStats(state: SavedState, health: Int) {
     }
     Column(Modifier.fillMaxWidth().background(Melt.Peach).padding(bottom = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         CartoonBrain(BrainStyle.Robe, Modifier.padding(top = 8.dp).size(168.dp), animated = false)
-        Text("You have spent ${Scoring.formatDuration(weekMinutes * 60L)} in focus time this week, regaining $health% of your brain health.", modifier = Modifier.padding(horizontal = 22.dp, vertical = 8.dp), textAlign = TextAlign.Center, fontWeight = FontWeight.SemiBold)
-        Text("With this average, you're on track to spend ${Scoring.formatDuration(year * 60L)} focused this year instead of rotting.", color = Melt.Muted, textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 22.dp))
+        Text(
+            "You have spent ${Scoring.formatDuration(weekMinutes * 60L)} in focus time this week, regaining $health% of your brain health. With this average, you're on track to spend ${Scoring.formatDuration(year * 60L)} focused this year instead of rotting.",
+            modifier = Modifier.padding(horizontal = 22.dp, vertical = 8.dp),
+            textAlign = TextAlign.Center,
+            fontWeight = FontWeight.SemiBold,
+        )
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Mini("Longest", longest?.let { Scoring.formatDuration(it.value * 60L) } ?: "-")
             Mini("Best day", longest?.key?.let { Scoring.parseDay(it)?.dayOfWeek?.name?.take(3) } ?: "-")

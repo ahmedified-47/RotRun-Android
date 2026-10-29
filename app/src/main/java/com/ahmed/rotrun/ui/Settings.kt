@@ -1,9 +1,12 @@
 package com.ahmed.rotrun.ui
 
+import android.Manifest
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -19,6 +22,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,6 +39,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ahmed.rotrun.R
+import com.ahmed.rotrun.data.DeviceAccessReader
 import com.ahmed.rotrun.data.RotRunRepository
 import com.ahmed.rotrun.data.SavedState
 import com.ahmed.rotrun.data.TrackedApp
@@ -52,8 +57,12 @@ fun SettingsScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunR
     var page by remember { mutableStateOf("root") }
     var plan by remember { mutableStateOf(state.productId ?: Products.YEARLY) }
     var authError by remember { mutableStateOf(false) }
-    var accessChoice by remember { mutableStateOf(false) }
+    var showDisclosure by remember { mutableStateOf(false) }
+    val access by repo.access.collectAsState()
     val context = LocalContext.current
+    val askNotify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        repo.refreshAccess()
+    }
     when (page) {
         "privacy" -> LegalPage("privacy", "Privacy Policy") { page = "support" }
         "terms" -> LegalPage("terms", "Terms & Conditions") { page = "support" }
@@ -75,27 +84,34 @@ fun SettingsScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunR
                 onPurchase = repo::purchase, onRestore = repo::restore, selected = plan, onSelect = { plan = it }, settingsStyle = true,
             )
         }
-        else -> RootSettings(state, repo, { page = it }, onAccess = { accessChoice = true })
+        else -> RootSettings(
+            state = state,
+            access = access,
+            repo = repo,
+            open = { page = it },
+            onUsage = { DeviceAccessReader.open(context, DeviceAccessReader.usageIntent(context)) },
+            onAccessibility = { showDisclosure = true },
+            onNotifications = {
+                if (Build.VERSION.SDK_INT >= 33 && !access.notifications) askNotify.launch(Manifest.permission.POST_NOTIFICATIONS)
+                else DeviceAccessReader.open(context, DeviceAccessReader.notificationIntent(context))
+            },
+            onOverlay = { DeviceAccessReader.open(context, DeviceAccessReader.overlayIntent(context)) },
+            onBattery = { DeviceAccessReader.open(context, DeviceAccessReader.batteryIntent(context)) },
+        )
     }
-    if (accessChoice) {
+    if (showDisclosure) {
         AlertDialog(
-            onDismissRequest = { accessChoice = false },
-            title = { Text("Usage and blocking") },
+            onDismissRequest = { showDisclosure = false },
+            title = { Text("Accessibility") },
             text = { Text(stringResource(R.string.accessibility_disclosure)) },
             confirmButton = {
                 TextButton(onClick = {
-                    accessChoice = false
-                    runCatching { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+                    showDisclosure = false
+                    runCatching { context.startActivity(DeviceAccessReader.accessibilityIntent()) }
                         .onFailure { authError = true }
-                }) { Text("Accessibility") }
+                }) { Text("Open settings") }
             },
-            dismissButton = {
-                TextButton(onClick = {
-                    accessChoice = false
-                    runCatching { context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) }
-                        .onFailure { authError = true }
-                }) { Text("Usage access") }
-            },
+            dismissButton = { TextButton(onClick = { showDisclosure = false }) { Text("Not now") } },
         )
     }
     if (authError) {
@@ -109,7 +125,17 @@ fun SettingsScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunR
 }
 
 @Composable
-private fun RootSettings(state: SavedState, repo: RotRunRepository, open: (String) -> Unit, onAccess: () -> Unit) {
+private fun RootSettings(
+    state: SavedState,
+    access: com.ahmed.rotrun.data.DeviceAccess,
+    repo: RotRunRepository,
+    open: (String) -> Unit,
+    onUsage: () -> Unit,
+    onAccessibility: () -> Unit,
+    onNotifications: () -> Unit,
+    onOverlay: () -> Unit,
+    onBattery: () -> Unit,
+) {
     val context = LocalContext.current
     val look = Looks.byId(state.theme)
     Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -142,7 +168,36 @@ private fun RootSettings(state: SavedState, repo: RotRunRepository, open: (Strin
             RowLink("Home Screen Widget", tint = Color(0xFF598CF2)) { open("widget") }
             RowLink("Rot's memory", tint = Color(0xFF3DB370)) { open("memory") }
         }
-        Text("Request usage & blocking access", color = Melt.Muted, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 16.dp).clickable(onClick = onAccess))
+        Text("Request usage & blocking access", color = Melt.Muted, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 16.dp, bottom = 8.dp))
+        CardGroup {
+            PermissionRow("Usage Access", "Today’s screen time, pickups, and top apps.", access.usage, onUsage)
+            PermissionRow("Accessibility", stringResource(R.string.accessibility_disclosure), access.accessibility, onAccessibility)
+            PermissionRow("Notifications", "Rot’s notes, focus timer, and Ask my brain.", access.notifications, onNotifications)
+            if (!access.accessibility) {
+                PermissionRow("Display over other apps", "Fallback shield when Accessibility is off.", access.overlay, onOverlay)
+            }
+            PermissionRow("Battery", "Keep blocking after a restart and when RotRun is swiped away.", access.batteryUnrestricted, onBattery)
+        }
+        Text(
+            "Sync Screen Time now",
+            color = Melt.Action,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(top = 12.dp).clickable { repo.refreshUsage() },
+        )
+    }
+}
+
+@Composable
+private fun PermissionRow(title: String, detail: String, granted: Boolean, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, fontWeight = FontWeight.SemiBold)
+            Text(detail, color = Melt.Muted, fontSize = 12.sp)
+        }
+        Text(if (granted) "On" else "Off", color = if (granted) Color(0xFF34C759) else Melt.House, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -188,19 +243,22 @@ private fun BrainHealthPage(state: SavedState, repo: RotRunRepository, onBack: (
 
 @Composable
 private fun ExcludedPage(state: SavedState, installed: List<TrackedApp>, repo: RotRunRepository, onBack: () -> Unit) {
+    var picking by remember { mutableStateOf(false) }
     BackHeader("Excluded Apps", onBack)
     Text("Time spent in these apps won't lower your brain health (e.g. Maps, Slack, Spotify).", color = Melt.Muted, modifier = Modifier.padding(horizontal = 20.dp))
     if (state.excluded.isEmpty()) Text("No apps yet", modifier = Modifier.padding(20.dp))
     state.excluded.forEach { app -> Text(app.label, modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)) }
-    Text("Add More Apps", color = Melt.Action, fontWeight = FontWeight.Bold, modifier = Modifier.padding(20.dp))
-    installed.take(30).forEach { app ->
-        val on = state.excluded.any { it.packageName == app.packageName }
-        Text(if (on) "✓ ${app.label}" else app.label, modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 5.dp).clickable {
-            repo.update { current ->
-                val next = if (on) current.excluded.filterNot { it.packageName == app.packageName } else current.excluded + app
-                current.copy(excluded = next)
-            }
-        })
+    Text("Add More Apps", color = Melt.Action, fontWeight = FontWeight.Bold, modifier = Modifier.padding(20.dp).clickable { picking = true })
+    if (picking) {
+        AppPickerDialog(
+            apps = installed,
+            selected = state.excluded,
+            onDismiss = { picking = false },
+            onSave = { chosen ->
+                repo.update { it.copy(excluded = chosen) }
+                picking = false
+            },
+        )
     }
 }
 
@@ -316,7 +374,19 @@ private fun MailPage(title: String, subject: String, body: String, onBack: () ->
 @Composable
 private fun WidgetPage(onBack: () -> Unit) {
     BackHeader("Home Screen Widget", onBack)
-    Text("Long-press your Home Screen, choose Widgets, and add RotRun. It shows brain health and your streak.", modifier = Modifier.padding(20.dp))
+    val steps = listOf(
+        "Long-press your Home Screen" to "Tap and hold an empty area until the menu appears.",
+        "Tap Widgets" to "Open the widget picker from the home screen.",
+        "Search for RotRun" to "Use the search bar at the top.",
+        "Choose a widget" to "Brain Health shows today’s score. Focus starts a 15, 30, 45, or 60 minute session.",
+        "Tap Add" to "Confirm adding the widget to your home screen.",
+    )
+    steps.forEachIndexed { index, (title, body) ->
+        Column(Modifier.padding(horizontal = 20.dp, vertical = 6.dp)) {
+            Text("${index + 1}. $title", fontWeight = FontWeight.Bold)
+            Text(body, color = Melt.Muted)
+        }
+    }
 }
 
 @Composable

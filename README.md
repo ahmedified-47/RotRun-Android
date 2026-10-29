@@ -12,7 +12,11 @@ Open `RotRun-Android` in Android Studio (compile SDK 37.2) and run the `app` con
 
 ## Premium
 
-Plan prices match the iOS StoreKit config (Monthly $6.99, Yearly $79.99, 70% first-year offer $23.99). Purchases are saved on the device until Google Play products are connected. The product ids are `com.ahmed.rotrun.subscription.monthly`, `.yearly`, and `.yearly70`.
+Prices come from Google Play. Nothing is hard-coded. Product ids: `com.ahmed.rotrun.subscription.monthly`, `.yearly`, `.yearly70`, and lifetime `com.ahmed.rotrun.lifetime`. SAVE and the one-time offer percent are computed from the prices Play returns. A build with the paywall off: `rotrun.showPaywall=false` in `local.properties`.
+
+## Blocking
+
+The app picker lists launchable apps (MAIN/LAUNCHER). It does not use `QUERY_ALL_PACKAGES`. Free accounts block one app. Premium blocks unlimited apps. The shield is an Accessibility overlay, with a display-over-other-apps fallback. Schedules and per-app daily limits are enforced on Android. Signed-in blocker lists are backed up to Supabase with `client_id` prefixed `android:` so iOS rows are left alone.
 
 ## Deep links
 

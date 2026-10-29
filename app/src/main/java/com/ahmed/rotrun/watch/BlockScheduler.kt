@@ -59,12 +59,3 @@ class ScheduleTickReceiver : BroadcastReceiver() {
     }
 }
 
-fun scheduleCovers(blocker: Blocker, now: ZonedDateTime = ZonedDateTime.now()): Boolean {
-    val day = now.dayOfWeek.value % 7
-    if (day !in blocker.days) return false
-    if (blocker.mode != "schedule") return true
-    val hour = now.hour
-    val start = blocker.startHour
-    val end = blocker.endHour
-    return if (start == end) true else if (start < end) hour in start until end else hour >= start || hour < end
-}

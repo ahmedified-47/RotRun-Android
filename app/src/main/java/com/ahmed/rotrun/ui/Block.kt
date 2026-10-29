@@ -34,6 +34,7 @@ import com.ahmed.rotrun.data.Blocker
 import com.ahmed.rotrun.data.RotRunRepository
 import com.ahmed.rotrun.data.SavedState
 import com.ahmed.rotrun.data.TrackedApp
+import com.ahmed.rotrun.logic.BlockRules
 import com.ahmed.rotrun.logic.Presets
 import com.ahmed.rotrun.logic.Scoring
 
@@ -107,10 +108,24 @@ fun BlockScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunRepo
         )
     }
     editing?.let { draft ->
-        BlockerEditor(draft, installed, onDismiss = { editing = null }, onSave = { repo.saveBlocker(it); editing = null }, onDelete = { confirmDelete = it })
+        BlockerEditor(
+            draft,
+            installed,
+            onDismiss = { editing = null },
+            onSave = { repo.saveBlocker(it); editing = null },
+            onDelete = { confirmDelete = it },
+            exceedsCap = { proposed, exceptBlocker, exceptList -> repo.wouldExceedFreeCap(proposed, exceptBlocker, exceptList) },
+            onUpgrade = { repo.toast(BlockRules.FREE_LIMIT_MESSAGE); repo.requestPaywall() },
+        )
     }
     editingList?.let { list ->
-        ListEditor(list, installed, onDismiss = { editingList = null }) { repo.saveList(it); editingList = null }
+        ListEditor(
+            list,
+            installed,
+            onDismiss = { editingList = null },
+            exceedsCap = { proposed -> repo.wouldExceedFreeCap(proposed, exceptList = list.id) },
+            onUpgrade = { repo.toast(BlockRules.FREE_LIMIT_MESSAGE); repo.requestPaywall() },
+        ) { repo.saveList(it); editingList = null }
     }
     confirmDelete?.let { blocker ->
         AlertDialog(
@@ -150,6 +165,8 @@ private fun BlockerEditor(
     onDismiss: () -> Unit,
     onSave: (Blocker) -> Unit,
     onDelete: (Blocker) -> Unit,
+    exceedsCap: (Set<String>, String?, String?) -> Boolean,
+    onUpgrade: () -> Unit,
 ) {
     var draft by remember(initial.id) { mutableStateOf(initial) }
     var picking by remember { mutableStateOf(false) }
@@ -163,7 +180,11 @@ private fun BlockerEditor(
             listOf("allDay" to "All Day", "schedule" to "Schedule", "dailyLimit" to "Daily Limit").forEach { (mode, label) ->
                 Text(
                     label,
-                    modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(if (draft.mode == mode) Melt.Action else Color.White).clickable { draft = draft.copy(mode = mode) }.padding(horizontal = 10.dp, vertical = 8.dp),
+                    modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(if (draft.mode == mode) Melt.Action else Color.White).clickable {
+                        if (mode == draft.mode) return@clickable
+                        val stash = draft.modeApps + (draft.mode to draft.apps)
+                        draft = draft.copy(mode = mode, apps = stash[mode].orEmpty(), modeApps = stash)
+                    }.padding(horizontal = 10.dp, vertical = 8.dp),
                     color = if (draft.mode == mode) Color.White else Melt.Ink,
                 )
             }
@@ -196,23 +217,43 @@ private fun BlockerEditor(
                 }.padding(8.dp))
             }
         }
-        PrimaryButton("Save Changes") { onSave(draft) }
+        PrimaryButton("Save Changes") { onSave(draft.copy(modeApps = draft.modeApps + (draft.mode to draft.apps))) }
         Text(
             if (draft.mode == "schedule") "Delete Schedule" else "Delete Block",
             color = Melt.House,
             modifier = Modifier.padding(top = 12.dp).clickable { onDelete(draft) },
         )
         if (picking) {
-            AppPicker(installed, draft.apps.map { it.packageName }.toSet()) { chosen ->
-                draft = draft.copy(apps = chosen)
-                picking = false
-            }
+            val reserved = draft.modeApps.filterKeys { it != draft.mode }.values.flatten().map { it.packageName }.toSet()
+            AppPickerDialog(
+                apps = installed,
+                selected = draft.apps,
+                onDismiss = { picking = false },
+                onSave = { chosen ->
+                    draft = draft.copy(apps = chosen, modeApps = draft.modeApps + (draft.mode to chosen))
+                    picking = false
+                },
+                exceedsCap = { proposed ->
+                    exceedsCap(proposed + reserved, draft.id, if (draft.id == "brick") draft.appListId else null)
+                },
+                onUpgrade = {
+                    picking = false
+                    onUpgrade()
+                },
+            )
         }
     }
 }
 
 @Composable
-private fun ListEditor(initial: AppList, installed: List<TrackedApp>, onDismiss: () -> Unit, onSave: (AppList) -> Unit) {
+private fun ListEditor(
+    initial: AppList,
+    installed: List<TrackedApp>,
+    onDismiss: () -> Unit,
+    exceedsCap: (Set<String>) -> Boolean,
+    onUpgrade: () -> Unit,
+    onSave: (AppList) -> Unit,
+) {
     var draft by remember(initial.id) { mutableStateOf(initial) }
     var picking by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().background(Color.White).padding(20.dp)) {
@@ -226,27 +267,14 @@ private fun ListEditor(initial: AppList, installed: List<TrackedApp>, onDismiss:
         Text(if (draft.apps.isEmpty()) "No apps yet" else draft.apps.joinToString { it.label })
         Text("Add More Apps", color = Melt.Action, fontWeight = FontWeight.Bold, modifier = Modifier.clickable { picking = true })
         Text("Cancel", modifier = Modifier.padding(top = 8.dp).clickable(onClick = onDismiss))
-        if (picking) AppPicker(installed, draft.apps.map { it.packageName }.toSet()) { draft = draft.copy(apps = it); picking = false }
-    }
-}
-
-@Composable
-private fun AppPicker(installed: List<TrackedApp>, selected: Set<String>, onDone: (List<TrackedApp>) -> Unit) {
-    var chosen by remember { mutableStateOf(selected) }
-    Column(Modifier.fillMaxWidth().background(Melt.Grouped).padding(12.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Add Apps", fontWeight = FontWeight.Bold)
-            Text("Save", color = Melt.Action, fontWeight = FontWeight.Bold, modifier = Modifier.clickable {
-                onDone(installed.filter { it.packageName in chosen })
-            })
-        }
-        installed.take(50).forEach { app ->
-            val on = app.packageName in chosen
-            Text(
-                if (on) "✓ ${app.label}" else app.label,
-                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp).clickable {
-                    chosen = if (on) chosen - app.packageName else chosen + app.packageName
-                },
+        if (picking) {
+            AppPickerDialog(
+                apps = installed,
+                selected = draft.apps,
+                onDismiss = { picking = false },
+                onSave = { draft = draft.copy(apps = it); picking = false },
+                exceedsCap = exceedsCap,
+                onUpgrade = { picking = false; onUpgrade() },
             )
         }
     }

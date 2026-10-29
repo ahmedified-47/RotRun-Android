@@ -23,9 +23,15 @@ object InterventionCopy {
 
     fun displayName(raw: String?): String = raw?.trim()?.takeIf { it.isNotEmpty() } ?: "this app"
 
-    fun forApp(appName: String): ShieldCopy {
-        val name = displayName(appName)
-        val index = (fnv(name).toUInt() % templates.size.toUInt()).toInt()
+    fun templateCount(): Int = templates.size
+
+    fun forApp(appName: String): ShieldCopy = forPackage(appName, appName)
+
+    /** Stable template from the package name. {app} is the visible label. */
+    fun forPackage(packageName: String, label: String): ShieldCopy {
+        val name = displayName(label)
+        val seed = packageName.ifBlank { name }
+        val index = (fnv(seed).toUInt() % templates.size.toUInt()).toInt()
         val template = templates[index]
         fun fill(value: String?) = value?.replace("{app}", name)
         return template.copy(headline = fill(template.headline).orEmpty(), body = fill(template.body).orEmpty(), footer = fill(template.footer))
