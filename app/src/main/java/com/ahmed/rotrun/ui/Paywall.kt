@@ -92,8 +92,13 @@ fun GetAccessPaywall(
             }
         }
         if (showDiscountLink) {
+            val plans by PlayCatalog.plans.collectAsState()
+            val offer = plans[Products.YEARLY70]
+            val yearly = plans[Products.YEARLY]
+            val regularMicros = yearly?.renewalMicros ?: yearly?.priceMicros
+            val off = if (offer != null && regularMicros != null) Scoring.discountPercent(regularMicros, offer.priceMicros) else 0
             Text(
-                "70% off your first year",
+                if (off > 0) "$off% off your first year" else "See the one-time yearly offer",
                 color = Melt.Action,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 16.sp,
