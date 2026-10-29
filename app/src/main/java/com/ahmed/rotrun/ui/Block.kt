@@ -7,6 +7,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -94,7 +96,12 @@ fun BlockScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunRepo
                 Modifier.fillMaxWidth().padding(vertical = 4.dp).clip(RoundedCornerShape(16.dp)).background(Color.White).clickable { editingList = list }.padding(14.dp),
             ) {
                 Text(list.name, fontWeight = FontWeight.Bold)
-                Text(if (list.apps.isEmpty()) "No apps yet" else "${list.apps.size} apps", color = Melt.Muted)
+                Text(if (list.apps.isEmpty()) "No apps yet" else "Apps (${list.apps.size})", color = Melt.Muted)
+                if (list.apps.isNotEmpty()) {
+                    Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        list.apps.take(8).forEach { app -> AppGlyph(app.packageName, Modifier.size(28.dp)) }
+                    }
+                }
             }
         }
         Text(
@@ -112,7 +119,11 @@ fun BlockScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunRepo
             draft,
             installed,
             onDismiss = { editing = null },
-            onSave = { repo.saveBlocker(it); editing = null },
+            onSave = { blocker ->
+                val saved = repo.saveBlocker(blocker)
+                if (saved) editing = null
+                saved
+            },
             onDelete = { confirmDelete = it },
             exceedsCap = { proposed, exceptBlocker, exceptList -> repo.wouldExceedFreeCap(proposed, exceptBlocker, exceptList) },
             onUpgrade = { repo.toast(BlockRules.FREE_LIMIT_MESSAGE); repo.requestPaywall() },
@@ -125,7 +136,11 @@ fun BlockScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunRepo
             onDismiss = { editingList = null },
             exceedsCap = { proposed -> repo.wouldExceedFreeCap(proposed, exceptList = list.id) },
             onUpgrade = { repo.toast(BlockRules.FREE_LIMIT_MESSAGE); repo.requestPaywall() },
-        ) { repo.saveList(it); editingList = null }
+        ) { list ->
+            val saved = repo.saveList(list)
+            if (saved) editingList = null
+            saved
+        }
     }
     confirmDelete?.let { blocker ->
         AlertDialog(
@@ -154,7 +169,14 @@ private fun BlockerCard(blocker: Blocker, active: Boolean, onClick: () -> Unit) 
             Text(if (active) "● Active" else "Today", color = if (active) Color(0xFF34C759) else Melt.Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         }
         Text(subtitle, color = Melt.Muted)
-        Text(if (blocker.apps.isEmpty()) "No apps in this list" else "${blocker.apps.size} apps", fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
+        if (blocker.apps.isEmpty()) {
+            Text("No apps in this list", fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
+        } else {
+            Text("${blocker.apps.size} apps", fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
+            Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                blocker.apps.take(8).forEach { app -> AppGlyph(app.packageName, Modifier.size(28.dp)) }
+            }
+        }
     }
 }
 
@@ -163,14 +185,15 @@ private fun BlockerEditor(
     initial: Blocker,
     installed: List<TrackedApp>,
     onDismiss: () -> Unit,
-    onSave: (Blocker) -> Unit,
+    onSave: (Blocker) -> Boolean,
     onDelete: (Blocker) -> Unit,
     exceedsCap: (Set<String>, String?, String?) -> Boolean,
     onUpgrade: () -> Unit,
 ) {
     var draft by remember(initial.id) { mutableStateOf(initial) }
     var picking by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxWidth().background(Melt.Grouped).padding(20.dp)) {
+    FullScreenDialog(onDismiss = onDismiss) {
+    Column(Modifier.fillMaxSize().background(Melt.Grouped).verticalScroll(rememberScrollState()).padding(20.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text("Cancel", color = Melt.Action, modifier = Modifier.clickable(onClick = onDismiss))
             Text("Save", color = Melt.Action, fontWeight = FontWeight.Bold, modifier = Modifier.clickable { onSave(draft) })
@@ -191,8 +214,14 @@ private fun BlockerEditor(
         }
         Text("Blocked Apps", fontWeight = FontWeight.Bold)
         Text("Used for ${modeLabel(draft.mode)}. Each mode keeps its own list.", color = Melt.Muted, fontSize = 13.sp)
-        Text(if (draft.apps.isEmpty()) "No apps in this list" else draft.apps.joinToString { it.label }, modifier = Modifier.padding(vertical = 6.dp))
-        Text("Add More Apps", color = Melt.Action, fontWeight = FontWeight.Bold, modifier = Modifier.clickable { picking = true })
+        if (draft.apps.isEmpty()) Text("No apps in this list", modifier = Modifier.padding(vertical = 6.dp))
+        draft.apps.forEach { app ->
+            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                AppGlyph(app.packageName, Modifier.size(36.dp))
+                Text(app.label, modifier = Modifier.padding(start = 12.dp), fontWeight = FontWeight.Medium)
+            }
+        }
+        Text("Add More Apps", color = Melt.Action, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 8.dp).clickable { picking = true })
         if (draft.mode == "schedule") {
             Text("Timeframe", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -230,8 +259,9 @@ private fun BlockerEditor(
                 selected = draft.apps,
                 onDismiss = { picking = false },
                 onSave = { chosen ->
-                    draft = draft.copy(apps = chosen, modeApps = draft.modeApps + (draft.mode to chosen))
-                    picking = false
+                    val next = draft.copy(apps = chosen, modeApps = draft.modeApps + (draft.mode to chosen))
+                    draft = next
+                    if (onSave(next)) picking = false
                 },
                 exceedsCap = { proposed ->
                     exceedsCap(proposed + reserved, draft.id, if (draft.id == "brick") draft.appListId else null)
@@ -243,6 +273,7 @@ private fun BlockerEditor(
             )
         }
     }
+    }
 }
 
 @Composable
@@ -252,31 +283,43 @@ private fun ListEditor(
     onDismiss: () -> Unit,
     exceedsCap: (Set<String>) -> Boolean,
     onUpgrade: () -> Unit,
-    onSave: (AppList) -> Unit,
+    onSave: (AppList) -> Boolean,
 ) {
     var draft by remember(initial.id) { mutableStateOf(initial) }
     var picking by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxWidth().background(Color.White).padding(20.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Edit List", fontWeight = FontWeight.Bold, fontSize = 20.sp)
-            Text("Done", color = Melt.Action, fontWeight = FontWeight.Bold, modifier = Modifier.clickable { onSave(draft) })
+    FullScreenDialog(onDismiss = onDismiss) {
+        Column(Modifier.fillMaxSize().background(Color.White).verticalScroll(rememberScrollState()).padding(20.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("Edit List", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                Text("Done", color = Melt.Action, fontWeight = FontWeight.Bold, modifier = Modifier.clickable { onSave(draft) })
+            }
+            OutlinedTextField(draft.name, { draft = draft.copy(name = it) }, label = { Text("List Name") }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
+            Text("Apps (${draft.apps.size})", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
+            Text("Clear All", color = Melt.House, modifier = Modifier.clickable { draft = draft.copy(apps = emptyList()) })
+            if (draft.apps.isEmpty()) Text("No apps yet", modifier = Modifier.padding(vertical = 6.dp))
+            draft.apps.forEach { app ->
+                Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    AppGlyph(app.packageName, Modifier.size(36.dp))
+                    Text(app.label, modifier = Modifier.padding(start = 12.dp), fontWeight = FontWeight.Medium)
+                }
+            }
+            Text("Add More Apps", color = Melt.Action, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 8.dp).clickable { picking = true })
+            Text("Cancel", modifier = Modifier.padding(top = 8.dp).clickable(onClick = onDismiss))
         }
-        OutlinedTextField(draft.name, { draft = draft.copy(name = it) }, label = { Text("List Name") }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
-        Text("Apps (${draft.apps.size})", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
-        Text("Clear All", color = Melt.House, modifier = Modifier.clickable { draft = draft.copy(apps = emptyList()) })
-        Text(if (draft.apps.isEmpty()) "No apps yet" else draft.apps.joinToString { it.label })
-        Text("Add More Apps", color = Melt.Action, fontWeight = FontWeight.Bold, modifier = Modifier.clickable { picking = true })
-        Text("Cancel", modifier = Modifier.padding(top = 8.dp).clickable(onClick = onDismiss))
-        if (picking) {
-            AppPickerDialog(
-                apps = installed,
-                selected = draft.apps,
-                onDismiss = { picking = false },
-                onSave = { draft = draft.copy(apps = it); picking = false },
-                exceedsCap = exceedsCap,
-                onUpgrade = { picking = false; onUpgrade() },
-            )
-        }
+    }
+    if (picking) {
+        AppPickerDialog(
+            apps = installed,
+            selected = draft.apps,
+            onDismiss = { picking = false },
+            onSave = { chosen ->
+                val next = draft.copy(apps = chosen)
+                draft = next
+                if (onSave(next)) picking = false
+            },
+            exceedsCap = exceedsCap,
+            onUpgrade = { picking = false; onUpgrade() },
+        )
     }
 }
 

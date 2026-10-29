@@ -9,6 +9,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
+import androidx.glance.Image
+import androidx.glance.ImageProvider
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
@@ -20,11 +22,13 @@ import androidx.glance.layout.Column
 import androidx.glance.layout.Row
 import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.padding
+import androidx.glance.layout.size
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
 import com.ahmed.rotrun.MainActivity
+import com.ahmed.rotrun.R
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -57,6 +61,7 @@ private fun FocusWidgetContent(context: Context, running: Boolean, started: Long
             .background(ColorProvider(Color(0xFF1C3A2A)))
             .padding(10.dp),
     ) {
+        Image(provider = ImageProvider(R.drawable.rot_mascot), contentDescription = "Rot", modifier = GlanceModifier.size(48.dp))
         Text(
             "FOCUS",
             style = white.copy(fontWeight = FontWeight.Bold),

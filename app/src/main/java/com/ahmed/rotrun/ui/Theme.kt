@@ -140,4 +140,21 @@ object Looks {
         "Scholar" to 14,
         "Cosmic" to 30,
     )
+
+    val rewards = listOf(
+        StreakReward("Default", null, "Default", "Default", "The original RotRun look."),
+        StreakReward("Grassy", null, "Grassy", "Grassy", "The meadow look. Always unlocked."),
+        StreakReward("Spark", 3, "Sunrise", "Spark", "Sunrise Home look, Spark app icon, and a bolt streak badge."),
+        StreakReward("Zen", 7, "Zen", "Zen", "Spa Home look, Zen app icon, and a meditating Home brain."),
+        StreakReward("Scholar", 14, "Twilight", "Scholar", "Twilight Home look, Scholar app icon, and a reading Home brain."),
+        StreakReward("Cosmic", 30, "Cosmic", "Cosmic", "Night-sky Home look, Cosmic app icon, and a robe Home brain."),
+    )
 }
+
+data class StreakReward(
+    val title: String,
+    val days: Int?,
+    val themeId: String,
+    val iconId: String,
+    val summary: String,
+)

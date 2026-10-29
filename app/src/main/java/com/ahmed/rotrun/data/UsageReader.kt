@@ -87,8 +87,22 @@ object UsageReader {
         if (!hasAccess(context)) return null
         val manager = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager ?: return null
         val end = System.currentTimeMillis()
+        val resume = if (Build.VERSION.SDK_INT >= 29) UsageEvents.Event.ACTIVITY_RESUMED else UsageEvents.Event.MOVE_TO_FOREGROUND
+        val events = manager.queryEvents(end - 15_000, end)
+        val event = UsageEvents.Event()
+        var latest: String? = null
+        var latestTime = 0L
+        while (events.hasNextEvent()) {
+            events.getNextEvent(event)
+            if (event.eventType == resume && event.timeStamp >= latestTime && event.packageName != context.packageName) {
+                latestTime = event.timeStamp
+                latest = event.packageName
+            }
+        }
+        if (latest != null) return latest
         val stats = manager.queryUsageStats(UsageStatsManager.INTERVAL_BEST, end - 20_000, end).orEmpty()
-        return stats.filter { it.lastTimeUsed >= end - 8_000 }.maxByOrNull { it.lastTimeUsed }?.packageName
+        return stats.filter { it.lastTimeUsed >= end - 8_000 && it.packageName != context.packageName }
+            .maxByOrNull { it.lastTimeUsed }?.packageName
     }
 
     /**

@@ -5,6 +5,7 @@ import com.ahmed.rotrun.logic.BlockBackup
 import com.ahmed.rotrun.logic.BlockRules
 import com.ahmed.rotrun.logic.InterventionCopy
 import com.ahmed.rotrun.logic.Marketing
+import com.ahmed.rotrun.logic.PickerSelection
 import com.ahmed.rotrun.logic.ScreenTimeSync
 import com.ahmed.rotrun.logic.ShieldPalette
 import org.junit.Assert.assertEquals
@@ -163,6 +164,26 @@ class BlockRulesTest {
         val blue = background and 0xFF
         assertTrue(red < 120 && green < 120 && blue < 120)
         assertNotEquals(ShieldPalette.accent("melting"), background)
+    }
+
+    @Test
+    fun pickerTickSticksAndTheSecondAppHitsTheFreeCap() {
+        val cap: (Set<String>) -> Boolean = { it.size > 1 }
+        val first = PickerSelection.toggle(emptySet(), "com.google.android.calendar", cap)
+        assertEquals(setOf("com.google.android.calendar"), first.chosen)
+        assertFalse(first.capped)
+        val second = PickerSelection.toggle(first.chosen, "com.android.chrome", cap)
+        assertEquals(setOf("com.google.android.calendar"), second.chosen)
+        assertTrue(second.capped)
+        val cleared = PickerSelection.toggle(first.chosen, "com.google.android.calendar", cap)
+        assertTrue(cleared.chosen.isEmpty())
+        assertFalse(cleared.capped)
+    }
+
+    @Test
+    fun dailyLimitZeroBlocksAsSoonAsTheAppIsOpened() {
+        val window = BlockRules.Window(setOf("com.google.android.calendar"), "dailyLimit", allDays, 0, 24, 0)
+        assertTrue(blocked("com.google.android.calendar", listOf(window), tuesdayMorning, 0))
     }
 
     private fun blocked(

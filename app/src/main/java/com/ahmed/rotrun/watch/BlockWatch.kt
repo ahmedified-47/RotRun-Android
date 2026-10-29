@@ -100,7 +100,7 @@ class BlockWatchService : Service() {
             FocusWidgetProvider.updateAll(this)
         }
         startInForeground(watching)
-        if (BlockAccessibilityService.connected) {
+        if (BlockAccessibilityService.connected && BlockAccessibilityService.covering) {
             hideOverlay()
             return
         }
@@ -167,7 +167,7 @@ class BlockWatchService : Service() {
     private fun buildNotification(text: String, tap: PendingIntent? = null): Notification {
         ensureChannel()
         return NotificationCompat.Builder(this, CHANNEL)
-            .setSmallIcon(R.drawable.ic_stat_brain)
+            .setSmallIcon(R.drawable.ic_stat_rot)
             .setContentTitle("Your Brain")
             .setContentText(text)
             .setContentIntent(tap)

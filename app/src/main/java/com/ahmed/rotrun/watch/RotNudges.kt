@@ -84,7 +84,7 @@ class RotNudgeReceiver : BroadcastReceiver() {
             manager.createNotificationChannel(NotificationChannel("rotrun.open", "Open Rot", NotificationManager.IMPORTANCE_DEFAULT))
         }
         val notification = NotificationCompat.Builder(context, "rotrun.open")
-            .setSmallIcon(R.drawable.ic_stat_brain)
+            .setSmallIcon(R.drawable.ic_stat_rot)
             .setContentTitle("Rot")
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))

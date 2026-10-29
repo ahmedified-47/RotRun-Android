@@ -3,6 +3,7 @@ package com.ahmed.rotrun.data
 import android.app.Activity
 import android.content.Context
 import com.ahmed.rotrun.billing.PlayBilling
+import com.ahmed.rotrun.icon.LauncherIcons
 import com.ahmed.rotrun.logic.BlockRules
 import com.ahmed.rotrun.logic.PaywallGate
 import com.ahmed.rotrun.logic.Products
@@ -100,6 +101,7 @@ class RotRunRepository(context: Context) {
         refreshUsage()
         loadInstalled()
         considerBatteryPrompt(_state.value)
+        LauncherIcons.apply(app, _state.value.appIcon)
         scope.launch(Dispatchers.IO) { backend.syncAccount(_state.value, allowPull = true) }
     }
 
@@ -155,6 +157,7 @@ class RotRunRepository(context: Context) {
         }
         publishWidget()
         WatchController.sync(app, next)
+        if (previous.appIcon != next.appIcon) LauncherIcons.apply(app, next.appIcon)
         if (previous.blockers != next.blockers || previous.appLists != next.appLists) {
             considerBatteryPrompt(next)
             scope.launch(Dispatchers.IO) { backend.pushBlockers(next) }
@@ -229,12 +232,12 @@ class RotRunRepository(context: Context) {
         if (active) toast("RotRun Premium is on.")
     }
 
-    fun saveBlocker(blocker: Blocker) {
+    fun saveBlocker(blocker: Blocker): Boolean {
         val proposed = blocker.packageOrder().toSet()
         if (overFreeCap(proposed, exceptBlocker = blocker.id, exceptList = if (blocker.id == "brick") blocker.appListId else null)) {
             toast(BlockRules.FREE_LIMIT_MESSAGE)
             requestPaywall()
-            return
+            return false
         }
         update { current ->
             val without = current.blockers.filterNot { it.id == blocker.id }
@@ -248,6 +251,7 @@ class RotRunRepository(context: Context) {
             current.copy(blockers = listOf(blocker) + without, appLists = lists)
         }
         toast("Saved ${blocker.name}")
+        return true
     }
 
     fun deleteBlocker(id: String) {
@@ -258,11 +262,11 @@ class RotRunRepository(context: Context) {
         toast("Deleted $name")
     }
 
-    fun saveList(list: AppList) {
+    fun saveList(list: AppList): Boolean {
         if (overFreeCap(list.apps.map { it.packageName }.toSet(), exceptList = list.id)) {
             toast(BlockRules.FREE_LIMIT_MESSAGE)
             requestPaywall()
-            return
+            return false
         }
         update { current ->
             val lists = current.appLists.toMutableList()
@@ -273,6 +277,8 @@ class RotRunRepository(context: Context) {
             }
             current.copy(appLists = lists, blockers = blockers)
         }
+        toast("Saved ${list.name}")
+        return true
     }
 
     fun startFocus(targetMinutes: Int?, legendary: Boolean, scopeName: String) {

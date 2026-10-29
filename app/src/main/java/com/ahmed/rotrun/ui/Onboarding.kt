@@ -994,7 +994,13 @@ private fun SelectApps(state: SavedState, installed: List<TrackedApp>, repo: Rot
         CartoonBrain(BrainStyle.Meadow, Modifier.size(130.dp))
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).clip(RoundedCornerShape(20.dp)).background(Color(0xFFE9E9EB)).padding(16.dp)) {
             Text("RotRun Apps", fontWeight = FontWeight.Bold)
-            Text(if (selected.isEmpty()) "No apps yet" else selected.joinToString { it.label }, color = Melt.Muted, fontSize = 13.sp)
+            if (selected.isEmpty()) Text("No apps yet", color = Melt.Muted, fontSize = 13.sp)
+            selected.forEach { app ->
+                Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    AppGlyph(app.packageName, Modifier.size(32.dp))
+                    Text(app.label, modifier = Modifier.padding(start = 10.dp), fontWeight = FontWeight.Medium)
+                }
+            }
             if (installed.isEmpty()) {
                 Text("Open this screen again after RotRun loads your apps.", modifier = Modifier.padding(top = 8.dp))
                 LaunchedEffect(Unit) { repo.loadInstalled() }

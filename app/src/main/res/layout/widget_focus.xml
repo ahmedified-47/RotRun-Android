@@ -6,6 +6,12 @@
     android:orientation="vertical"
     android:padding="12dp">
 
+    <ImageView
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:contentDescription="Rot"
+        android:src="@drawable/rot_mascot" />
+
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"

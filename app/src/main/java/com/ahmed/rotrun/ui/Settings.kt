@@ -9,15 +9,31 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Eco
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -35,10 +51,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ahmed.rotrun.BuildConfig
 import com.ahmed.rotrun.R
+import com.ahmed.rotrun.icon.LauncherIcons
 import com.ahmed.rotrun.data.DeviceAccessReader
 import com.ahmed.rotrun.data.RotRunRepository
 import com.ahmed.rotrun.data.SavedState
@@ -73,8 +93,8 @@ fun SettingsScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunR
         "icon" -> IconPage(state, repo) { page = "root" }
         "support" -> SupportPage { page = it }
         "help" -> HelpPage(repo) { page = "support" }
-        "feedback" -> MailPage("Feedback / Bug Report", "RotRun Feedback", feedbackBody(context)) { page = "support" }
-        "contact" -> MailPage("Contact Us", "RotRun Contact", contactBody(context)) { page = "support" }
+        "feedback" -> FeedbackPage { page = "support" }
+        "contact" -> ContactPage { page = "support" }
         "widget" -> WidgetPage { page = "root" }
         "memory" -> MemoryPage(repo) { page = "root" }
         "subscription" -> Column(Modifier.padding(12.dp)) {
@@ -205,21 +225,26 @@ private fun PermissionRow(title: String, detail: String, granted: Boolean, onCli
 private fun MemoryPage(repo: RotRunRepository, onBack: () -> Unit) {
     var note by remember { mutableStateOf<String?>(null) }
     BackHeader("Rot's memory", onBack)
-    Text("Rot can remember facts you share in chat. Forgetting clears those memories. Streak and XP stay.", color = Melt.Muted, modifier = Modifier.padding(horizontal = 20.dp))
-    Text(
-        "Forget everything Rot remembers",
-        color = Color(0xFFFF3B30),
-        fontWeight = FontWeight.Bold,
-        modifier = Modifier.padding(20.dp).clickable {
-            kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
-                val error = repo.backend.forgetAll()
-                withContext(Dispatchers.Main) {
-                    note = error ?: "Rot forgot what it had saved."
-                }
-            }
-        },
-    )
-    note?.let { Text(it, modifier = Modifier.padding(horizontal = 20.dp), color = Melt.Muted) }
+    SettingsCard {
+        Column(Modifier.padding(16.dp)) {
+            Text("Rot can remember facts you share in chat. Forgetting clears those memories. Streak and XP stay.", color = Melt.Muted)
+            Text(
+                "Forget everything Rot remembers",
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 14.dp).fillMaxWidth().clip(CircleShape).background(Color(0xFFFF3B30)).clickable {
+                    kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+                        val error = repo.backend.forgetAll()
+                        withContext(Dispatchers.Main) {
+                            note = error ?: "Rot forgot what it had saved."
+                        }
+                    }
+                }.padding(vertical = 14.dp),
+            )
+            note?.let { Text(it, modifier = Modifier.padding(top = 12.dp), color = Melt.Muted) }
+        }
+    }
 }
 
 @Composable
@@ -246,8 +271,15 @@ private fun ExcludedPage(state: SavedState, installed: List<TrackedApp>, repo: R
     var picking by remember { mutableStateOf(false) }
     BackHeader("Excluded Apps", onBack)
     Text("Time spent in these apps won't lower your brain health (e.g. Maps, Slack, Spotify).", color = Melt.Muted, modifier = Modifier.padding(horizontal = 20.dp))
-    if (state.excluded.isEmpty()) Text("No apps yet", modifier = Modifier.padding(20.dp))
-    state.excluded.forEach { app -> Text(app.label, modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)) }
+    SettingsCard {
+        if (state.excluded.isEmpty()) Text("No apps yet", color = Melt.Muted, modifier = Modifier.padding(16.dp))
+        state.excluded.forEach { app ->
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                AppGlyph(app.packageName, Modifier.size(36.dp))
+                Text(app.label, modifier = Modifier.padding(start = 12.dp), fontWeight = FontWeight.SemiBold)
+            }
+        }
+    }
     Text("Add More Apps", color = Melt.Action, fontWeight = FontWeight.Bold, modifier = Modifier.padding(20.dp).clickable { picking = true })
     if (picking) {
         AppPickerDialog(
@@ -266,16 +298,18 @@ private fun ExcludedPage(state: SavedState, installed: List<TrackedApp>, repo: R
 private fun StylesPage(state: SavedState, repo: RotRunRepository, onBack: () -> Unit) {
     BackHeader("Intervention Style", onBack)
     Text("Turn on the styles you want. Ask my brain picks one at random.", color = Melt.Muted, modifier = Modifier.padding(horizontal = 20.dp))
-    StyleToggle("Standard Dialogue", "Chat with your brain", state.standardDialogue) { value -> repo.update { it.copy(standardDialogue = value) } }
-    StyleToggle("Breathing Exercise", "4-2-4 then a question", state.breathingExercise) { value -> repo.update { it.copy(breathingExercise = value) } }
-    StyleToggle("Mirror Mode", "FaceTime from your brain, requires camera", state.mirrorMode) { value -> repo.update { it.copy(mirrorMode = value) } }
-    StyleToggle("Quick Check", "Need this? Then how long?", state.quickCheck) { value -> repo.update { it.copy(quickCheck = value) } }
-    StyleToggle("Friend cameo", "A roast from a friend, when they sent you one today", state.friendCameo) { value -> repo.update { it.copy(friendCameo = value) } }
+    SettingsCard {
+        StyleToggle("Standard Dialogue", "Chat with your brain", state.standardDialogue) { value -> repo.update { it.copy(standardDialogue = value) } }
+        StyleToggle("Breathing Exercise", "4-2-4 then a question", state.breathingExercise) { value -> repo.update { it.copy(breathingExercise = value) } }
+        StyleToggle("Mirror Mode", "FaceTime from your brain, requires camera", state.mirrorMode) { value -> repo.update { it.copy(mirrorMode = value) } }
+        StyleToggle("Quick Check", "Need this? Then how long?", state.quickCheck) { value -> repo.update { it.copy(quickCheck = value) } }
+        StyleToggle("Friend cameo", "A roast from a friend, when they sent you one today", state.friendCameo) { value -> repo.update { it.copy(friendCameo = value) } }
+    }
 }
 
 @Composable
 private fun StyleToggle(title: String, subtitle: String, on: Boolean, change: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(title, fontWeight = FontWeight.Bold)
             Text(subtitle, color = Melt.Muted, fontSize = 13.sp)
@@ -286,43 +320,114 @@ private fun StyleToggle(title: String, subtitle: String, on: Boolean, change: (B
 
 @Composable
 private fun RewardsPage(state: SavedState, repo: RotRunRepository, onBack: () -> Unit) {
+    val next = Looks.rewards.firstOrNull { reward -> reward.days != null && state.streak < reward.days }
+    val progress = if (next?.days == null) 1f else (state.streak.toFloat() / next.days).coerceIn(0f, 1f)
     BackHeader("Rewards", onBack)
     Text("Keep your streak alive to unlock Home looks, streak badges, and app icons.", color = Melt.Muted, modifier = Modifier.padding(horizontal = 20.dp))
-    Looks.all.forEach { look ->
-        val need = look.streak
-        val unlocked = need == null || state.streak >= need
-        Text(
-            "${look.title}  ${if (unlocked) "Unlocked" else "Unlock at $need-day streak"}",
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp).clickable {
-                if (unlocked) repo.update { it.copy(theme = look.id) }
-            },
-        )
+    SettingsCard {
+        Column(Modifier.padding(16.dp)) {
+            Text("${state.streak}-day streak", fontWeight = FontWeight.Bold, fontSize = 22.sp)
+            Text(
+                if (next == null) "Every streak reward is unlocked." else "Next: ${next.title} at ${next.days} days",
+                color = Melt.Muted,
+                modifier = Modifier.padding(top = 4.dp, bottom = 10.dp),
+            )
+            LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth().height(8.dp).clip(CircleShape), color = Melt.Action, trackColor = Melt.Grouped)
+        }
     }
-    listOf(
-        3 to "Spark" to "Sunrise Home look, Spark app icon, and a bolt streak badge.",
-        7 to "Zen" to "Spa Home look, Zen app icon, and a meditating Home brain.",
-        14 to "Scholar" to "Twilight Home look, Scholar app icon, and a reading Home brain.",
-        30 to "Cosmic" to "Night-sky Home look, Cosmic app icon, and a robe Home brain.",
-    ).forEach { (pair, summary) ->
-        val (days, title) = pair
-        Text("$title · $days days", fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp))
-        Text(summary, color = Melt.Muted, modifier = Modifier.padding(horizontal = 20.dp))
+    Looks.rewards.forEach { reward ->
+        val unlocked = reward.days == null || state.streak >= reward.days
+        val selected = state.theme == reward.themeId && state.appIcon == reward.iconId
+        SettingsCard {
+            Row(
+                Modifier.fillMaxWidth().clickable(enabled = unlocked) {
+                    repo.update { it.copy(theme = reward.themeId, appIcon = reward.iconId) }
+                    repo.toast("Using ${reward.title}")
+                }.padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RewardBadge(reward.title, unlocked)
+                Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                    Text(reward.title, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                    Text(reward.summary, color = Melt.Muted, fontSize = 13.sp)
+                    Text(
+                        when {
+                            selected -> "Selected"
+                            unlocked -> "Unlocked"
+                            else -> "Unlock at ${reward.days}-day streak"
+                        },
+                        color = if (unlocked) Color(0xFF34C759) else Melt.Muted,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+                Image(painterResource(LauncherIcons.preview(reward.iconId)), contentDescription = reward.title, modifier = Modifier.size(52.dp).clip(RoundedCornerShape(14.dp)))
+            }
+        }
+    }
+}
+
+@Composable
+private fun RewardBadge(title: String, unlocked: Boolean) {
+    val (icon, tint) = when (title) {
+        "Spark" -> Icons.Default.Bolt to Color(0xFFFF8C3C)
+        "Zen" -> Icons.Default.Eco to Color(0xFF6BAD94)
+        "Scholar" -> Icons.Default.MenuBook to Color(0xFF5C4A8A)
+        "Cosmic" -> Icons.Default.AutoAwesome to Color(0xFF7A6CFF)
+        else -> null to Melt.Action
+    }
+    Box(Modifier.size(48.dp).clip(CircleShape).background(tint.copy(alpha = if (unlocked) 0.18f else 0.08f)), contentAlignment = Alignment.Center) {
+        if (!unlocked) Icon(Icons.Default.Lock, contentDescription = "Locked", tint = Melt.Muted)
+        else if (icon != null) Icon(icon, contentDescription = title, tint = tint)
+        else CartoonBrain(BrainStyle.Meadow, Modifier.size(36.dp), animated = false)
     }
 }
 
 @Composable
 private fun IconPage(state: SavedState, repo: RotRunRepository, onBack: () -> Unit) {
     BackHeader("App Icon", onBack)
-    Looks.icons.forEach { (name, need) ->
-        val unlocked = need == null || state.streak >= (need)
-        Text(
-            "$name  ${if (unlocked) if (state.appIcon == name) "Selected" else "Tap to save" else "Unlock at $need-day streak"}",
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp).clickable(enabled = unlocked) {
-                repo.update { it.copy(appIcon = name) }
-                repo.toast("Saved. This Android build keeps one launcher icon.")
-            },
-        )
+    Text("The same names as Rewards. An unlocked icon replaces the one on your home screen.", color = Melt.Muted, modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp))
+    Looks.icons.chunked(3).forEach { row ->
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            row.forEach { (name, need) ->
+                val unlocked = need == null || state.streak >= need
+                val selected = state.appIcon == name
+                Column(
+                    Modifier.weight(1f).clip(RoundedCornerShape(22.dp)).background(Color.White).border(if (selected) 3.dp else 0.dp, if (selected) Melt.Action else Color.Transparent, RoundedCornerShape(22.dp)).clickable {
+                        if (!unlocked) {
+                            repo.toast("Unlock at $need-day streak")
+                        } else {
+                            repo.update { it.copy(appIcon = name) }
+                            repo.toast("Launcher icon set to $name")
+                        }
+                    }.padding(10.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Image(
+                            painterResource(LauncherIcons.preview(name)),
+                            contentDescription = name,
+                            modifier = Modifier.size(72.dp).clip(RoundedCornerShape(18.dp)),
+                            alpha = if (unlocked) 1f else 0.4f,
+                        )
+                        if (!unlocked) Icon(Icons.Default.Lock, contentDescription = "Locked", tint = Melt.Ink)
+                    }
+                    Text(name, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
+                    Text(
+                        when {
+                            selected -> "Selected"
+                            unlocked -> "Tap to use"
+                            else -> "$need-day streak"
+                        },
+                        color = if (selected) Melt.Action else Melt.Muted,
+                        fontSize = 12.sp,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            }
+            repeat(3 - row.size) { Box(Modifier.weight(1f)) }
+        }
     }
 }
 
@@ -338,37 +443,113 @@ private fun SupportPage(open: (String) -> Unit) {
         RowLink("Terms & Conditions") { open("terms") }
         RowLink("Manage Subscription") { open("subscription") }
     }
-    Text("Follow us", fontWeight = FontWeight.Bold, modifier = Modifier.padding(20.dp))
-    Text("✕    camera    music", modifier = Modifier.padding(horizontal = 20.dp))
+    Text("Follow us", fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp))
+    Row(Modifier.padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        FollowGlyph(Icons.Default.Close, "X")
+        FollowGlyph(Icons.Default.PhotoCamera, "Camera")
+        FollowGlyph(Icons.Default.MusicNote, "Music")
+    }
     Text(SupportCopy.EMAIL, color = Melt.Action, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(20.dp))
-    Text("RotRun version 1.0.0 (1)", color = Melt.Muted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 20.dp))
+    Text(versionLine(), color = Melt.Muted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 20.dp))
+}
+
+@Composable
+private fun FollowGlyph(icon: ImageVector, label: String) {
+    Box(Modifier.size(44.dp).clip(CircleShape).background(Color.White), contentAlignment = Alignment.Center) {
+        Icon(icon, contentDescription = label, tint = Melt.Ink)
+    }
 }
 
 @Composable
 private fun HelpPage(repo: RotRunRepository, onBack: () -> Unit) {
     var open by remember { mutableStateOf<String?>(null) }
     BackHeader("Need help?", onBack)
-    Text("We're working with your phone's usage access to provide you with the best experience possible. Tapping the refresh button below resolves most issues.", color = Melt.Muted, modifier = Modifier.padding(horizontal = 22.dp))
+    SettingsCard {
+        Column(Modifier.padding(16.dp)) {
+            Text("We're working with your phone's usage access to provide you with the best experience possible. Tapping the refresh button below resolves most issues.", color = Melt.Muted)
+        }
+    }
     BoxButton("Refresh Blocking System") { repo.toast("Blocking system refreshed"); repo.refreshUsage() }
     MailLink("Email a question", "RotRun Help", helpBody())
     Text("Frequently Asked Questions", fontWeight = FontWeight.Bold, modifier = Modifier.padding(20.dp))
     SupportCopy.faqs.forEach { faq ->
-        Column(Modifier.padding(horizontal = 20.dp, vertical = 4.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color.White).clickable {
+        Column(Modifier.padding(horizontal = 20.dp, vertical = 4.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color.White).clickable {
             open = if (open == faq.question) null else faq.question
-        }.padding(12.dp)) {
-            Text(faq.question, fontWeight = FontWeight.Medium)
+        }.padding(14.dp)) {
+            Text(faq.question, fontWeight = FontWeight.SemiBold)
             if (open == faq.question) Text(faq.answer, color = Melt.Muted, modifier = Modifier.padding(top = 6.dp))
         }
     }
-    Text("From the founder", fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
-    Text("I appreciate your patience as I work with Android usage access. Refreshing usually clears blocking glitches — if not, email ${SupportCopy.EMAIL} and we'll jump on it.", modifier = Modifier.padding(horizontal = 20.dp))
+    SettingsCard {
+        Column(Modifier.padding(16.dp)) {
+            Text("From the founder", fontWeight = FontWeight.Bold)
+            Text("I appreciate your patience as I work with Android usage access. Refreshing usually clears blocking glitches — if not, email ${SupportCopy.EMAIL} and we'll jump on it.", color = Melt.Muted, modifier = Modifier.padding(top = 6.dp))
+        }
+    }
 }
 
 @Composable
-private fun MailPage(title: String, subject: String, body: String, onBack: () -> Unit) {
-    BackHeader(title, onBack)
-    Text(body, modifier = Modifier.padding(20.dp))
-    MailLink("Send email", subject, body)
+private fun FeedbackPage(onBack: () -> Unit) {
+    var bug by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf("") }
+    val context = LocalContext.current
+    BackHeader("Feedback / Bug Report", onBack)
+    Text(
+        if (bug) "Tell us what happened, what you expected, and how to reproduce it." else "Product feedback: what you like, and what you'd change.",
+        color = Melt.Muted,
+        modifier = Modifier.padding(horizontal = 20.dp),
+    )
+    Row(Modifier.padding(horizontal = 20.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        ChoiceChip("Feedback", !bug) { bug = false }
+        ChoiceChip("Bug Report", bug) { bug = true }
+    }
+    OutlinedTextField(
+        value = message,
+        onValueChange = { message = it },
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+        minLines = 5,
+        label = { Text(if (bug) "What happened" else "Your message") },
+    )
+    SettingsCard {
+        Column(Modifier.padding(16.dp)) {
+            Text("Sent with your note", fontWeight = FontWeight.Bold)
+            Text(versionLine(), color = Melt.Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
+            Text("Android ${Build.VERSION.RELEASE}", color = Melt.Muted, fontSize = 13.sp)
+            Text("${Build.MANUFACTURER} ${Build.MODEL}", color = Melt.Muted, fontSize = 13.sp)
+        }
+    }
+    BoxButton(if (bug) "Email bug report" else "Email feedback") {
+        if (message.isBlank()) return@BoxButton
+        val subject = if (bug) "RotRun Bug Report" else "RotRun Feedback"
+        val lead = if (bug) "Bug report:" else "Product feedback:"
+        sendMail(context, subject, "Hi RotRun team,\n\n$lead\n\n$message\n\n${diagnostics()}")
+    }
+}
+
+@Composable
+private fun ContactPage(onBack: () -> Unit) {
+    val context = LocalContext.current
+    BackHeader("Contact Us", onBack)
+    SettingsCard {
+        Column(Modifier.padding(16.dp)) {
+            Text("Questions, press, or anything that isn't a bug. We read every message.", color = Melt.Muted)
+            Text("We'll open a message to ${SupportCopy.EMAIL} with subject RotRun Contact.", modifier = Modifier.padding(top = 8.dp))
+            Text(versionLine(), color = Melt.Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
+        }
+    }
+    BoxButton("Email RotRun") {
+        sendMail(context, "RotRun Contact", "Hi RotRun team,\n\n\n\n${diagnostics()}")
+    }
+}
+
+@Composable
+private fun ChoiceChip(title: String, on: Boolean, click: () -> Unit) {
+    Text(
+        title,
+        color = if (on) Color.White else Melt.Ink,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier.clip(CircleShape).background(if (on) Melt.Action else Color.White).clickable(onClick = click).padding(horizontal = 16.dp, vertical = 10.dp),
+    )
 }
 
 @Composable
@@ -382,9 +563,16 @@ private fun WidgetPage(onBack: () -> Unit) {
         "Tap Add" to "Confirm adding the widget to your home screen.",
     )
     steps.forEachIndexed { index, (title, body) ->
-        Column(Modifier.padding(horizontal = 20.dp, vertical = 6.dp)) {
-            Text("${index + 1}. $title", fontWeight = FontWeight.Bold)
-            Text(body, color = Melt.Muted)
+        SettingsCard {
+            Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(36.dp).clip(CircleShape).background(Melt.Action), contentAlignment = Alignment.Center) {
+                    Text("${index + 1}", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+                Column(Modifier.padding(start = 12.dp)) {
+                    Text(title, fontWeight = FontWeight.Bold)
+                    Text(body, color = Melt.Muted, fontSize = 13.sp)
+                }
+            }
         }
     }
 }
@@ -397,6 +585,11 @@ private fun BackHeader(title: String, onBack: () -> Unit) {
 @Composable
 private fun CardGroup(content: @Composable () -> Unit) {
     Column(Modifier.padding(vertical = 8.dp).fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Color.White)) { content() }
+}
+
+@Composable
+private fun SettingsCard(content: @Composable () -> Unit) {
+    Column(Modifier.padding(horizontal = 20.dp, vertical = 6.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Color.White)) { content() }
 }
 
 @Composable
@@ -425,8 +618,13 @@ private fun MailLink(title: String, subject: String, body: String) {
     })
 }
 
-private fun diagnostics(): String = "———\nRotRun version 1.0.0 (1)\nAndroid ${Build.VERSION.RELEASE}\nDevice: ${Build.MANUFACTURER} ${Build.MODEL}"
+private fun versionLine() = "RotRun version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"
+
+private fun diagnostics(): String = "———\n${versionLine()}\nAndroid ${Build.VERSION.RELEASE}\nDevice: ${Build.MANUFACTURER} ${Build.MODEL}"
 
 private fun helpBody() = "Hi RotRun team,\n\nHere’s my question:\n\n\n\n${diagnostics()}"
-private fun feedbackBody(@Suppress("UNUSED_PARAMETER") context: android.content.Context) = "Hi RotRun team,\n\nProduct feedback:\n\nWhat I like / what I’d change:\n\n\n\n${diagnostics()}"
-private fun contactBody(@Suppress("UNUSED_PARAMETER") context: android.content.Context) = "Hi RotRun team,\n\n\n\n${diagnostics()}"
+
+private fun sendMail(context: android.content.Context, subject: String, body: String) {
+    val uri = Uri.parse("mailto:${SupportCopy.EMAIL}?subject=${Uri.encode(subject)}&body=${Uri.encode(body)}")
+    runCatching { context.startActivity(Intent(Intent.ACTION_SENDTO, uri)) }
+}

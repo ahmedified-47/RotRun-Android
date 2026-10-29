@@ -63,7 +63,7 @@ class UpgradeReminderReceiver : android.content.BroadcastReceiver() {
             manager.createNotificationChannel(NotificationChannel("rotrun.upgrade", "Rot", NotificationManager.IMPORTANCE_DEFAULT))
         }
         val notification = NotificationCompat.Builder(context, "rotrun.upgrade")
-            .setSmallIcon(R.drawable.ic_stat_brain)
+            .setSmallIcon(R.drawable.ic_stat_rot)
             .setContentTitle("Rot")
             .setContentText("It's Rot. Free chats run out after three a day. Premium is how I stay with you.")
             .build()

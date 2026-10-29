@@ -6,7 +6,13 @@
     <string name="focus_widget_description">Start a 15, 30, 45, or 60 minute Focus session.</string>
     <string name="accessibility_disclosure">RotRun uses Accessibility to see which app is in front and show your block screen for apps you chose. It does not read what you type and it does not record the screen.</string>
     <color name="meadow">#3DB370</color>
-    <color name="ic_launcher_background">#3DB370</color>
+    <color name="ic_launcher_background">#FFF4EC</color>
+    <color name="icon_default">#FFF4EC</color>
+    <color name="icon_grassy">#3DB370</color>
+    <color name="icon_spark">#FF8C3C</color>
+    <color name="icon_zen">#6BAD94</color>
+    <color name="icon_scholar">#5C4A8A</color>
+    <color name="icon_cosmic">#1A1A42</color>
     <style name="Theme.RotRun" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>

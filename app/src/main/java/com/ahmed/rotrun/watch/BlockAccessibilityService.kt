@@ -20,15 +20,21 @@ class BlockAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
-        val packageName = event.packageName?.toString() ?: return
+        val packageName = when (event?.eventType) {
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> event.packageName?.toString()
+            AccessibilityEvent.TYPE_WINDOWS_CHANGED -> rootInActiveWindow?.packageName?.toString()
+            else -> return
+        } ?: return
         if (!RotRunGraph.ready()) return
         val repo = RotRunGraph.repo
         if (!repo.isBlocked(packageName, repo.safetyPackages())) {
             hide()
             return
         }
-        if (shownFor == packageName && overlay != null) return
+        if (shownFor == packageName && overlay != null) {
+            covering = true
+            return
+        }
         val label = UsageReader.label(this, packageName)
         hide()
         overlay = ShieldOverlay.show(
@@ -39,6 +45,7 @@ class BlockAccessibilityService : AccessibilityService() {
             onAsk = { openAsk(packageName, label) },
         )
         shownFor = if (overlay == null) null else packageName
+        covering = overlay != null
     }
 
     override fun onInterrupt() {
@@ -68,10 +75,14 @@ class BlockAccessibilityService : AccessibilityService() {
         ShieldOverlay.hide(this, overlay)
         overlay = null
         shownFor = null
+        covering = false
     }
 
     companion object {
         @Volatile
         var connected: Boolean = false
+
+        @Volatile
+        var covering: Boolean = false
     }
 }
