@@ -14,6 +14,7 @@ import com.ahmed.rotrun.widget.BrainWidgetProvider
 import com.ahmed.rotrun.widget.FocusWidgetProvider
 import java.lang.ref.WeakReference
 import java.time.ZonedDateTime
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -69,6 +70,7 @@ class RotRunRepository(context: Context) {
     private var host: WeakReference<Activity>? = null
     val backend = Backend(app, this)
     private val billing = PlayBilling(app, ::applyEntitlement, ::toast)
+    private val launchFinished = AtomicBoolean(false)
 
     fun attach(activity: Activity) {
         host = WeakReference(activity)
@@ -93,6 +95,15 @@ class RotRunRepository(context: Context) {
             next = clampRewards(next)
             next
         }
+        val state = _state.value
+        val watching = state.focus != null || state.blockers.any { it.apps.isNotEmpty() } || state.appLists.any { it.apps.isNotEmpty() }
+        // When the watcher starts, it calls finishLaunch after startForeground.
+        // Doing that work here first blows the foreground-service deadline.
+        if (!watching) finishLaunch()
+    }
+
+    fun finishLaunch() {
+        if (!launchFinished.compareAndSet(false, true)) return
         billing.start()
         backend.restore()
         BlockScheduler.scheduleNext(app, _state.value)

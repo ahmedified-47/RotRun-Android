@@ -13,6 +13,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.provider.Settings
+import android.util.Log
 import android.view.View
 import android.view.WindowManager
 import androidx.core.app.NotificationCompat
@@ -39,6 +40,7 @@ object WatchController {
 class BlockWatchService : Service() {
     private val handler = Handler(Looper.getMainLooper())
     private val shownAt = HashMap<String, Long>()
+    private var lastForeground: String? = null
     private var overlay: View? = null
     private var shownFor: String? = null
     private var lastFocusWidget = 0L
@@ -54,7 +56,10 @@ class BlockWatchService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startInForeground("RotRun is watching the apps you chose.")
         handler.removeCallbacks(tick)
-        handler.post(tick)
+        handler.post {
+            if (RotRunGraph.ready()) RotRunGraph.repo.finishLaunch()
+            tick.run()
+        }
         return START_STICKY
     }
 
@@ -108,7 +113,12 @@ class BlockWatchService : Service() {
             hideOverlay()
             return
         }
-        if (!repo.isBlocked(packageName, repo.safetyPackages())) {
+        val blocked = repo.isBlocked(packageName, repo.safetyPackages())
+        if (packageName != lastForeground) {
+            lastForeground = packageName
+            Log.i(ShieldOverlay.TAG, "fg=$packageName blocked=$blocked overlay=${Settings.canDrawOverlays(this)}")
+        }
+        if (!blocked) {
             hideOverlay()
             return
         }

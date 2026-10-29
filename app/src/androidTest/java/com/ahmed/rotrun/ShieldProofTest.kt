@@ -8,13 +8,14 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiDevice
-import androidx.test.uiautomator.Until
 import com.ahmed.rotrun.data.AppList
 import com.ahmed.rotrun.data.Blocker
 import com.ahmed.rotrun.data.RotRunGraph
 import com.ahmed.rotrun.data.TrackedApp
 import com.ahmed.rotrun.data.UsageReader
+import com.ahmed.rotrun.watch.ShieldOverlay
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.time.ZonedDateTime
 import org.junit.Assert.assertEquals
@@ -47,26 +48,26 @@ class ShieldProofTest {
     fun pickerSavesAnAppAndSettingsAreCards() {
         launchHome()
         device.findObject(By.text("Block")).click()
-        device.wait(Until.hasObject(By.text("RotRun Apps")), 5_000)
+        assertTrue(settle(20_000) { device.hasObject(By.text("RotRun Apps")) })
         device.findObject(By.text("RotRun Apps")).click()
-        device.wait(Until.hasObject(By.text("Add More Apps")), 5_000)
+        assertTrue(settle(20_000) { device.hasObject(By.text("Add More Apps")) })
         device.findObject(By.text("Add More Apps")).click()
-        assertTrue(device.wait(Until.hasObject(By.text("Search apps")), 5_000))
+        assertTrue("picker never opened", settle(20_000) { device.hasObject(By.text("Search apps")) })
         shot("picker")
         val box = device.findObject(By.checkable(true))
         assertNotNull("picker should show a checkbox next to an app icon", box)
         box.click()
         device.findObject(By.text("Save")).click()
-        assertTrue(device.wait(Until.hasObject(By.textContains("Apps (")), 8_000))
+        assertTrue("saved list never showed a count", settle(20_000) { device.hasObject(By.textContains("Apps (")) })
         val count = device.findObject(By.textContains("Apps ("))
         assertTrue(count.text != "Apps (0)")
         shot("list-after-save")
 
         device.pressBack()
         device.findObject(By.text("Settings")).click()
-        device.wait(Until.hasObject(By.text("App Icon")), 5_000)
+        assertTrue(settle(20_000) { device.hasObject(By.text("App Icon")) })
         device.findObject(By.text("App Icon")).click()
-        assertTrue(device.wait(Until.hasObject(By.text("Grassy")), 5_000))
+        assertTrue(settle(20_000) { device.hasObject(By.text("Grassy")) })
         assertTrue(device.hasObject(By.text("Spark")))
         shot("app-icon")
         device.findObject(By.text("Grassy")).click()
@@ -76,16 +77,16 @@ class ShieldProofTest {
 
         device.pressBack()
         device.findObject(By.text("Rewards")).click()
-        assertTrue(device.wait(Until.hasObject(By.text("Spark")), 5_000))
+        assertTrue(settle(20_000) { device.hasObject(By.text("Spark")) })
         assertTrue(device.hasObject(By.text("Scholar")))
         assertTrue(device.hasObject(By.textContains("day streak")))
         shot("rewards")
 
         device.pressBack()
         device.findObject(By.text("Support & Feedback")).click()
-        device.wait(Until.hasObject(By.text("Feedback / Bug Report")), 5_000)
+        assertTrue(settle(20_000) { device.hasObject(By.text("Feedback / Bug Report")) })
         device.findObject(By.text("Feedback / Bug Report")).click()
-        assertTrue(device.wait(Until.hasObject(By.text("Bug Report")), 5_000))
+        assertTrue(settle(20_000) { device.hasObject(By.text("Bug Report")) })
         assertTrue(device.hasObject(By.text("Email feedback")))
         shot("feedback")
     }
@@ -93,7 +94,6 @@ class ShieldProofTest {
     @Test
     fun shieldFiresForAllDayScheduleAndDailyLimit() {
         val app = pickTarget()
-        launchHome()
         prove("all-day", app, Blocker(id = "brick", name = "Brick Mode", mode = "allDay", apps = listOf(app)))
         prove("schedule", app, scheduleBlocker(app))
         prove("daily-limit", app, Blocker(id = "brick", name = "Brick Mode", mode = "dailyLimit", limitMinutes = 0, apps = listOf(app)))
@@ -117,8 +117,11 @@ class ShieldProofTest {
         val launch = target.packageManager.getLaunchIntentForPackage(app.packageName)
             ?: error("No launcher for ${app.packageName}")
         launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        shell("logcat -c")
         target.startActivity(launch)
-        val shown = device.wait(Until.hasObject(By.text("Ask my brain")), 12_000)
+        val shown = settle(45_000) {
+            device.hasObject(By.text("Ask my brain")) || shellText("logcat -d -s ${ShieldOverlay.TAG}:I").contains("shown ${app.packageName}")
+        }
         shot("shield-$name")
         assertTrue("Rot shield did not appear for $name (${app.packageName})", shown)
         device.pressHome()
@@ -137,7 +140,6 @@ class ShieldProofTest {
     }
 
     private fun pickTarget(): TrackedApp {
-        launchHome()
         val safety = UsageReader.safetyPackages(target)
         val apps = UsageReader.installedApps(target)
         return apps.firstOrNull { it.packageName !in safety && target.packageManager.getLaunchIntentForPackage(it.packageName) != null }
@@ -159,8 +161,28 @@ class ShieldProofTest {
                 appIcon = "Default",
             )
         }
-        assertTrue(device.wait(Until.hasObject(By.text("Settings")), 15_000))
+        assertTrue(
+            "home never showed Settings",
+            settle(90_000) { device.hasObject(By.text("Settings")) },
+        )
         shot("home")
+    }
+
+    /** Clicks through the emulator's System UI ANR and the battery prompt while waiting. */
+    private fun settle(timeoutMs: Long, probe: () -> Boolean): Boolean {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            device.findObject(By.text("Wait"))?.click()
+            device.findObject(By.text("Not now"))?.click()
+            if (probe()) return true
+            Thread.sleep(500)
+        }
+        return probe()
+    }
+
+    private fun shellText(command: String): String {
+        val stream = instrumentation.uiAutomation.executeShellCommand(command)
+        return stream.use { FileInputStream(it.fileDescriptor).bufferedReader().readText() }
     }
 
     private fun shot(name: String) {

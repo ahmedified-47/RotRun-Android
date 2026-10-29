@@ -83,12 +83,17 @@ object UsageReader {
         )
     }
 
+    /**
+     * Package that last came to the foreground. The window is hours, not seconds:
+     * a block service often starts after the blocked app is already open, and that
+     * resume event is older than a few seconds.
+     */
     fun foreground(context: Context): String? {
         if (!hasAccess(context)) return null
         val manager = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager ?: return null
         val end = System.currentTimeMillis()
         val resume = if (Build.VERSION.SDK_INT >= 29) UsageEvents.Event.ACTIVITY_RESUMED else UsageEvents.Event.MOVE_TO_FOREGROUND
-        val events = manager.queryEvents(end - 15_000, end)
+        val events = manager.queryEvents(end - 6 * 60 * 60_000L, end)
         val event = UsageEvents.Event()
         var latest: String? = null
         var latestTime = 0L
@@ -100,8 +105,8 @@ object UsageReader {
             }
         }
         if (latest != null) return latest
-        val stats = manager.queryUsageStats(UsageStatsManager.INTERVAL_BEST, end - 20_000, end).orEmpty()
-        return stats.filter { it.lastTimeUsed >= end - 8_000 && it.packageName != context.packageName }
+        val stats = manager.queryUsageStats(UsageStatsManager.INTERVAL_BEST, end - 60 * 60_000L, end).orEmpty()
+        return stats.filter { it.lastTimeUsed > 0L && it.packageName != context.packageName }
             .maxByOrNull { it.lastTimeUsed }?.packageName
     }
 

@@ -3,6 +3,7 @@ package com.ahmed.rotrun.watch
 import android.content.Context
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
+import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
@@ -81,7 +82,10 @@ object ShieldOverlay {
         val manager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
         return runCatching {
             manager.addView(root, params)
+            Log.i(TAG, "shown $packageName")
             root
+        }.onFailure { error ->
+            Log.w(TAG, "overlay failed for $packageName: ${error.javaClass.simpleName}")
         }.getOrNull()
     }
 
@@ -90,4 +94,6 @@ object ShieldOverlay {
         val manager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
         runCatching { manager.removeView(view) }
     }
+
+    const val TAG = "RotShield"
 }

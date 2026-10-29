@@ -17,6 +17,8 @@ class BlockAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         connected = true
+        val current = UsageReader.foreground(this) ?: return
+        consider(current)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -25,6 +27,10 @@ class BlockAccessibilityService : AccessibilityService() {
             AccessibilityEvent.TYPE_WINDOWS_CHANGED -> rootInActiveWindow?.packageName?.toString()
             else -> return
         } ?: return
+        consider(packageName)
+    }
+
+    private fun consider(packageName: String) {
         if (!RotRunGraph.ready()) return
         val repo = RotRunGraph.repo
         if (!repo.isBlocked(packageName, repo.safetyPackages())) {
