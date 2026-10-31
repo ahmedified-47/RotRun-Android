@@ -1,9 +1,12 @@
 package com.ahmed.rotrun.ui
 
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
@@ -47,17 +50,76 @@ private fun Typography.rounded(): Typography = copy(
 
 private fun TextStyle.rounded() = copy(fontFamily = Nunito)
 
+data class RotChrome(
+    val dark: Boolean,
+    val page: Color,
+    val card: Color,
+    val inset: Color,
+    val ink: Color,
+    val muted: Color,
+    val blue: Color,
+    val line: Color,
+    val tab: Color,
+    val sheet: Color,
+    val field: Color,
+    val danger: Color,
+    val green: Color,
+    val pill: Color,
+)
+
+private val LightChrome = RotChrome(
+    dark = false,
+    page = Color(0xFFF2F2F7),
+    card = Color.White,
+    inset = Color(0xFFF2F2F7),
+    ink = Color(0xFF1C1C1E),
+    muted = Color(0xFF8E8E93),
+    blue = Color(0xFF007AFF),
+    line = Color(0xFFE5E5EA),
+    tab = Color.White,
+    sheet = Color(0xFFF2F2F7),
+    field = Color.White,
+    danger = Color(0xFFFF3B30),
+    green = Color(0xFF34C759),
+    pill = Color(0xFFE5E5EA),
+)
+
+private val DarkChrome = RotChrome(
+    dark = true,
+    page = Color(0xFF000000),
+    card = Color(0xFF1C1C1E),
+    inset = Color(0xFF2C2C2E),
+    ink = Color.White,
+    muted = Color(0xFF8E8E93),
+    blue = Color(0xFF0A84FF),
+    line = Color(0xFF38383A),
+    tab = Color(0xFF1C1C1E),
+    sheet = Color(0xFF1C1C1E),
+    field = Color(0xFF2C2C2E),
+    danger = Color(0xFFFF453A),
+    green = Color(0xFF30D158),
+    pill = Color(0xFF3A3A3C),
+)
+
+val LocalRot = staticCompositionLocalOf { LightChrome }
+
+@Composable
+fun rot(): RotChrome = LocalRot.current
+
 @Composable
 fun RotRunTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = lightColorScheme(
-            primary = Melt.Action,
-            background = Melt.Grouped,
-            surface = Color.White,
-        ),
-        typography = Typography().rounded(),
-        content = content,
-    )
+    val chrome = if (isSystemInDarkTheme()) DarkChrome else LightChrome
+    CompositionLocalProvider(LocalRot provides chrome) {
+        MaterialTheme(
+            colorScheme = lightColorScheme(
+                primary = chrome.blue,
+                background = chrome.page,
+                surface = chrome.card,
+            ),
+            typography = Typography().rounded(),
+            content = content,
+        )
+    }
 }
 
 object Melt {

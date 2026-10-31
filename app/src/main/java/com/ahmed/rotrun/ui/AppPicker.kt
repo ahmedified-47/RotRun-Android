@@ -4,23 +4,28 @@ import android.graphics.drawable.ColorDrawable
 import android.view.WindowManager
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
@@ -35,6 +40,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -63,6 +69,41 @@ fun FullScreenDialog(onDismiss: () -> Unit, content: @Composable () -> Unit) {
             window.setBackgroundDrawable(ColorDrawable(android.graphics.Color.WHITE))
         }
         Box(Modifier.fillMaxSize().background(Color.White)) { content() }
+    }
+}
+
+@Composable
+fun BottomSheet(onDismiss: () -> Unit, content: @Composable () -> Unit) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            dismissOnClickOutside = true,
+            decorFitsSystemWindows = false,
+        ),
+    ) {
+        val view = LocalView.current
+        SideEffect {
+            val window = (view.parent as? DialogWindowProvider)?.window ?: return@SideEffect
+            window.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
+            window.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
+        }
+        Box(Modifier.fillMaxSize()) {
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)).clickable(onClick = onDismiss))
+            Column(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.92f)
+                    .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
+                    .background(rot().sheet)
+                    .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) {}
+                    .navigationBarsPadding(),
+            ) {
+                Box(Modifier.padding(top = 8.dp).align(Alignment.CenterHorizontally).width(36.dp).height(5.dp).clip(CircleShape).background(rot().muted.copy(alpha = 0.45f)))
+                content()
+            }
+        }
     }
 }
 
@@ -104,7 +145,7 @@ fun AppGlyph(packageName: String, modifier: Modifier = Modifier) {
     if (bitmap != null) {
         Image(bitmap, contentDescription = null, modifier = modifier.clip(RoundedCornerShape(10.dp)))
     } else {
-        Box(modifier.clip(RoundedCornerShape(10.dp)).background(Melt.Grouped))
+        Box(modifier.clip(RoundedCornerShape(10.dp)).background(rot().inset))
     }
 }
 
@@ -130,43 +171,40 @@ fun AppPickerDialog(
         chosen = result.chosen
         capped = result.capped
     }
-    FullScreenDialog(onDismiss = onDismiss) {
-        Column(Modifier.fillMaxSize().background(Color.White).statusBarsPadding().navigationBarsPadding()) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false, decorFitsSystemWindows = false),
+    ) {
+        val view = LocalView.current
+        val chrome = rot()
+        SideEffect {
+            val window = (view.parent as? DialogWindowProvider)?.window ?: return@SideEffect
+            window.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
+            window.setBackgroundDrawable(ColorDrawable(if (chrome.dark) android.graphics.Color.BLACK else android.graphics.Color.WHITE))
+        }
+        Column(Modifier.fillMaxSize().background(chrome.page).statusBarsPadding().navigationBarsPadding()) {
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Cancel", color = Melt.Action, modifier = Modifier.clickable(onClick = onDismiss))
-                Text("Add Apps", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Text("Cancel", color = chrome.blue, modifier = Modifier.clickable(onClick = onDismiss))
+                Text("Add Apps", color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 18.sp)
                 Text(
                     "Save",
-                    color = Melt.Action,
+                    color = chrome.blue,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.clickable { onSave(known.filter { it.packageName in chosen }) },
                 )
             }
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                singleLine = true,
-                placeholder = { Text("Search apps") },
-            )
-            Text(
-                "${chosen.size} selected",
-                color = Melt.Muted,
-                fontSize = 13.sp,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
-            )
             if (capped) {
                 Column(
-                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).clip(RoundedCornerShape(14.dp)).background(Color(0xFFFFF4E5)).padding(12.dp),
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).clip(RoundedCornerShape(14.dp)).background(chrome.card).padding(12.dp),
                 ) {
-                    Text(BlockRules.FREE_LIMIT_MESSAGE, fontWeight = FontWeight.SemiBold)
+                    Text(BlockRules.FREE_LIMIT_MESSAGE, color = chrome.ink, fontWeight = FontWeight.SemiBold)
                     Text(
                         "See Premium",
-                        color = Melt.Action,
+                        color = chrome.blue,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(top = 6.dp).clickable(onClick = onUpgrade),
                     )
@@ -175,7 +213,7 @@ fun AppPickerDialog(
             if (filtered.isEmpty()) {
                 Text(
                     if (apps.isEmpty()) "No launchable apps yet. RotRun lists apps that have a home-screen icon." else "No apps match that search.",
-                    color = Melt.Muted,
+                    color = chrome.muted,
                     modifier = Modifier.padding(20.dp),
                 )
             }
@@ -183,18 +221,31 @@ fun AppPickerDialog(
                 items(filtered, key = { it.packageName }) { app ->
                     val on = app.packageName in chosen
                     Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                        Modifier.fillMaxWidth().clickable { flip(app.packageName) }.padding(horizontal = 16.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         AppGlyph(app.packageName, Modifier.size(40.dp))
-                        Column(Modifier.weight(1f).clickable { flip(app.packageName) }.padding(horizontal = 12.dp, vertical = 4.dp)) {
-                            Text(app.label, fontWeight = FontWeight.Medium)
-                            Text(app.packageName, color = Melt.Muted, fontSize = 12.sp)
+                        Text(app.label, color = chrome.ink, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f).padding(horizontal = 12.dp))
+                        Box(
+                            Modifier.size(26.dp).clip(CircleShape).background(if (on) chrome.blue else Color.Transparent).border(1.5.dp, if (on) chrome.blue else chrome.muted, CircleShape),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (on) Text("✓", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         }
-                        Checkbox(checked = on, onCheckedChange = { flip(app.packageName) })
                     }
                 }
             }
+            BasicTextField(
+                value = query,
+                onValueChange = { query = it },
+                singleLine = true,
+                textStyle = TextStyle(color = chrome.ink, fontSize = 16.sp),
+                modifier = Modifier.fillMaxWidth().padding(12.dp).clip(RoundedCornerShape(14.dp)).background(chrome.inset).padding(horizontal = 14.dp, vertical = 12.dp),
+                decorationBox = { inner ->
+                    if (query.isEmpty()) Text("Search apps", color = chrome.muted)
+                    inner()
+                },
+            )
         }
     }
 }

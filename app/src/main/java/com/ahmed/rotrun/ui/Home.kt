@@ -47,7 +47,8 @@ fun HomeScreen(state: SavedState, usage: UsageSnapshot, refreshing: Boolean, onR
     val level = BrainHealthLevel.fromLabel(state.brainHealth)
     val scored = usage.authorized && usage.drainSeconds >= 60
     val health = Scoring.displayedHealth(Scoring.drainHealth(usage.drainSeconds, level), state.focusMinutesToday(), level.restoreMinutes)
-    val style = when (health) {
+    val shown = if (scored) health else 0
+    val style = when (if (scored) health else 0) {
         in 65..100 -> look.brain
         in 40..64 -> BrainStyle.Sad
         else -> BrainStyle.Pleading
@@ -73,15 +74,15 @@ fun HomeScreen(state: SavedState, usage: UsageSnapshot, refreshing: Boolean, onR
                 letterSpacing = 1.3.sp,
             )
             Text(
-                if (scored) "$health%" else "Not in yet",
+                "$shown%",
                 color = if (scenic) Color.Black else Melt.Ink,
                 fontWeight = FontWeight.Black,
-                fontSize = if (scored) 60.sp else 36.sp,
+                fontSize = 60.sp,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth(),
             )
             Text(
-                if (scored) Scoring.caption(health) else "Waiting on a real reading",
+                Scoring.caption(shown),
                 color = if (scenic) Color.White.copy(alpha = 0.9f) else Melt.Muted,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 15.sp,
@@ -89,34 +90,31 @@ fun HomeScreen(state: SavedState, usage: UsageSnapshot, refreshing: Boolean, onR
             Box(
                 Modifier.padding(horizontal = 44.dp, vertical = 8.dp).fillMaxWidth().height(12.dp).clip(CircleShape)
                     .background(if (scenic) Color.Black.copy(alpha = 0.22f) else Color(0xFFE5E5EA)),
+                contentAlignment = Alignment.CenterStart,
             ) {
-                Box(
-                    Modifier.fillMaxWidth((health / 100f).coerceIn(0.04f, 1f)).fillMaxHeight()
-                        .clip(CircleShape)
-                        .background(if (scenic) Color.White else Melt.Action),
-                )
+                val fraction = (shown / 100f).coerceIn(0f, 1f)
+                if (fraction <= 0f) {
+                    Box(Modifier.padding(start = 2.dp).size(12.dp).clip(CircleShape).background(if (scenic) Color.White else Melt.Action))
+                } else {
+                    Box(
+                        Modifier.fillMaxWidth(fraction).fillMaxHeight()
+                            .clip(CircleShape)
+                            .background(if (scenic) Color.White else Melt.Action),
+                    )
+                }
             }
         }
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            MetricCard("Screen Time", Scoring.visibleDuration(usage.todaySeconds), MetricKind.Screen, Modifier.weight(1f))
-            MetricCard("Pickups", Scoring.visibleCount(usage.pickups), MetricKind.Pickups, Modifier.weight(1f))
-            MetricCard("Focus Time", Scoring.visibleDuration(state.focusMinutesToday() * 60L), MetricKind.Focus, Modifier.weight(1f))
+            MetricCard("Screen Time", if (scored) Scoring.formatDuration(usage.todaySeconds) else "0m", MetricKind.Screen, Modifier.weight(1f))
+            MetricCard("Pickups", if (usage.authorized) usage.pickups.toString() else "0", MetricKind.Pickups, Modifier.weight(1f))
+            MetricCard("Focus Time", Scoring.formatDuration(state.focusMinutesToday() * 60L), MetricKind.Focus, Modifier.weight(1f))
         }
         Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             SectionTitle("Top Offenders", scenic)
             RaisedCard {
                 val offenders = usage.offenders.filter { it.seconds >= 60 }
                 if (offenders.isEmpty()) {
-                    repeat(3) { index ->
-                        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            AppDot("?")
-                            Text("Not in yet", color = Color.White.copy(alpha = 0.85f), fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = 12.dp).weight(1f))
-                            Text("Not in yet", color = Color.White.copy(alpha = 0.7f))
-                        }
-                        if (index < 2) {
-                            Box(Modifier.padding(start = 64.dp).fillMaxWidth().height(1.dp).background(Color.White.copy(alpha = 0.12f)))
-                        }
-                    }
+                    Text("No apps yet", color = Color.White.copy(alpha = 0.85f), fontWeight = FontWeight.Medium, modifier = Modifier.padding(16.dp))
                 } else {
                     offenders.forEachIndexed { index, app ->
                         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -184,26 +182,25 @@ fun HomeScreen(state: SavedState, usage: UsageSnapshot, refreshing: Boolean, onR
 
 @Composable
 private fun HomeHeader(streak: Int, refreshing: Boolean, scenic: Boolean, on: Color, onRefresh: () -> Unit, onTalk: () -> Unit) {
-    Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-        Text("ROTRUN", color = on, fontWeight = FontWeight.Black, fontSize = 30.sp, modifier = Modifier.align(Alignment.Center))
-        Row(Modifier.align(Alignment.CenterStart), verticalAlignment = Alignment.CenterVertically) {
-            Text("Talk", color = on, fontWeight = FontWeight.Bold, modifier = Modifier.padding(end = 8.dp).clickable(onClick = onTalk))
-            Icon(
-                Icons.Default.Refresh,
-                contentDescription = "Refresh",
-                tint = on.copy(alpha = if (refreshing) 0.45f else 1f),
-                modifier = Modifier.size(22.dp).clickable(onClick = onRefresh),
-            )
+    Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), contentAlignment = Alignment.Center) {
+        Text("BRAINROT", color = on, fontWeight = FontWeight.Black, fontSize = 28.sp, letterSpacing = 0.6.sp)
+        Box(
+            Modifier.align(Alignment.CenterStart).size(40.dp).clip(CircleShape).background(Color.White.copy(alpha = if (scenic) 0.28f else 0.7f)).clickable(onClick = onRefresh),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = on.copy(alpha = if (refreshing) 0.45f else 1f), modifier = Modifier.size(22.dp))
         }
-        Column(Modifier.align(Alignment.CenterEnd), horizontalAlignment = Alignment.CenterHorizontally) {
-            Box(Modifier.size(36.dp)) {
-                Box(Modifier.size(36.dp).offset(y = 3.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.28f)))
+        Row(Modifier.align(Alignment.CenterEnd), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Box(
                     Modifier.size(36.dp).clip(CircleShape).background(Brush.verticalGradient(listOf(Color(0xFFFFC740), Color(0xFFFF6B1F)))),
                     contentAlignment = Alignment.Center,
                 ) { Text("🔥", fontSize = 16.sp) }
+                Text("$streak", color = on, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp)
             }
-            Text("$streak", color = on, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp)
+            Box(Modifier.size(44.dp).clip(CircleShape).background(Color.White).clickable(onClick = onTalk), contentAlignment = Alignment.Center) {
+                CartoonBrain(BrainStyle.Meadow, Modifier.size(40.dp), animated = false)
+            }
         }
     }
 }
@@ -218,9 +215,9 @@ private fun MetricCard(title: String, value: String, kind: MetricKind, modifier:
                 Box(Modifier.size(48.dp).offset(y = 4.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.28f)))
                 Box(Modifier.size(48.dp).clip(CircleShape).background(Color.White), contentAlignment = Alignment.Center) {
                     when (kind) {
-                        MetricKind.Screen -> Text("☠", fontSize = 20.sp)
+                        MetricKind.Screen -> Text("👻", fontSize = 22.sp)
                         MetricKind.Pickups -> Box(Modifier.size(width = 16.dp, height = 26.dp).clip(RoundedCornerShape(5.dp)).background(Brush.verticalGradient(listOf(Color(0xFF8CD1FF), Color(0xFF408CF2)))))
-                        MetricKind.Focus -> Text("🔒", fontSize = 18.sp)
+                        MetricKind.Focus -> Box(Modifier.size(22.dp).clip(CircleShape).background(Color(0xFFFF9E2E)))
                     }
                 }
             }

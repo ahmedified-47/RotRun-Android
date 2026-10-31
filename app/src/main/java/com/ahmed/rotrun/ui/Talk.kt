@@ -16,8 +16,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -47,7 +49,8 @@ fun TalkSheet(repo: RotRunRepository, onClose: () -> Unit) {
         if (!granted) note = "Microphone access is off."
         else startVoice(repo) { note = it }
     }
-    Column(Modifier.fillMaxSize().background(Color.White).padding(16.dp)) {
+    CompositionLocalProvider(LocalContentColor provides rot().ink) {
+    Column(Modifier.fillMaxSize().background(rot().page).padding(16.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text("Talk to Brain", fontWeight = FontWeight.Bold, fontSize = 22.sp)
             Text("Close", color = Melt.Action, modifier = Modifier.clickable {
@@ -113,6 +116,7 @@ fun TalkSheet(repo: RotRunRepository, onClose: () -> Unit) {
             }
         }
         note?.let { Text(it, color = Melt.Muted, modifier = Modifier.padding(top = 8.dp)) }
+    }
     }
 }
 

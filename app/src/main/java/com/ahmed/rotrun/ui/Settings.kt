@@ -8,6 +8,8 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
@@ -19,18 +21,28 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CardGiftcard
+import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Diamond
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.Help
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.QuestionMark
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -80,8 +92,6 @@ fun SettingsScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunR
         repo.refreshAccess()
     }
     when (page) {
-        "brain" -> BrainHealthPage(state, repo) { page = "root" }
-        "excluded" -> ExcludedPage(state, installed, repo) { page = "root" }
         "styles" -> StylesPage(state, repo) { page = "root" }
         "rewards" -> RewardsPage(state, repo) { page = "root" }
         "icon" -> IconPage(state, repo) { page = "root" }
@@ -91,8 +101,9 @@ fun SettingsScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunR
         "contact" -> ContactPage { page = "support" }
         "widget" -> WidgetPage { page = "root" }
         "memory" -> MemoryPage(repo) { page = "root" }
-        "subscription" -> Column(Modifier.padding(12.dp)) {
-            Text("‹ Manage Subscription", color = Melt.Action, modifier = Modifier.clickable { page = "support" })
+        "subscription" -> PremiumManage(state, repo, onBack = { page = "support" }, onChangePlan = { page = "plans" })
+        "plans" -> Column(Modifier.padding(bottom = 12.dp)) {
+            BackHeader("RotRun Premium") { page = "subscription" }
             GetAccessPaywall(
                 state, showClose = false, showDiscountLink = false, onClose = {}, onDiscount = {},
                 onPurchase = repo::purchase, onRestore = repo::restore, selected = plan, onSelect = { plan = it }, settingsStyle = true,
@@ -113,6 +124,8 @@ fun SettingsScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunR
             onBattery = { DeviceAccessReader.open(context, DeviceAccessReader.batteryIntent(context)) },
         )
     }
+    if (page == "brain") BrainHealthPage(state, repo) { page = "root" }
+    if (page == "excluded") ExcludedPage(state, installed, repo) { page = "root" }
     if (showDisclosure) {
         AlertDialog(
             onDismissRequest = { showDisclosure = false },
@@ -151,69 +164,111 @@ private fun RootSettings(
     onBattery: () -> Unit,
 ) {
     val context = LocalContext.current
-    val look = Looks.byId(state.theme)
-    Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        androidx.compose.foundation.layout.Box(
-            Modifier.size(92.dp).clip(CircleShape).background(Brush.verticalGradient(listOf(look.canvas, look.tab))),
+    val chrome = rot()
+    Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            Modifier.size(84.dp).clip(CircleShape).background(Brush.verticalGradient(listOf(Color(0xFF7DDE9A), Color(0xFF3CB371)))),
             contentAlignment = Alignment.Center,
-        ) { CartoonBrain(look.brain, Modifier.size(78.dp), animated = false) }
-        Text("Settings", fontSize = 34.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 8.dp))
+        ) { CartoonBrain(BrainStyle.Meadow, Modifier.size(72.dp), animated = false) }
+        Text("Settings", color = chrome.ink, fontSize = 34.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 8.dp))
         CardGroup {
-            RowLink("Brain Health", state.brainHealth, Color(0xFFFF3B30)) { open("brain") }
-            RowLink("Excluded Apps", tint = Color(0xFF59B8F2)) { open("excluded") }
-            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Upgrade reminders", fontWeight = FontWeight.SemiBold)
-                    Text("One local note a day from Rot about RotRun Premium. Off until you turn this on.", color = Melt.Muted, fontSize = 12.sp)
+            Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                Text("Upgrade reminders", color = chrome.ink, fontWeight = FontWeight.Bold)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "One local note a day from Rot about RotRun Premium. Off until you turn this on. RotRun will not ask for notification permission just to send these.",
+                        color = chrome.muted,
+                        fontSize = 13.sp,
+                        modifier = Modifier.weight(1f).padding(end = 8.dp),
+                    )
+                    GreenSwitch(state.upgradeReminders) { enabled ->
+                        repo.update { it.copy(upgradeReminders = enabled) }
+                        com.ahmed.rotrun.watch.UpgradeReminders.sync(context, repo.state.value)
+                    }
                 }
-                Switch(checked = state.upgradeReminders, onCheckedChange = { enabled ->
-                    repo.update { it.copy(upgradeReminders = enabled) }
-                    com.ahmed.rotrun.watch.UpgradeReminders.sync(context, repo.state.value)
-                })
             }
         }
         CardGroup {
-            RowLink("Intervention Style", tint = Color(0xFF598CF2)) { open("styles") }
-            RowLink("Rewards", tint = Color(0xFFF28C33)) { open("rewards") }
-            RowLink("App Icon", tint = Color(0xFF738CF2)) { open("icon") }
+            RowLink("Brain Health", state.brainHealth, Icons.Default.Favorite, Color(0xFFFF3B30)) { open("brain") }
+            Hairline()
+            RowLink("Excluded Apps", icon = Icons.Default.Diamond, tint = Color(0xFF5AC8FA)) { open("excluded") }
         }
         CardGroup {
-            RowLink("Support & Feedback", tint = Color(0xFFF25973)) { open("support") }
-            RowLink("Home Screen Widget", tint = Color(0xFF598CF2)) { open("widget") }
-            RowLink("Rot's memory", tint = Color(0xFF3DB370)) { open("memory") }
+            RowLink("Intervention Style", icon = Icons.Default.Chat, tint = Color(0xFF64B5F6)) { open("styles") }
+            Hairline()
+            RowLink("Rewards", icon = Icons.Default.CardGiftcard, tint = Color(0xFFFF9F0A)) { open("rewards") }
+            Hairline()
+            RowLink("App Icon", icon = Icons.Default.GridView, tint = Color(0xFF5E5CE6)) { open("icon") }
         }
-        Text("Permissions", fontWeight = FontWeight.Bold, fontSize = 20.sp, modifier = Modifier.padding(top = 18.dp))
-        Text("Request usage & blocking access", color = Melt.Muted, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 4.dp, bottom = 8.dp))
+        CardGroup {
+            RowLink("Support & Feedback", icon = Icons.Default.QuestionMark, tint = Color(0xFFFF375F)) { open("support") }
+            Hairline()
+            RowLink("Home Screen Widget", icon = Icons.Default.GridView, tint = Color(0xFF0A84FF)) { open("widget") }
+        }
+        Text("Permissions", color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 20.sp, modifier = Modifier.padding(top = 18.dp).fillMaxWidth())
+        Text("Request usage and blocking access", color = chrome.muted, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 4.dp, bottom = 8.dp).fillMaxWidth())
         CardGroup {
             PermissionRow("Usage Access", "Today’s screen time, pickups, and top apps.", access.usage, onUsage)
+            Hairline()
             PermissionRow("Accessibility", stringResource(R.string.accessibility_disclosure), access.accessibility, onAccessibility)
+            Hairline()
             PermissionRow("Notifications", "Rot’s notes, focus timer, and Ask my brain.", access.notifications, onNotifications)
             if (!access.accessibility) {
+                Hairline()
                 PermissionRow("Display over other apps", "Fallback shield when Accessibility is off.", access.overlay, onOverlay)
             }
+            Hairline()
             PermissionRow("Battery", "Keep blocking after a restart and when RotRun is swiped away.", access.batteryUnrestricted, onBattery)
         }
         Text(
-            "Sync Screen Time now",
-            color = Melt.Action,
+            "Rot's memory",
+            color = chrome.blue,
             fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(top = 12.dp).clickable { repo.refreshUsage() },
+            modifier = Modifier.padding(top = 14.dp).clickable { open("memory") },
+        )
+        Text(
+            "Sync Screen Time now",
+            color = chrome.blue,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(top = 8.dp).clickable { repo.refreshUsage() },
         )
     }
 }
 
 @Composable
 private fun PermissionRow(title: String, detail: String, granted: Boolean, onClick: () -> Unit) {
+    val chrome = rot()
     Row(
         Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(title, fontWeight = FontWeight.SemiBold)
-            Text(detail, color = Melt.Muted, fontSize = 12.sp)
+            Text(title, color = chrome.ink, fontWeight = FontWeight.SemiBold)
+            Text(detail, color = chrome.muted, fontSize = 12.sp)
         }
-        Text(if (granted) "On" else "Off", color = if (granted) Color(0xFF34C759) else Melt.House, fontWeight = FontWeight.Bold)
+        Text(if (granted) "On" else "Off", color = if (granted) chrome.green else chrome.danger, fontWeight = FontWeight.Bold)
     }
+}
+
+@Composable
+private fun GreenSwitch(checked: Boolean, onChange: (Boolean) -> Unit) {
+    val chrome = rot()
+    Switch(
+        checked = checked,
+        onCheckedChange = onChange,
+        colors = SwitchDefaults.colors(
+            checkedTrackColor = chrome.green,
+            checkedThumbColor = Color.White,
+            uncheckedTrackColor = chrome.pill,
+            uncheckedThumbColor = Color.White,
+            uncheckedBorderColor = Color.Transparent,
+        ),
+    )
+}
+
+@Composable
+private fun Hairline() {
+    Box(Modifier.padding(start = 52.dp).fillMaxWidth().height(1.dp).background(rot().line))
 }
 
 @Composable
@@ -244,19 +299,24 @@ private fun MemoryPage(repo: RotRunRepository, onBack: () -> Unit) {
 
 @Composable
 private fun BrainHealthPage(state: SavedState, repo: RotRunRepository, onBack: () -> Unit) {
-    BackHeader("Brain Health", onBack)
-    Text("Screen time drains brain health. Focus Mode restores it. Difficulty changes how quickly that happens.", color = Melt.Muted, modifier = Modifier.padding(horizontal = 20.dp))
-    BrainHealthLevel.entries.forEach { level ->
-        val on = state.brainHealth == level.label
-        Column(
-            Modifier.padding(horizontal = 20.dp, vertical = 6.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(if (on) Color(0xFFE8F1FF) else Color.White).clickable {
-                repo.update { it.copy(brainHealth = level.label) }
-            }.padding(14.dp),
-        ) {
-            Text(level.label, fontWeight = FontWeight.Bold)
-            Text(level.headline)
-            Text(level.goalLabel, color = Melt.Muted)
-            Text(level.restoreCopy, color = Melt.Muted, fontSize = 13.sp)
+    val chrome = rot()
+    BottomSheet(onDismiss = onBack) {
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp)) {
+            Text("Brain Health", color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 22.sp)
+            Text("Screen time drains brain health. Focus Mode restores it. Difficulty changes how quickly that happens.", color = chrome.muted, modifier = Modifier.padding(top = 6.dp, bottom = 12.dp))
+            BrainHealthLevel.entries.forEach { level ->
+                val on = state.brainHealth == level.label
+                Column(
+                    Modifier.padding(vertical = 6.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(if (on) chrome.blue.copy(alpha = 0.16f) else chrome.card).clickable {
+                        repo.update { it.copy(brainHealth = level.label) }
+                    }.padding(14.dp),
+                ) {
+                    Text(level.label, color = chrome.ink, fontWeight = FontWeight.Bold)
+                    Text(level.headline, color = chrome.ink)
+                    Text(level.goalLabel, color = chrome.muted)
+                    Text(level.restoreCopy, color = chrome.muted, fontSize = 13.sp)
+                }
+            }
         }
     }
 }
@@ -264,18 +324,23 @@ private fun BrainHealthPage(state: SavedState, repo: RotRunRepository, onBack: (
 @Composable
 private fun ExcludedPage(state: SavedState, installed: List<TrackedApp>, repo: RotRunRepository, onBack: () -> Unit) {
     var picking by remember { mutableStateOf(false) }
-    BackHeader("Excluded Apps", onBack)
-    Text("Time spent in these apps won't lower your brain health (e.g. Maps, Slack, Spotify).", color = Melt.Muted, modifier = Modifier.padding(horizontal = 20.dp))
-    SettingsCard {
-        if (state.excluded.isEmpty()) Text("No apps yet", color = Melt.Muted, modifier = Modifier.padding(16.dp))
-        state.excluded.forEach { app ->
-            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                AppGlyph(app.packageName, Modifier.size(36.dp))
-                Text(app.label, modifier = Modifier.padding(start = 12.dp), fontWeight = FontWeight.SemiBold)
+    val chrome = rot()
+    BottomSheet(onDismiss = onBack) {
+        Column(Modifier.padding(20.dp)) {
+            Text("Excluded Apps", color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 22.sp)
+            Text("Time spent in these apps won’t lower your brain health (e.g. Maps, Slack, Spotify).", color = chrome.muted, modifier = Modifier.padding(top = 6.dp))
+            Column(Modifier.padding(top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(chrome.card)) {
+                if (state.excluded.isEmpty()) Text("No apps yet", color = chrome.muted, modifier = Modifier.padding(16.dp))
+                state.excluded.forEach { app ->
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        AppGlyph(app.packageName, Modifier.size(36.dp))
+                        Text(app.label, color = chrome.ink, modifier = Modifier.padding(start = 12.dp), fontWeight = FontWeight.SemiBold)
+                    }
+                }
             }
+            Text("Add More Apps", color = chrome.blue, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 16.dp).clickable { picking = true })
         }
     }
-    Text("Add More Apps", color = Melt.Action, fontWeight = FontWeight.Bold, modifier = Modifier.padding(20.dp).clickable { picking = true })
     if (picking) {
         AppPickerDialog(
             apps = installed,
@@ -291,83 +356,83 @@ private fun ExcludedPage(state: SavedState, installed: List<TrackedApp>, repo: R
 
 @Composable
 private fun StylesPage(state: SavedState, repo: RotRunRepository, onBack: () -> Unit) {
-    BackHeader("Intervention Style", onBack)
-    Text("Turn on the styles you want. Ask my brain picks one at random.", color = Melt.Muted, modifier = Modifier.padding(horizontal = 20.dp))
-    SettingsCard {
+    val chrome = rot()
+    Column(Modifier.padding(bottom = 12.dp)) {
+        BackHeader("Intervention Style", onBack)
+        Text("Turn on the styles you want. Let your brain pick one at random.", color = chrome.muted, modifier = Modifier.padding(horizontal = 20.dp))
         StyleToggle("Standard Dialogue", "Chat with your brain", state.standardDialogue) { value -> repo.update { it.copy(standardDialogue = value) } }
         StyleToggle("Breathing Exercise", "4-2-4 then a question", state.breathingExercise) { value -> repo.update { it.copy(breathingExercise = value) } }
         StyleToggle("Mirror Mode", "FaceTime from your brain, requires camera", state.mirrorMode) { value -> repo.update { it.copy(mirrorMode = value) } }
         StyleToggle("Quick Check", "Need this? Then how long?", state.quickCheck) { value -> repo.update { it.copy(quickCheck = value) } }
-        StyleToggle("Friend cameo", "A roast from a friend, when they sent you one today", state.friendCameo) { value -> repo.update { it.copy(friendCameo = value) } }
+        StyleToggle("Friend cameo", "A roast from a Game Center friend, when they sent you one today", state.friendCameo) { value -> repo.update { it.copy(friendCameo = value) } }
     }
 }
 
 @Composable
 private fun StyleToggle(title: String, subtitle: String, on: Boolean, change: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+    val chrome = rot()
+    Row(
+        Modifier.padding(horizontal = 20.dp, vertical = 6.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(chrome.card).padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Column(Modifier.weight(1f)) {
-            Text(title, fontWeight = FontWeight.Bold)
-            Text(subtitle, color = Melt.Muted, fontSize = 13.sp)
+            Text(title, color = chrome.ink, fontWeight = FontWeight.Bold)
+            Text(subtitle, color = chrome.muted, fontSize = 13.sp)
         }
-        Switch(checked = on, onCheckedChange = change)
+        GreenSwitch(on, change)
     }
 }
 
 @Composable
 private fun RewardsPage(state: SavedState, repo: RotRunRepository, onBack: () -> Unit) {
+    val chrome = rot()
     val next = Looks.rewards.firstOrNull { reward -> reward.days != null && state.streak < reward.days }
     val progress = if (next?.days == null) 1f else (state.streak.toFloat() / next.days).coerceIn(0f, 1f)
     BackHeader("Rewards", onBack)
-    Text("Keep your streak alive to unlock Home looks, streak badges, and app icons.", color = Melt.Muted, modifier = Modifier.padding(horizontal = 20.dp))
+    Text("Keep your streak alive to unlock Home looks, streak badges, and app icons.", color = chrome.muted, modifier = Modifier.padding(horizontal = 20.dp))
     SettingsCard {
         Column(Modifier.padding(16.dp)) {
-            Text("${state.streak}-day streak", fontWeight = FontWeight.Bold, fontSize = 22.sp)
+            Text("${state.streak.coerceAtLeast(1)}-day streak", color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 22.sp)
             Text(
                 if (next == null) "Every streak reward is unlocked." else "Next: ${next.title} at ${next.days} days",
-                color = Melt.Muted,
+                color = chrome.muted,
                 modifier = Modifier.padding(top = 4.dp, bottom = 10.dp),
             )
-            LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth().height(8.dp).clip(CircleShape), color = Melt.Action, trackColor = Melt.Grouped)
+            LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth().height(8.dp).clip(CircleShape), color = chrome.blue, trackColor = chrome.inset)
         }
     }
-    Column(Modifier.padding(horizontal = 20.dp, vertical = 6.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Color.White)) {
+    Text("Themes", color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 22.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp).fillMaxWidth())
+    Text("Set a look for Home. Streak themes also change your Home brain and streak badge.", color = chrome.muted, modifier = Modifier.padding(horizontal = 20.dp))
+    Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(chrome.card)) {
         Looks.rewards.forEachIndexed { index, reward ->
             val unlocked = reward.days == null || state.streak >= reward.days
-            val selected = state.theme == reward.themeId && state.appIcon == reward.iconId
             val look = Looks.byId(reward.themeId)
-            if (index > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(Melt.Grouped))
+            val selected = state.theme == reward.themeId
+            if (index > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(chrome.line))
             Row(
                 Modifier.fillMaxWidth().clickable(enabled = unlocked) {
-                    repo.update { it.copy(theme = reward.themeId, appIcon = reward.iconId) }
-                    repo.toast("Using ${reward.title}")
+                    repo.update { it.copy(theme = reward.themeId) }
+                    repo.toast("Using ${look.title}")
                 }.padding(14.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(Modifier.size(56.dp).clip(RoundedCornerShape(16.dp)).background(look.canvas), contentAlignment = Alignment.Center) {
-                    if (unlocked) CartoonBrain(look.brain, Modifier.size(48.dp), animated = false)
-                    else Icon(Icons.Default.Lock, contentDescription = "Locked", tint = if (look.light) Melt.Ink else Color.White)
+                Box(Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)).background(look.canvas), contentAlignment = Alignment.Center) {
+                    if (unlocked) CartoonBrain(look.brain, Modifier.size(40.dp), animated = false)
+                    else Icon(Icons.Default.Lock, contentDescription = "Locked", tint = Color.White)
                 }
                 Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                    Text(reward.title, fontWeight = FontWeight.Bold, fontSize = 17.sp)
-                    Text(reward.summary, color = Melt.Muted, fontSize = 13.sp)
-                    Text(
-                        when {
-                            selected -> "Selected"
-                            unlocked -> "Unlocked"
-                            else -> "Unlock at ${reward.days}-day streak"
-                        },
-                        color = if (unlocked) Color(0xFF34C759) else Melt.Muted,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 13.sp,
-                        modifier = Modifier.padding(top = 4.dp),
-                    )
+                    Text(look.title, color = if (unlocked) chrome.ink else chrome.muted, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                    if (!unlocked) Text("Unlock at ${reward.days}-day streak", color = chrome.muted, fontSize = 13.sp)
                 }
-                Image(
-                    painterResource(LauncherIcons.preview(reward.iconId)),
-                    contentDescription = reward.title,
-                    modifier = Modifier.size(52.dp).clip(RoundedCornerShape(14.dp)),
-                    alpha = if (unlocked) 1f else 0.4f,
-                )
+                if (!unlocked) {
+                    Icon(Icons.Default.Lock, contentDescription = "Locked", tint = chrome.muted)
+                } else if (selected) {
+                    Box(Modifier.size(26.dp).clip(CircleShape).background(chrome.blue), contentAlignment = Alignment.Center) {
+                        Text("✓", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                } else {
+                    Box(Modifier.size(26.dp).clip(CircleShape).border(1.5.dp, chrome.muted, CircleShape))
+                }
             }
         }
     }
@@ -375,47 +440,48 @@ private fun RewardsPage(state: SavedState, repo: RotRunRepository, onBack: () ->
 
 @Composable
 private fun IconPage(state: SavedState, repo: RotRunRepository, onBack: () -> Unit) {
+    val chrome = rot()
     BackHeader("App Icon", onBack)
-    Text("The same names as Rewards. An unlocked icon replaces the one on your home screen.", color = Melt.Muted, modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp))
-    Looks.icons.chunked(3).forEach { row ->
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            row.forEach { (name, need) ->
-                val unlocked = need == null || state.streak >= need
-                val selected = state.appIcon == name
-                Column(
-                    Modifier.weight(1f).clip(RoundedCornerShape(22.dp)).background(Color.White).border(if (selected) 3.dp else 0.dp, if (selected) Melt.Action else Color.Transparent, RoundedCornerShape(22.dp)).clickable {
-                        if (!unlocked) {
-                            repo.toast("Unlock at $need-day streak")
-                        } else {
-                            repo.update { it.copy(appIcon = name) }
-                            repo.toast("Launcher icon set to $name")
-                        }
-                    }.padding(10.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Image(
-                            painterResource(LauncherIcons.preview(name)),
-                            contentDescription = name,
-                            modifier = Modifier.size(72.dp).clip(RoundedCornerShape(18.dp)),
-                            alpha = if (unlocked) 1f else 0.4f,
-                        )
-                        if (!unlocked) Icon(Icons.Default.Lock, contentDescription = "Locked", tint = Melt.Ink)
+    Text(
+        "Use any unlocked icon on your Home Screen.",
+        color = chrome.muted,
+        modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+    )
+    Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(chrome.card)) {
+        Looks.icons.forEachIndexed { index, (name, need) ->
+            val unlocked = need == null || state.streak >= need
+            val selected = state.appIcon == name
+            if (index > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(chrome.line))
+            Row(
+                Modifier.fillMaxWidth().clickable {
+                    if (!unlocked) repo.toast("Unlock at $need-day streak")
+                    else {
+                        repo.update { it.copy(appIcon = name) }
+                        repo.toast("Launcher icon set to $name")
                     }
-                    Text(name, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
-                    Text(
-                        when {
-                            selected -> "Selected"
-                            unlocked -> "Tap to use"
-                            else -> "$need-day streak"
-                        },
-                        color = if (selected) Melt.Action else Melt.Muted,
-                        fontSize = 12.sp,
-                        textAlign = TextAlign.Center,
-                    )
+                }.padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Image(
+                    painterResource(LauncherIcons.preview(name)),
+                    contentDescription = name,
+                    modifier = Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)),
+                    alpha = if (unlocked) 1f else 0.45f,
+                )
+                Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                    Text(name, color = if (unlocked) chrome.ink else chrome.muted, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                    if (!unlocked) Text("Unlock at $need-day streak", color = chrome.muted, fontSize = 13.sp)
+                }
+                if (!unlocked) {
+                    Icon(Icons.Default.Lock, contentDescription = "Locked", tint = chrome.muted)
+                } else if (selected) {
+                    Box(Modifier.size(26.dp).clip(CircleShape).background(chrome.blue), contentAlignment = Alignment.Center) {
+                        Text("✓", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                } else {
+                    Box(Modifier.size(26.dp).clip(CircleShape).border(1.5.dp, chrome.muted, CircleShape))
                 }
             }
-            repeat(3 - row.size) { Box(Modifier.weight(1f)) }
         }
     }
 }
@@ -445,7 +511,7 @@ private fun SupportPage(open: (String) -> Unit) {
 
 @Composable
 private fun FollowGlyph(icon: ImageVector, label: String) {
-    Box(Modifier.size(44.dp).clip(CircleShape).background(Color.White), contentAlignment = Alignment.Center) {
+    Box(Modifier.size(44.dp).clip(CircleShape).background(rot().inset), contentAlignment = Alignment.Center) {
         Icon(icon, contentDescription = label, tint = Melt.Ink)
     }
 }
@@ -463,7 +529,7 @@ private fun HelpPage(repo: RotRunRepository, onBack: () -> Unit) {
     MailLink("Email a question", "RotRun Help", helpBody())
     Text("Frequently Asked Questions", fontWeight = FontWeight.Bold, modifier = Modifier.padding(20.dp))
     SupportCopy.faqs.forEach { faq ->
-        Column(Modifier.padding(horizontal = 20.dp, vertical = 4.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color.White).clickable {
+        Column(Modifier.padding(horizontal = 20.dp, vertical = 4.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(rot().card).clickable {
             open = if (open == faq.question) null else faq.question
         }.padding(14.dp)) {
             Text(faq.question, fontWeight = FontWeight.SemiBold)
@@ -481,93 +547,72 @@ private fun HelpPage(repo: RotRunRepository, onBack: () -> Unit) {
 @Composable
 private fun FeedbackPage(onBack: () -> Unit) {
     var bug by remember { mutableStateOf(false) }
-    var message by remember { mutableStateOf("") }
     var sendNote by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
+    val chrome = rot()
     BackHeader("Feedback / Bug Report", onBack)
     Text(
-        if (bug) "Tell us what happened, what you expected, and how to reproduce it." else "Product feedback: what you like, and what you'd change.",
-        color = Melt.Muted,
+        "Tell us what to improve, or walk us through a bug. Mail goes to ${SupportCopy.EMAIL}.",
+        color = chrome.muted,
         modifier = Modifier.padding(horizontal = 20.dp),
     )
-    Row(Modifier.padding(horizontal = 20.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        ChoiceChip("Feedback", !bug) { bug = false }
-        ChoiceChip("Bug Report", bug) { bug = true }
+    Row(Modifier.padding(horizontal = 20.dp, vertical = 12.dp).fillMaxWidth().clip(CircleShape).background(chrome.inset).padding(4.dp)) {
+        ChoiceChip("Feedback", !bug, Modifier.weight(1f)) { bug = false }
+        ChoiceChip("Bug Report", bug, Modifier.weight(1f)) { bug = true }
     }
-    OutlinedTextField(
-        value = message,
-        onValueChange = { message = it },
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
-        minLines = 5,
-        label = { Text(if (bug) "What happened" else "Your message") },
-    )
     SettingsCard {
         Column(Modifier.padding(16.dp)) {
-            Text("Sent with your note", fontWeight = FontWeight.Bold)
-            Text(versionLine(), color = Melt.Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
-            Text("Android ${Build.VERSION.RELEASE}", color = Melt.Muted, fontSize = 13.sp)
-            Text("${Build.MANUFACTURER} ${Build.MODEL}", color = Melt.Muted, fontSize = 13.sp)
+            Text(if (bug) "Bug report" else "Product feedback", color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+            Text(
+                if (bug) "Tell us what happened and how to reproduce it. We’ll pre-fill a short template."
+                else "Share what you like, what feels off, or a feature you’d want next. We’ll pre-fill a short template.",
+                color = chrome.muted,
+                modifier = Modifier.padding(top = 6.dp),
+            )
         }
     }
     BoxButton(if (bug) "Email bug report" else "Email feedback") {
-        if (message.isBlank()) {
-            sendNote = "Write a message first."
-            return@BoxButton
-        }
         val subject = if (bug) "RotRun Bug Report" else "RotRun Feedback"
-        val lead = if (bug) "Bug report:" else "Product feedback:"
-        sendNote = if (sendMail(context, subject, "Hi RotRun team,\n\n$lead\n\n$message\n\n${diagnostics()}")) {
-            "Opening your email app."
+        val body = if (bug) {
+            "Hi RotRun team,\n\nBug report:\n\nWhat happened:\n\nWhat I expected:\n\nSteps to reproduce:\n\n${diagnostics()}"
         } else {
-            "Couldn't open an email app."
+            "Hi RotRun team,\n\nProduct feedback:\n\nWhat I like:\n\nWhat feels off:\n\n${diagnostics()}"
         }
+        sendNote = if (sendMail(context, subject, body)) "Opening your email app." else "Couldn't open an email app."
     }
-    sendNote?.let { Text(it, color = Melt.Muted, modifier = Modifier.padding(horizontal = 22.dp)) }
+    sendNote?.let { Text(it, color = chrome.muted, modifier = Modifier.padding(horizontal = 22.dp)) }
 }
 
 @Composable
 private fun ContactPage(onBack: () -> Unit) {
     val context = LocalContext.current
-    var message by remember { mutableStateOf("") }
     var sendNote by remember { mutableStateOf<String?>(null) }
+    val chrome = rot()
     BackHeader("Contact Us", onBack)
-    Text("Questions, press, or anything that isn't a bug. We read every message.", color = Melt.Muted, modifier = Modifier.padding(horizontal = 20.dp))
-    OutlinedTextField(
-        value = message,
-        onValueChange = { message = it },
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
-        minLines = 5,
-        label = { Text("Your message") },
-    )
+    Text("Questions, press, or anything that isn’t a bug.", color = chrome.muted, modifier = Modifier.padding(horizontal = 20.dp))
     SettingsCard {
         Column(Modifier.padding(16.dp)) {
-            Text("Sent to ${SupportCopy.EMAIL}", fontWeight = FontWeight.Bold)
-            Text("Subject: RotRun Contact", color = Melt.Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
-            Text(versionLine(), color = Melt.Muted, fontSize = 13.sp)
-            Text("Android ${Build.VERSION.RELEASE} · ${Build.MANUFACTURER} ${Build.MODEL}", color = Melt.Muted, fontSize = 13.sp)
+            Text("Email", color = chrome.muted, fontSize = 13.sp)
+            Text(SupportCopy.EMAIL, color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 17.sp, modifier = Modifier.padding(top = 4.dp))
+            Text("Subject", color = chrome.muted, fontSize = 13.sp, modifier = Modifier.padding(top = 12.dp))
+            Text("RotRun Contact", color = chrome.ink, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 4.dp))
         }
     }
     BoxButton("Email RotRun") {
-        if (message.isBlank()) {
-            sendNote = "Write a message first."
-            return@BoxButton
-        }
-        sendNote = if (sendMail(context, "RotRun Contact", "Hi RotRun team,\n\n$message\n\n${diagnostics()}")) {
-            "Opening your email app."
-        } else {
-            "Couldn't open an email app."
-        }
+        val body = "Hi RotRun team,\n\n\n\n${diagnostics()}"
+        sendNote = if (sendMail(context, "RotRun Contact", body)) "Opening your email app." else "Couldn't open an email app."
     }
-    sendNote?.let { Text(it, color = Melt.Muted, modifier = Modifier.padding(horizontal = 22.dp)) }
+    sendNote?.let { Text(it, color = chrome.muted, modifier = Modifier.padding(horizontal = 22.dp)) }
 }
 
 @Composable
-private fun ChoiceChip(title: String, on: Boolean, click: () -> Unit) {
+private fun ChoiceChip(title: String, on: Boolean, modifier: Modifier = Modifier, click: () -> Unit) {
     Text(
         title,
-        color = if (on) Color.White else Melt.Ink,
+        color = if (on) Color.White else rot().muted,
         fontWeight = FontWeight.Bold,
-        modifier = Modifier.clip(CircleShape).background(if (on) Melt.Action else Color.White).clickable(onClick = click).padding(horizontal = 16.dp, vertical = 10.dp),
+        textAlign = TextAlign.Center,
+        modifier = modifier.clip(CircleShape).background(if (on) rot().blue else Color.Transparent).clickable(onClick = click).padding(vertical = 10.dp),
     )
 }
 
@@ -587,11 +632,11 @@ private fun WidgetPage(onBack: () -> Unit) {
             CartoonBrain(BrainStyle.Meadow, Modifier.size(96.dp), animated = false)
         }
     }
-    Row(Modifier.padding(horizontal = 20.dp, vertical = 4.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Color.White).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.padding(horizontal = 20.dp, vertical = 4.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(rot().card).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
         CartoonBrain(BrainStyle.Meadow, Modifier.size(64.dp), animated = false)
         Column(Modifier.padding(start = 12.dp)) {
-            Text("Focus", fontWeight = FontWeight.Bold)
-            Text("15 · 30 · 45 · 60 min", color = Melt.Muted, fontSize = 13.sp)
+            Text("Focus", color = rot().ink, fontWeight = FontWeight.Bold)
+            Text("15 · 30 · 45 · 60 min", color = rot().muted, fontSize = 13.sp)
         }
     }
     val steps = listOf(
@@ -604,12 +649,12 @@ private fun WidgetPage(onBack: () -> Unit) {
     steps.forEachIndexed { index, (title, body) ->
         SettingsCard {
             Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(36.dp).clip(CircleShape).background(Melt.Action), contentAlignment = Alignment.Center) {
+                Box(Modifier.size(36.dp).clip(CircleShape).background(rot().blue), contentAlignment = Alignment.Center) {
                     Text("${index + 1}", color = Color.White, fontWeight = FontWeight.Bold)
                 }
                 Column(Modifier.padding(start = 12.dp)) {
-                    Text(title, fontWeight = FontWeight.Bold)
-                    Text(body, color = Melt.Muted, fontSize = 13.sp)
+                    Text(title, color = rot().ink, fontWeight = FontWeight.Bold)
+                    Text(body, color = rot().muted, fontSize = 13.sp)
                 }
             }
         }
@@ -618,34 +663,84 @@ private fun WidgetPage(onBack: () -> Unit) {
 
 @Composable
 private fun BackHeader(title: String, onBack: () -> Unit) {
-    Text("‹ $title", fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(20.dp).clickable(onClick = onBack))
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Box(
+            Modifier.size(36.dp).clip(CircleShape).background(rot().card).clickable(onClick = onBack),
+            contentAlignment = Alignment.Center,
+        ) { Text("‹", color = rot().ink, fontWeight = FontWeight.Bold, fontSize = 20.sp) }
+        Text(title, color = rot().ink, fontSize = 32.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp, start = 4.dp))
+    }
 }
 
 @Composable
 private fun CardGroup(content: @Composable () -> Unit) {
-    Column(Modifier.padding(vertical = 8.dp).fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Color.White)) { content() }
+    Column(Modifier.padding(vertical = 6.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(rot().card)) { content() }
 }
 
 @Composable
 private fun SettingsCard(content: @Composable () -> Unit) {
-    Column(Modifier.padding(horizontal = 20.dp, vertical = 6.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Color.White)) { content() }
+    Column(Modifier.padding(horizontal = 20.dp, vertical = 6.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(rot().card)) { content() }
 }
 
 @Composable
-private fun RowLink(title: String, value: String? = null, tint: Color = Melt.Action, onClick: () -> Unit) {
+private fun RowLink(
+    title: String,
+    value: String? = null,
+    icon: ImageVector? = null,
+    tint: Color = Melt.Action,
+    onClick: () -> Unit,
+) {
+    val chrome = rot()
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(28.dp).clip(CircleShape).background(tint.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
-            Box(Modifier.size(10.dp).clip(CircleShape).background(tint))
+        if (icon != null) {
+            Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
         }
-        Text(title, modifier = Modifier.padding(start = 12.dp).weight(1f), fontWeight = FontWeight.Bold, fontSize = 16.sp)
-        if (value != null) Text(value, color = Melt.Muted, fontSize = 15.sp)
-        Text("›", color = Color(0xFFC7C7CC), fontWeight = FontWeight.SemiBold)
+        Text(title, color = chrome.ink, modifier = Modifier.padding(start = if (icon != null) 12.dp else 0.dp).weight(1f), fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
+        if (value != null) Text(value, color = chrome.muted, fontSize = 15.sp)
+        Text("›", color = chrome.muted, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 6.dp))
     }
 }
 
 @Composable
 private fun BoxButton(title: String, onClick: () -> Unit) {
-    Text(title, color = Color.White, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.padding(22.dp).fillMaxWidth().clip(CircleShape).background(Melt.Action).clickable(onClick = onClick).padding(vertical = 16.dp))
+    Text(title, color = Color.White, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp).fillMaxWidth().clip(CircleShape).background(rot().blue).clickable(onClick = onClick).padding(vertical = 16.dp))
+}
+
+@Composable
+private fun PremiumManage(state: SavedState, repo: RotRunRepository, onBack: () -> Unit, onChangePlan: () -> Unit) {
+    val context = LocalContext.current
+    val chrome = rot()
+    val plan = Products.planName(state.productId)
+    val renews = if (state.premiumActive() && !state.lifetime && state.premiumUntil > System.currentTimeMillis()) {
+        "Renews ${java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(java.util.Date(state.premiumUntil))}"
+    } else if (state.lifetime) {
+        "Does not renew"
+    } else {
+        "Prices come from Google Play"
+    }
+    BackHeader("RotRun Premium", onBack)
+    Text(
+        "Buy, restore, or manage your plan. Blocking, Focus, Brick, and Ask-my-brain stay available without a subscription.",
+        color = chrome.muted,
+        modifier = Modifier.padding(horizontal = 20.dp),
+    )
+    Column(Modifier.padding(horizontal = 20.dp, vertical = 16.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(chrome.card).padding(vertical = 18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        CartoonBrain(BrainStyle.Meadow, Modifier.size(120.dp), animated = false)
+        Text(if (state.premiumActive()) plan else "No plan yet", color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 22.sp, modifier = Modifier.padding(top = 8.dp))
+        Text(renews, color = chrome.muted, modifier = Modifier.padding(top = 4.dp))
+    }
+    Column(Modifier.padding(horizontal = 16.dp)) {
+    CardGroup {
+        RowLink("Change Plan", icon = Icons.Default.CardGiftcard, tint = Melt.Orange, onClick = onChangePlan)
+        Hairline()
+        RowLink("Manage Subscription", if (state.premiumActive()) plan else null, icon = Icons.Default.GridView, tint = chrome.blue) {
+            val uri = android.net.Uri.parse("https://play.google.com/store/account/subscriptions?package=${context.packageName}")
+            runCatching { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, uri)) }
+        }
+        Hairline()
+        RowLink("Restore Purchases", icon = Icons.Default.Refresh, tint = chrome.blue, onClick = repo::restore)
+    }
+    }
 }
 
 @Composable

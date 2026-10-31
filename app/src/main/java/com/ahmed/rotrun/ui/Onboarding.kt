@@ -180,7 +180,7 @@ fun OnboardingScreen(repo: RotRunRepository) {
         }
         val plansAlreadyShowing = step == OnboardingStep.GetAccess || step == OnboardingStep.OneTimeOffer
         if (upgrade && PaywallGate.shows && !state.premiumActive() && !plansAlreadyShowing) {
-            Column(Modifier.fillMaxSize().background(Color.White).verticalScroll(rememberScrollState())) {
+            Column(Modifier.fillMaxSize().background(rot().page).verticalScroll(rememberScrollState())) {
                 GetAccessPaywall(
                     state = state,
                     showClose = true,

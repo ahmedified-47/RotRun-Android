@@ -30,7 +30,9 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -104,7 +106,7 @@ private fun Gate(repo: RotRunRepository) {
     val state by repo.state.collectAsState()
     var plan by remember { mutableStateOf(Products.YEARLY) }
     var offer by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxSize().background(Melt.Grouped).verticalScroll(rememberScrollState())) {
+    Column(Modifier.fillMaxSize().background(rot().page).verticalScroll(rememberScrollState())) {
         if (offer && !state.skippedOneTimeOffer) {
             OneTimeOffer(
                 onRedeem = { repo.purchase(Products.YEARLY70) },
@@ -162,13 +164,11 @@ private fun MainShell(repo: RotRunRepository) {
             }
         }
     }
-    val canvas = when (tab) {
-        Tab.Home -> look.canvas
-        Tab.Stats -> Color.White
-        else -> Melt.Grouped
-    }
-    val barColor = if (tab == Tab.Home && !look.light) look.tab else Color.White
+    val scenicHome = tab == Tab.Home && sceneFor(state.theme) != null
+    val canvas = if (tab == Tab.Home) look.canvas else rot().page
+    val barColor = if (scenicHome) look.tab else rot().tab
     Box(Modifier.fillMaxSize().background(canvas)) {
+        CompositionLocalProvider(LocalContentColor provides if (scenicHome) Color.White else rot().ink) {
         Column(Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState()).padding(bottom = 132.dp)) {
             when (tab) {
                 Tab.Home -> HomeScreen(state, usage, refreshing, repo::refreshUsage, { talk = true }) {
@@ -179,10 +179,11 @@ private fun MainShell(repo: RotRunRepository) {
                 Tab.Settings -> SettingsScreen(state, installed, repo)
             }
         }
+        }
         TabBar(
             tab = tab,
             bar = barColor,
-            light = tab != Tab.Home || look.light,
+            light = !rot().dark && !scenicHome,
             onHome = { tab = Tab.Home },
             onBlock = { tab = Tab.Block },
             onStats = { tab = Tab.Stats },
@@ -199,7 +200,7 @@ private fun MainShell(repo: RotRunRepository) {
         state.focus?.let { FocusOverlay(it, repo) }
         if (talk) TalkSheet(repo) { talk = false }
         if (offer && PaywallGate.shows && !state.yearly70Dismissed) {
-            Box(Modifier.fillMaxSize().background(Color.White)) {
+            Box(Modifier.fillMaxSize().background(rot().page).statusBarsPadding().verticalScroll(rememberScrollState())) {
                 OneTimeOffer(
                     onRedeem = { repo.purchase(Products.YEARLY70) },
                     onOther = { repo.dismissYearly70(); offer = false },
@@ -208,7 +209,7 @@ private fun MainShell(repo: RotRunRepository) {
                 )
             }
         } else if (upgrade && PaywallGate.shows && !state.premiumActive()) {
-            Box(Modifier.fillMaxSize().background(Color.White).verticalScroll(rememberScrollState())) {
+            Box(Modifier.fillMaxSize().background(rot().page).statusBarsPadding().verticalScroll(rememberScrollState())) {
                 GetAccessPaywall(
                     state = state,
                     showClose = true,
@@ -286,7 +287,8 @@ private fun TabBar(
     modifier: Modifier,
 ) {
     val nav = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    val item = if (light) Melt.Muted else Color.White
+    val item = if (light) Melt.Muted else Color.White.copy(alpha = 0.72f)
+    val glyph = if (light) Color(0xFFF2F2F7) else Color.White.copy(alpha = 0.12f)
     Box(modifier.fillMaxWidth().height(36.dp + 88.dp + nav)) {
         Box(
             Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(88.dp + nav).background(bar, CurvedTabShape()),
@@ -296,22 +298,22 @@ private fun TabBar(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             TabItem("Home", tab == Tab.Home, item, light, Modifier.weight(1f), onHome) {
-                Glyph { Icon(Icons.Default.Home, null, tint = Color(0xFFF28C59)) }
+                Glyph(if (tab == Tab.Home) Color.White else glyph) { Icon(Icons.Default.Home, null, tint = Color(0xFFF28C59)) }
             }
             TabItem("Block", tab == Tab.Block, item, light, Modifier.weight(1f), onBlock) {
-                Glyph { Icon(Icons.Default.Lock, null, tint = Color(0xFF8C949E)) }
+                Glyph(if (tab == Tab.Block) Color(0xFFFFE8D2) else glyph) { Icon(Icons.Default.Lock, null, tint = if (tab == Tab.Block) Melt.Orange else Color(0xFF8C949E)) }
             }
             Text("Focus", color = item, fontSize = 11.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center, modifier = Modifier.weight(1f).padding(top = 22.dp))
             TabItem("Stats", tab == Tab.Stats, item, light, Modifier.weight(1f), onStats) {
-                Glyph {
+                Glyph(if (tab == Tab.Stats) Color.White else glyph) {
                     Box(contentAlignment = Alignment.Center) {
-                        Icon(Icons.Default.DateRange, null, tint = Color(0xFF8C949E))
-                        Text("12", fontSize = 7.sp, fontWeight = FontWeight.Bold, modifier = Modifier.offset(y = 2.dp))
+                        Icon(Icons.Default.DateRange, null, tint = if (tab == Tab.Stats) Melt.Ink else Color(0xFF8C949E))
+                        Text("31", color = if (tab == Tab.Stats) Melt.Ink else Color(0xFF8C949E), fontSize = 7.sp, fontWeight = FontWeight.Bold, modifier = Modifier.offset(y = 2.dp))
                     }
                 }
             }
             TabItem("Settings", tab == Tab.Settings, item, light, Modifier.weight(1f), onSettings) {
-                Glyph { Icon(Icons.Default.Settings, null, tint = Color(0xFF8C949E)) }
+                Glyph(if (tab == Tab.Settings) Color.White else glyph) { Icon(Icons.Default.Settings, null, tint = if (tab == Tab.Settings) Melt.Ink else Color(0xFF8C949E)) }
             }
         }
         Box(
@@ -319,18 +321,15 @@ private fun TabBar(
             contentAlignment = Alignment.Center,
         ) {
             Box(Modifier.size(66.dp).clip(CircleShape).background(Color.White), contentAlignment = Alignment.Center) {
-                CartoonBrain(BrainStyle.Spa, Modifier.size(58.dp), animated = false)
+                CartoonBrain(BrainStyle.Meadow, Modifier.size(58.dp), animated = false)
             }
         }
     }
 }
 
 @Composable
-private fun Glyph(icon: @Composable () -> Unit) {
-    Box(Modifier.size(34.dp), contentAlignment = Alignment.Center) {
-        Box(Modifier.size(34.dp).offset(y = 3.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.28f)))
-        Box(Modifier.size(34.dp).clip(CircleShape).background(Color.White), contentAlignment = Alignment.Center) { icon() }
-    }
+private fun Glyph(fill: Color, icon: @Composable () -> Unit) {
+    Box(Modifier.size(34.dp).clip(CircleShape).background(fill), contentAlignment = Alignment.Center) { icon() }
 }
 
 @Composable
@@ -345,10 +344,7 @@ private fun TabItem(
 ) {
     val labelColor = if (selected && light) Melt.Ink else color
     Column(modifier.clickable(onClick = onClick), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(4.dp)) {
-        Box(
-            Modifier.clip(RoundedCornerShape(10.dp)).background(if (selected) Color.White.copy(alpha = if (light) 0f else 0.16f) else Color.Transparent).padding(horizontal = 6.dp, vertical = 2.dp),
-            contentAlignment = Alignment.Center,
-        ) { icon() }
+        Box(Modifier.padding(horizontal = 6.dp, vertical = 2.dp), contentAlignment = Alignment.Center) { icon() }
         Text(label, color = labelColor, fontSize = 11.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium)
     }
 }
