@@ -1,5 +1,8 @@
 package com.ahmed.rotrun.ui
 
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
@@ -16,6 +19,16 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+
+object HostedPolicy {
+    const val PRIVACY = "https://ahmedified-47.github.io/rotrun-site/privacy.html"
+    const val TERMS = "https://ahmedified-47.github.io/rotrun-site/terms.html"
+
+    fun open(context: Context, url: String) {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+        runCatching { context.startActivity(intent) }
+    }
+}
 
 @Composable
 fun LegalPage(asset: String, title: String, onBack: () -> Unit) {

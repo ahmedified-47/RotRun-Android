@@ -118,10 +118,7 @@ private fun Leaderboard(state: SavedState, screenMinutes: Int, repo: RotRunRepos
 @Composable
 private fun LeaderboardBody(state: SavedState, screenMinutes: Int, repo: RotRunRepository) {
     var friends by remember { mutableStateOf(false) }
-    var receipt by remember { mutableStateOf(false) }
-    var ransom by remember { mutableStateOf(false) }
     val xp = Scoring.dailyXp(screenMinutes, state.goalHours * 60, state.askBrainCount, state.ransomDebit)
-    val rank = Scoring.rank(xp)
     var rows by remember { mutableStateOf<List<Pair<String, Int>>>(emptyList()) }
     LaunchedEffect(xp, repo.backend.signedIn) {
         rows = withContext(Dispatchers.IO) {
@@ -129,69 +126,47 @@ private fun LeaderboardBody(state: SavedState, screenMinutes: Int, repo: RotRunR
             repo.backend.leaderboard()
         }
     }
+    val board = dailyBoard(rows, xp)
     Text("Leaderboard", fontSize = 28.sp, fontWeight = FontWeight.Bold)
     Text("See how your Daily XP stacks up.", color = Melt.Muted)
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 8.dp)) {
-        Toggle("Daily XP", !friends) { friends = false }
-        Toggle("Friends", friends) { friends = true }
-    }
-    if (state.duelName.isNotBlank() && state.duelUntil > System.currentTimeMillis()) {
-        val left = ((state.duelUntil - System.currentTimeMillis()) / 60000).toInt()
-        val label = if (left >= 60) "${left / 60}h ${left % 60}m" else "${left}m"
-        Text("Duel · Until midnight · $label", fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 6.dp))
-        Text("You ${xp} XP    ${state.duelName} ${state.duelScore} XP")
+    Row(Modifier.padding(vertical = 8.dp).fillMaxWidth().clip(CircleShape).background(Color(0xFFF2F2F7)).padding(4.dp)) {
+        Toggle("Daily XP", !friends, Modifier.weight(1f)) { friends = false }
+        Toggle("Friends", friends, Modifier.weight(1f)) { friends = true }
     }
     if (friends) {
-        Text("Friends", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp))
-        Text(
-            if (BuildConfig.PLAY_GAMES_FRIENDS) "Play Games friends show up on this tab."
-            else "Friends is off in this build. Daily XP stays on the RotRun board.",
-            color = Melt.Muted,
-        )
-    } else {
-        if (!repo.backend.signedIn) {
-            Text("Sign in with Google from Talk to Brain to join the shared Daily XP board.", color = Melt.Muted)
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Color.White).padding(16.dp)) {
+            Text("Friends", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Text(
+                if (BuildConfig.PLAY_GAMES_FRIENDS) "Play Games friends show up on this tab."
+                else "Friends is off in this build. Daily XP stays on the RotRun board.",
+                color = Melt.Muted,
+                modifier = Modifier.padding(top = 4.dp),
+            )
         }
-        val board = if (rows.isEmpty()) listOf("You" to xp) else rows
+    } else {
         board.forEachIndexed { index, (name, score) ->
+            val title = Scoring.rank(score).title
             Column(Modifier.padding(vertical = 4.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Color.White).padding(14.dp)) {
                 Text("${index + 1}", fontWeight = FontWeight.Black, color = Melt.Orange)
-                Text(name.ifBlank { "Someone" }, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                Text("$score XP", color = Melt.Muted)
+                Text(name, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Text("$score XP · $title", color = Melt.Muted)
             }
         }
-        Column(Modifier.padding(top = 8.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Color.White).padding(14.dp)) {
-            Text("You", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-            Text("$xp XP · ${rank.title}", color = Melt.Muted)
-            Text(rank.flavor, modifier = Modifier.padding(top = 4.dp))
-        }
-        Text("Generate Receipt", color = Melt.Action, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp).clickable { receipt = true })
-        Text("Pay Ransom", color = Melt.Action, modifier = Modifier.padding(top = 8.dp).clickable { ransom = true })
-        Text("Audio Slap", color = Melt.Muted, modifier = Modifier.padding(top = 8.dp))
-        Text("Challenge to Duel", color = Melt.Muted)
-        Text("No friends on the board yet — slap and duel need a friend.", color = Melt.Muted, fontSize = 13.sp)
     }
-    if (receipt) {
-        Column(Modifier.padding(top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color(0xFF1C1C1E)).padding(16.dp)) {
-            Text("OFFICIAL ROT RECEIPT", color = Melt.Orange, fontWeight = FontWeight.Black)
-            Text("CERTIFIED ${rank.badge}", color = Color.White, fontWeight = FontWeight.Bold)
-            Text("You", color = Color.White)
-            Text("$xp XP", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Black)
-            Text(rank.receipt, color = Color.White)
-            Text("Public Daily XP · on this device\nNot Screen Time · Expires midnight", color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp)
-            Text("Close", color = Melt.Orange, modifier = Modifier.padding(top = 8.dp).clickable { receipt = false })
-        }
+}
+
+private fun dailyBoard(rows: List<Pair<String, Int>>, xp: Int): List<Pair<String, Int>> {
+    val source = if (rows.isEmpty()) listOf("You" to xp) else rows
+    val seen = mutableSetOf<String>()
+    val board = mutableListOf<Pair<String, Int>>()
+    source.forEach { (name, score) ->
+        val label = name.ifBlank { "Someone" }
+        val key = label.trim().lowercase()
+        if (!seen.add(key)) return@forEach
+        board.add(label to score)
     }
-    if (ransom) {
-        Column(Modifier.padding(top = 12.dp).clip(RoundedCornerShape(16.dp)).background(Color.White).padding(14.dp)) {
-            Text("Pay the ransom", fontWeight = FontWeight.Bold, fontSize = 20.sp)
-            Text("Hold this button for 8 seconds. A friend gets a thank-you.")
-            Text("Minus 100 of my Daily XP", fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp))
-            Text("Floors at 0. You have $xp XP today.", color = Melt.Muted)
-            PrimaryButton("Hold to be a hero") { repo.payRansom(); ransom = false }
-            Text("Close", modifier = Modifier.clickable { ransom = false })
-        }
-    }
+    if ("you" !in seen) board.add("You" to xp)
+    return board
 }
 
 @Composable

@@ -22,12 +22,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Eco
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.AlertDialog
@@ -84,8 +80,6 @@ fun SettingsScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunR
         repo.refreshAccess()
     }
     when (page) {
-        "privacy" -> LegalPage("privacy", "Privacy Policy") { page = "support" }
-        "terms" -> LegalPage("terms", "Terms & Conditions") { page = "support" }
         "brain" -> BrainHealthPage(state, repo) { page = "root" }
         "excluded" -> ExcludedPage(state, installed, repo) { page = "root" }
         "styles" -> StylesPage(state, repo) { page = "root" }
@@ -188,7 +182,8 @@ private fun RootSettings(
             RowLink("Home Screen Widget", tint = Color(0xFF598CF2)) { open("widget") }
             RowLink("Rot's memory", tint = Color(0xFF3DB370)) { open("memory") }
         }
-        Text("Request usage & blocking access", color = Melt.Muted, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 16.dp, bottom = 8.dp))
+        Text("Permissions", fontWeight = FontWeight.Bold, fontSize = 20.sp, modifier = Modifier.padding(top = 18.dp))
+        Text("Request usage & blocking access", color = Melt.Muted, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 4.dp, bottom = 8.dp))
         CardGroup {
             PermissionRow("Usage Access", "Today’s screen time, pickups, and top apps.", access.usage, onUsage)
             PermissionRow("Accessibility", stringResource(R.string.accessibility_disclosure), access.accessibility, onAccessibility)
@@ -335,10 +330,12 @@ private fun RewardsPage(state: SavedState, repo: RotRunRepository, onBack: () ->
             LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth().height(8.dp).clip(CircleShape), color = Melt.Action, trackColor = Melt.Grouped)
         }
     }
-    Looks.rewards.forEach { reward ->
-        val unlocked = reward.days == null || state.streak >= reward.days
-        val selected = state.theme == reward.themeId && state.appIcon == reward.iconId
-        SettingsCard {
+    Column(Modifier.padding(horizontal = 20.dp, vertical = 6.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Color.White)) {
+        Looks.rewards.forEachIndexed { index, reward ->
+            val unlocked = reward.days == null || state.streak >= reward.days
+            val selected = state.theme == reward.themeId && state.appIcon == reward.iconId
+            val look = Looks.byId(reward.themeId)
+            if (index > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(Melt.Grouped))
             Row(
                 Modifier.fillMaxWidth().clickable(enabled = unlocked) {
                     repo.update { it.copy(theme = reward.themeId, appIcon = reward.iconId) }
@@ -346,7 +343,10 @@ private fun RewardsPage(state: SavedState, repo: RotRunRepository, onBack: () ->
                 }.padding(14.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                RewardBadge(reward.title, unlocked)
+                Box(Modifier.size(56.dp).clip(RoundedCornerShape(16.dp)).background(look.canvas), contentAlignment = Alignment.Center) {
+                    if (unlocked) CartoonBrain(look.brain, Modifier.size(48.dp), animated = false)
+                    else Icon(Icons.Default.Lock, contentDescription = "Locked", tint = if (look.light) Melt.Ink else Color.White)
+                }
                 Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                     Text(reward.title, fontWeight = FontWeight.Bold, fontSize = 17.sp)
                     Text(reward.summary, color = Melt.Muted, fontSize = 13.sp)
@@ -362,25 +362,14 @@ private fun RewardsPage(state: SavedState, repo: RotRunRepository, onBack: () ->
                         modifier = Modifier.padding(top = 4.dp),
                     )
                 }
-                Image(painterResource(LauncherIcons.preview(reward.iconId)), contentDescription = reward.title, modifier = Modifier.size(52.dp).clip(RoundedCornerShape(14.dp)))
+                Image(
+                    painterResource(LauncherIcons.preview(reward.iconId)),
+                    contentDescription = reward.title,
+                    modifier = Modifier.size(52.dp).clip(RoundedCornerShape(14.dp)),
+                    alpha = if (unlocked) 1f else 0.4f,
+                )
             }
         }
-    }
-}
-
-@Composable
-private fun RewardBadge(title: String, unlocked: Boolean) {
-    val (icon, tint) = when (title) {
-        "Spark" -> Icons.Default.Bolt to Color(0xFFFF8C3C)
-        "Zen" -> Icons.Default.Eco to Color(0xFF6BAD94)
-        "Scholar" -> Icons.Default.MenuBook to Color(0xFF5C4A8A)
-        "Cosmic" -> Icons.Default.AutoAwesome to Color(0xFF7A6CFF)
-        else -> null to Melt.Action
-    }
-    Box(Modifier.size(48.dp).clip(CircleShape).background(tint.copy(alpha = if (unlocked) 0.18f else 0.08f)), contentAlignment = Alignment.Center) {
-        if (!unlocked) Icon(Icons.Default.Lock, contentDescription = "Locked", tint = Melt.Muted)
-        else if (icon != null) Icon(icon, contentDescription = title, tint = tint)
-        else CartoonBrain(BrainStyle.Meadow, Modifier.size(36.dp), animated = false)
     }
 }
 
@@ -433,14 +422,15 @@ private fun IconPage(state: SavedState, repo: RotRunRepository, onBack: () -> Un
 
 @Composable
 private fun SupportPage(open: (String) -> Unit) {
+    val context = LocalContext.current
     BackHeader("Support & Feedback") { open("root") }
     Text("Need help? Reach out or leave us feedback!", color = Melt.Muted, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp))
     CardGroup {
         RowLink("Help") { open("help") }
         RowLink("Feedback / Bug Report") { open("feedback") }
         RowLink("Contact Us") { open("contact") }
-        RowLink("Privacy Policy") { open("privacy") }
-        RowLink("Terms & Conditions") { open("terms") }
+        RowLink("Privacy Policy") { HostedPolicy.open(context, HostedPolicy.PRIVACY) }
+        RowLink("Terms & Conditions") { HostedPolicy.open(context, HostedPolicy.TERMS) }
         RowLink("Manage Subscription") { open("subscription") }
     }
     Text("Follow us", fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp))
@@ -492,6 +482,7 @@ private fun HelpPage(repo: RotRunRepository, onBack: () -> Unit) {
 private fun FeedbackPage(onBack: () -> Unit) {
     var bug by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
+    var sendNote by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
     BackHeader("Feedback / Bug Report", onBack)
     Text(
@@ -519,27 +510,55 @@ private fun FeedbackPage(onBack: () -> Unit) {
         }
     }
     BoxButton(if (bug) "Email bug report" else "Email feedback") {
-        if (message.isBlank()) return@BoxButton
+        if (message.isBlank()) {
+            sendNote = "Write a message first."
+            return@BoxButton
+        }
         val subject = if (bug) "RotRun Bug Report" else "RotRun Feedback"
         val lead = if (bug) "Bug report:" else "Product feedback:"
-        sendMail(context, subject, "Hi RotRun team,\n\n$lead\n\n$message\n\n${diagnostics()}")
+        sendNote = if (sendMail(context, subject, "Hi RotRun team,\n\n$lead\n\n$message\n\n${diagnostics()}")) {
+            "Opening your email app."
+        } else {
+            "Couldn't open an email app."
+        }
     }
+    sendNote?.let { Text(it, color = Melt.Muted, modifier = Modifier.padding(horizontal = 22.dp)) }
 }
 
 @Composable
 private fun ContactPage(onBack: () -> Unit) {
     val context = LocalContext.current
+    var message by remember { mutableStateOf("") }
+    var sendNote by remember { mutableStateOf<String?>(null) }
     BackHeader("Contact Us", onBack)
+    Text("Questions, press, or anything that isn't a bug. We read every message.", color = Melt.Muted, modifier = Modifier.padding(horizontal = 20.dp))
+    OutlinedTextField(
+        value = message,
+        onValueChange = { message = it },
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
+        minLines = 5,
+        label = { Text("Your message") },
+    )
     SettingsCard {
         Column(Modifier.padding(16.dp)) {
-            Text("Questions, press, or anything that isn't a bug. We read every message.", color = Melt.Muted)
-            Text("We'll open a message to ${SupportCopy.EMAIL} with subject RotRun Contact.", modifier = Modifier.padding(top = 8.dp))
-            Text(versionLine(), color = Melt.Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
+            Text("Sent to ${SupportCopy.EMAIL}", fontWeight = FontWeight.Bold)
+            Text("Subject: RotRun Contact", color = Melt.Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
+            Text(versionLine(), color = Melt.Muted, fontSize = 13.sp)
+            Text("Android ${Build.VERSION.RELEASE} · ${Build.MANUFACTURER} ${Build.MODEL}", color = Melt.Muted, fontSize = 13.sp)
         }
     }
     BoxButton("Email RotRun") {
-        sendMail(context, "RotRun Contact", "Hi RotRun team,\n\n\n\n${diagnostics()}")
+        if (message.isBlank()) {
+            sendNote = "Write a message first."
+            return@BoxButton
+        }
+        sendNote = if (sendMail(context, "RotRun Contact", "Hi RotRun team,\n\n$message\n\n${diagnostics()}")) {
+            "Opening your email app."
+        } else {
+            "Couldn't open an email app."
+        }
     }
+    sendNote?.let { Text(it, color = Melt.Muted, modifier = Modifier.padding(horizontal = 22.dp)) }
 }
 
 @Composable
@@ -555,6 +574,26 @@ private fun ChoiceChip(title: String, on: Boolean, click: () -> Unit) {
 @Composable
 private fun WidgetPage(onBack: () -> Unit) {
     BackHeader("Home Screen Widget", onBack)
+    Text("Brain Health on your home screen, and a Focus widget that starts a session.", color = Melt.Muted, modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp))
+    Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Color(0xFF24754D)).padding(16.dp)) {
+        Text("ROTRUN", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+        Text("Brain Health", color = Color.White.copy(alpha = 0.85f), fontSize = 13.sp)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("100%", color = Color.White, fontSize = 34.sp, fontWeight = FontWeight.Black)
+                Text("Looking sharp today", color = Color.White.copy(alpha = 0.9f))
+                Text("Streak 1", color = Color.White, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp))
+            }
+            CartoonBrain(BrainStyle.Meadow, Modifier.size(96.dp), animated = false)
+        }
+    }
+    Row(Modifier.padding(horizontal = 20.dp, vertical = 4.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Color.White).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+        CartoonBrain(BrainStyle.Meadow, Modifier.size(64.dp), animated = false)
+        Column(Modifier.padding(start = 12.dp)) {
+            Text("Focus", fontWeight = FontWeight.Bold)
+            Text("15 · 30 · 45 · 60 min", color = Melt.Muted, fontSize = 13.sp)
+        }
+    }
     val steps = listOf(
         "Long-press your Home Screen" to "Tap and hold an empty area until the menu appears.",
         "Tap Widgets" to "Open the widget picker from the home screen.",
@@ -624,7 +663,7 @@ private fun diagnostics(): String = "———\n${versionLine()}\nAndroid ${Buil
 
 private fun helpBody() = "Hi RotRun team,\n\nHere’s my question:\n\n\n\n${diagnostics()}"
 
-private fun sendMail(context: android.content.Context, subject: String, body: String) {
+private fun sendMail(context: android.content.Context, subject: String, body: String): Boolean {
     val uri = Uri.parse("mailto:${SupportCopy.EMAIL}?subject=${Uri.encode(subject)}&body=${Uri.encode(body)}")
-    runCatching { context.startActivity(Intent(Intent.ACTION_SENDTO, uri)) }
+    return runCatching { context.startActivity(Intent(Intent.ACTION_SENDTO, uri)) }.isSuccess
 }

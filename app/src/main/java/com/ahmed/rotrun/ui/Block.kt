@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -193,11 +194,12 @@ private fun BlockerEditor(
     var draft by remember(initial.id) { mutableStateOf(initial) }
     var picking by remember { mutableStateOf(false) }
     FullScreenDialog(onDismiss = onDismiss) {
-    Column(Modifier.fillMaxSize().background(Melt.Grouped).verticalScroll(rememberScrollState()).padding(20.dp)) {
+    Column(Modifier.fillMaxSize().background(Melt.Grouped).statusBarsPadding().verticalScroll(rememberScrollState()).padding(20.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text("Cancel", color = Melt.Action, modifier = Modifier.clickable(onClick = onDismiss))
             Text("Save", color = Melt.Action, fontWeight = FontWeight.Bold, modifier = Modifier.clickable { onSave(draft) })
         }
+        Text("Edit Blocker", fontWeight = FontWeight.Bold, fontSize = 28.sp, modifier = Modifier.padding(top = 16.dp))
         OutlinedTextField(draft.name, { draft = draft.copy(name = it) }, label = { Text("Name") }, modifier = Modifier.fillMaxWidth().padding(top = 12.dp))
         Row(Modifier.padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf("allDay" to "All Day", "schedule" to "Schedule", "dailyLimit" to "Daily Limit").forEach { (mode, label) ->
@@ -287,8 +289,8 @@ private fun ListEditor(
 ) {
     var draft by remember(initial.id) { mutableStateOf(initial) }
     var picking by remember { mutableStateOf(false) }
-    FullScreenDialog(onDismiss = onDismiss) {
-        Column(Modifier.fillMaxSize().background(Color.White).verticalScroll(rememberScrollState()).padding(20.dp)) {
+    ModalPopup(onDismiss = onDismiss) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(20.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("Edit List", fontWeight = FontWeight.Bold, fontSize = 20.sp)
                 Text("Done", color = Melt.Action, fontWeight = FontWeight.Bold, modifier = Modifier.clickable { onSave(draft) })

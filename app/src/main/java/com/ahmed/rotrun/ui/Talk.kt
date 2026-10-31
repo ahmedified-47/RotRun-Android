@@ -60,7 +60,13 @@ fun TalkSheet(repo: RotRunRepository, onClose: () -> Unit) {
             Text("Sign in with Google to talk to your brain. Your conversations help it learn about you and give better advice.")
             PrimaryButton("Sign in with Google") {
                 val activity = context as? Activity ?: return@PrimaryButton
-                repo.backend.signIn(activity) { error -> note = error }
+                repo.backend.signIn(activity) { error ->
+                    note = when {
+                        error.isNullOrBlank() -> null
+                        error.contains("GOOGLE_WEB_CLIENT_ID") || error.contains("local.properties") || error.contains("does not create") -> "Sign-in isn’t set up yet"
+                        else -> error
+                    }
+                }
             }
         } else if (repo.backend.needsConsent()) {
             Text("Rot can remember facts you share so advice gets better. You can forget everything later. Streak and XP stay.")

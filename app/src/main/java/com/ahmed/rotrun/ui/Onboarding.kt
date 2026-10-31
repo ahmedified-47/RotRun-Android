@@ -97,7 +97,6 @@ fun OnboardingScreen(repo: RotRunRepository) {
     val installed by repo.installed.collectAsState()
     val step = OnboardingStep.fromRaw(state.onboardingStep)
     var plan by remember { mutableStateOf(Products.YEARLY) }
-    var legal by remember { mutableStateOf<String?>(null) }
     var upgrade by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         repo.pulses.collect { pulse ->
@@ -109,12 +108,6 @@ fun OnboardingScreen(repo: RotRunRepository) {
     val catalog by com.ahmed.rotrun.logic.PlayCatalog.status.collectAsState()
     androidx.compose.runtime.LaunchedEffect(catalog, state.onboardingStep, state.premium, state.yearly70Dismissed) {
         if (step.skipped(repo.state.value)) repo.advance()
-    }
-    if (legal != null) {
-        LegalPage(if (legal == "terms") "terms" else "privacy", if (legal == "terms") "Terms & Conditions" else "Privacy Policy") {
-            legal = null
-        }
-        return
     }
     Box(Modifier.fillMaxSize().statusBarsPadding()) {
         OnboardingBackdrop(step)
@@ -140,7 +133,9 @@ fun OnboardingScreen(repo: RotRunRepository) {
             OnboardingStep.NotAddicted -> NotAddicted(repo)
             OnboardingStep.DidYouKnow -> DidYouKnow(repo)
             OnboardingStep.SocialProof -> SocialProof(repo)
-            OnboardingStep.CarouselWelcome, OnboardingStep.CarouselThemes, OnboardingStep.CarouselFocus -> Carousel(step, { legal = it }, repo)
+            OnboardingStep.CarouselWelcome, OnboardingStep.CarouselThemes, OnboardingStep.CarouselFocus -> Carousel(step, { which ->
+                HostedPolicy.open(context, if (which == "terms") HostedPolicy.TERMS else HostedPolicy.PRIVACY)
+            }, repo)
             OnboardingStep.PeakFocus -> Choices(step, "Pick your peak focus time!", state.peakFocus, peakOptions, false, repo, "This is the time where you want to block the most distracting apps.", chrome = false)
             OnboardingStep.Notifications -> Notifications {
                 if (Build.VERSION.SDK_INT >= 33) askNotify.launch(Manifest.permission.POST_NOTIFICATIONS) else repo.advance()
@@ -157,8 +152,6 @@ fun OnboardingScreen(repo: RotRunRepository) {
                     onRestore = repo::restore,
                     selected = plan,
                     onSelect = { plan = it },
-                    onTerms = { legal = "terms" },
-                    onPrivacy = { legal = "privacy" },
                 )
             }
             OnboardingStep.OneTimeOffer -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
@@ -167,8 +160,6 @@ fun OnboardingScreen(repo: RotRunRepository) {
                     onOther = repo::leaveOffer,
                     showClose = true,
                     onClose = repo::leaveOffer,
-                    onTerms = { legal = "terms" },
-                    onPrivacy = { legal = "privacy" },
                 )
             }
             OnboardingStep.SetGoal -> Hours(state, repo, goal = true)

@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.runtime.collectAsState
@@ -46,9 +47,8 @@ fun GetAccessPaywall(
     selected: String,
     onSelect: (String) -> Unit,
     settingsStyle: Boolean = false,
-    onTerms: (() -> Unit)? = null,
-    onPrivacy: (() -> Unit)? = null,
 ) {
+    val context = LocalContext.current
     Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         if (!settingsStyle) {
             Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -130,11 +130,9 @@ fun GetAccessPaywall(
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier.padding(top = 14.dp).clickable(onClick = onRestore),
         )
-        if (onTerms != null && onPrivacy != null) {
-            Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text("Terms of Use", color = Melt.Action, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.clickable(onClick = onTerms))
-                Text("Privacy Policy", color = Melt.Action, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.clickable(onClick = onPrivacy))
-            }
+        Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Text("Terms of Use", color = Melt.Action, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.clickable { HostedPolicy.open(context, HostedPolicy.TERMS) })
+            Text("Privacy Policy", color = Melt.Action, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.clickable { HostedPolicy.open(context, HostedPolicy.PRIVACY) })
         }
         if (settingsStyle) {
             Text(
@@ -155,9 +153,8 @@ fun OneTimeOffer(
     onOther: () -> Unit,
     showClose: Boolean,
     onClose: () -> Unit,
-    onTerms: (() -> Unit)? = null,
-    onPrivacy: (() -> Unit)? = null,
 ) {
+    val context = LocalContext.current
     Column(Modifier.fillMaxWidth().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         if (showClose) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
@@ -218,11 +215,9 @@ fun OneTimeOffer(
         Text("Cancel anytime • Money back guarantee", color = Melt.Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 12.dp))
         Spacer(Modifier.height(8.dp))
         PrimaryButton(if (off > 0) "Redeem $off% Off" else "Redeem offer", onClick = onRedeem)
-        if (onTerms != null && onPrivacy != null) {
-            Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text("Terms of Use", color = Melt.Action, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.clickable(onClick = onTerms))
-                Text("Privacy Policy", color = Melt.Action, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.clickable(onClick = onPrivacy))
-            }
+        Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Text("Terms of Use", color = Melt.Action, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.clickable { HostedPolicy.open(context, HostedPolicy.TERMS) })
+            Text("Privacy Policy", color = Melt.Action, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.clickable { HostedPolicy.open(context, HostedPolicy.PRIVACY) })
         }
         Text(
             "See other plans",

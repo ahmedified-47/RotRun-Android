@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -62,6 +63,33 @@ fun FullScreenDialog(onDismiss: () -> Unit, content: @Composable () -> Unit) {
             window.setBackgroundDrawable(ColorDrawable(android.graphics.Color.WHITE))
         }
         Box(Modifier.fillMaxSize().background(Color.White)) { content() }
+    }
+}
+
+@Composable
+fun ModalPopup(onDismiss: () -> Unit, content: @Composable () -> Unit) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            dismissOnClickOutside = false,
+            decorFitsSystemWindows = false,
+        ),
+    ) {
+        val view = LocalView.current
+        SideEffect {
+            val window = (view.parent as? DialogWindowProvider)?.window ?: return@SideEffect
+            window.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
+            window.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
+        }
+        Box(
+            Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                Modifier.padding(horizontal = 20.dp).fillMaxWidth().heightIn(max = 680.dp).clip(RoundedCornerShape(28.dp)).background(Color.White),
+            ) { content() }
+        }
     }
 }
 

@@ -45,7 +45,7 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
     fun signIn(activity: Activity, onDone: (String?) -> Unit) {
         val clientId = BuildConfig.GOOGLE_WEB_CLIENT_ID
         if (clientId.isBlank()) {
-            onDone("Add GOOGLE_WEB_CLIENT_ID to local.properties. RotRun does not create that client.")
+            onDone("Sign-in isn’t set up yet")
             return
         }
         val nonce = randomNonce()
@@ -56,9 +56,17 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
                     val error = exchange(idToken, nonce)
                     onDone(error)
                 },
-                onFailure = { onDone(it.message ?: "Google sign-in failed") },
+                onFailure = { onDone(signInNote(it.message)) },
             )
         }
+    }
+
+    private fun signInNote(message: String?): String {
+        val text = message.orEmpty()
+        val developer = listOf("GOOGLE_WEB_CLIENT_ID", "local.properties", "SUPABASE_PUBLISHABLE_KEY", "does not create")
+        if (developer.any { text.contains(it, ignoreCase = true) }) return "Sign-in isn’t set up yet"
+        if (text.isBlank()) return "Google sign-in didn’t finish."
+        return text
     }
 
     fun signOut() {
@@ -400,7 +408,7 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
     }
 
     private fun exchange(idToken: String, nonce: String): String? {
-        if (BuildConfig.SUPABASE_PUBLISHABLE_KEY.isBlank()) return "Add SUPABASE_PUBLISHABLE_KEY to local.properties."
+        if (BuildConfig.SUPABASE_PUBLISHABLE_KEY.isBlank()) return "Sign-in isn’t set up yet"
         val body = JSONObject().put("provider", "google").put("id_token", idToken).put("nonce", nonce)
         val response = call("POST", "/auth/v1/token?grant_type=id_token", body.toString(), null)
         val payload = response.json ?: return response.error ?: "Sign-in failed (${response.code})"
@@ -583,7 +591,7 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
             .put("streak_days", state.streak)
             .put("screen_time_goal_min", state.goalHours * 60)
             .put("is_premium", state.premiumActive())
-            .put("app_version", "1.0.0")
+            .put("app_version", BuildConfig.VERSION_NAME)
             .put("caught_doomscrolling", false)
             .put("leaderboard", "unknown")
         if (health != null) objectJson.put("brain_health", health)
