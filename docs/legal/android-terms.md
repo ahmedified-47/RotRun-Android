@@ -28,11 +28,11 @@ RotRun creates an account when you sign in with Google from Talk to Brain. That 
 
 ## User content
 
-You do not post a public social feed inside RotRun. Block lists and rules sync to your account when you are signed in, as described in the Privacy Policy. Chat messages you send to Rot are sent to RotRun’s backend so Rot can reply.
+You do not post public social content inside RotRun. Block lists and rules sync to your account when you are signed in, as described in the Privacy Policy. Chat messages you send to Rot are sent so Rot can reply.
 
 If you email rotrunsupport@gmail.com, you grant us permission to use that correspondence to support you and improve RotRun. Do not send information you are not comfortable sharing with the developer.
 
-This Android build does not use Game Center or a Friends leaderboard.
+This Android build does not use Game Center, a Friends leaderboard, or leaderboard shares (receipts, ransom notes, audio slaps, or duels).
 
 ## Subscriptions
 
@@ -40,9 +40,11 @@ RotRun Premium subscriptions are billed by Google Play. Plans (such as monthly a
 
 Restoring purchases uses Google Play. Refunds, if any, are handled by Google under Play rules.
 
-## Brain Health
+## Health, exercise, and Brain Health
 
 RotRun is a consumer wellbeing app, not a medical device. Brain Health, XP, and similar scores are gamified estimates based on screen time and Focus. They are not medical, psychiatric, or diagnostic advice.
+
+RotRun on Android does not count sit-ups, log runs, or write workouts.
 
 ## App blocking and your responsibility
 
@@ -56,7 +58,7 @@ You agree not to misuse RotRun, interfere with blocking or other users, attempt 
 
 ## Disclaimers
 
-RotRun is provided “as is” and “as available.” To the fullest extent permitted by law, we disclaim warranties of merchantability, fitness for a particular purpose, and non-infringement. We do not warrant that blocking, notifications, chat, or leaderboards will be uninterrupted, timely, or error-free.
+RotRun is provided “as is” and “as available.” To the fullest extent permitted by law, we disclaim warranties of merchantability, fitness for a particular purpose, and non-infringement. We do not warrant that blocking, notifications, chat, or the Daily XP leaderboard will be uninterrupted, timely, or error-free.
 
 Google, Android, and Google Play are Google’s. RotRun is not affiliated with or endorsed by Google except as an independent Play application.
 
