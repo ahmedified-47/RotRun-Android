@@ -14,6 +14,40 @@ import com.ahmed.rotrun.R
 import com.ahmed.rotrun.logic.InterventionCopy
 import com.ahmed.rotrun.logic.ShieldPalette
 
+/**
+ * While Ask my brain is on screen, both shields stay down. Otherwise a window
+ * event puts the shield back over the app the moment it opens.
+ */
+object ShieldSession {
+    @Volatile
+    private var held: String? = null
+
+    @Volatile
+    private var opened: Boolean = false
+
+    fun hold(packageName: String) {
+        if (packageName.isBlank()) return
+        held = packageName
+        opened = false
+    }
+
+    /** Ask my brain finished and the blocked app is coming forward. Keep the shield down. */
+    fun markOpened(packageName: String) {
+        if (packageName.isBlank()) return
+        held = packageName
+        opened = true
+    }
+
+    fun release() {
+        held = null
+        opened = false
+    }
+
+    fun blocks(packageName: String): Boolean = held != null && held == packageName
+
+    fun openedInto(packageName: String): Boolean = opened && blocks(packageName)
+}
+
 /** Full-screen Rot shield. Accessibility uses TYPE_ACCESSIBILITY_OVERLAY. The fallback uses TYPE_APPLICATION_OVERLAY. */
 object ShieldOverlay {
     fun show(

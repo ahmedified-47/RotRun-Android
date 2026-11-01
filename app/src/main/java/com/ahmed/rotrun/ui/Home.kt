@@ -117,7 +117,8 @@ fun HomeScreen(state: SavedState, usage: UsageSnapshot, refreshing: Boolean, onR
         Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             SectionTitle("Top Offenders", scenic)
             RaisedCard(Modifier.fillMaxWidth()) {
-                val offenders = usage.offenders.filter { it.seconds >= 60 }
+                Column {
+                val offenders = usage.offenders.filter { it.seconds > 0L }
                 if (offenders.isEmpty()) {
                     Text("No apps yet", color = Color.White.copy(alpha = 0.85f), fontWeight = FontWeight.Medium, modifier = Modifier.padding(16.dp))
                 } else {
@@ -134,6 +135,7 @@ fun HomeScreen(state: SavedState, usage: UsageSnapshot, refreshing: Boolean, onR
                             Box(Modifier.padding(start = 64.dp).fillMaxWidth().height(1.dp).background(Color.White.copy(alpha = 0.12f)))
                         }
                     }
+                }
                 }
             }
             if (usage.authorized) {

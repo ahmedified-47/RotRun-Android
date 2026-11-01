@@ -83,6 +83,11 @@ class InterventionActivity : ComponentActivity() {
         val token = intent.getLongExtra(EXTRA_TOKEN, 0L).takeIf { it != 0L } ?: System.currentTimeMillis().also {
             intent.putExtra(EXTRA_TOKEN, it)
         }
+        if (packageName.isNotBlank()) {
+            com.ahmed.rotrun.watch.ShieldSession.hold(packageName)
+            com.ahmed.rotrun.watch.BlockAccessibilityService.dismiss()
+            com.ahmed.rotrun.watch.BlockWatchService.dismiss()
+        }
         if (mode != "shield") RotRunGraph.repo.chargeAskBrain(token)
         setContent {
             RotRunTheme {
@@ -96,6 +101,14 @@ class InterventionActivity : ComponentActivity() {
                     onUnlock = { minutes ->
                         if (!RotRunGraph.repo.grantUnlock(minutes)) {
                             RotRunGraph.repo.toast("Unlock waits until Focus ends")
+                        } else {
+                            com.ahmed.rotrun.watch.ShieldSession.markOpened(packageName)
+                            com.ahmed.rotrun.watch.BlockAccessibilityService.dismiss()
+                            com.ahmed.rotrun.watch.BlockWatchService.dismiss()
+                            packageManager.getLaunchIntentForPackage(packageName)?.let { launch ->
+                                launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                runCatching { startActivity(launch) }
+                            }
                         }
                         finish()
                     },
@@ -103,6 +116,16 @@ class InterventionActivity : ComponentActivity() {
             }
             }
         }
+    }
+
+    override fun onDestroy() {
+        val packageName = intent.getStringExtra(EXTRA_PACKAGE).orEmpty()
+        if (!com.ahmed.rotrun.watch.ShieldSession.openedInto(packageName)) {
+            com.ahmed.rotrun.watch.ShieldSession.release()
+        }
+        com.ahmed.rotrun.watch.BlockAccessibilityService.dismiss()
+        com.ahmed.rotrun.watch.BlockWatchService.dismiss()
+        super.onDestroy()
     }
 
     private fun goHome() {

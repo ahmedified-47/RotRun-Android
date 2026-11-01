@@ -1,5 +1,6 @@
 package com.ahmed.rotrun.ui
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -7,11 +8,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Alarm
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material3.Icon
 import androidx.compose.foundation.shape.CircleShape
@@ -29,9 +33,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ahmed.rotrun.BuildConfig
+import com.ahmed.rotrun.R
 import com.ahmed.rotrun.data.RotRunRepository
 import com.ahmed.rotrun.data.SavedState
 import com.ahmed.rotrun.logic.InterventionCopy
@@ -89,31 +95,98 @@ private fun FocusStats(state: SavedState, health: Int?) {
             modifier = Modifier.fillMaxWidth(),
             textAlign = TextAlign.Center,
         )
-        Row(Modifier.fillMaxWidth().height(92.dp).padding(top = 12.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth().height(92.dp).padding(top = 12.dp, start = 8.dp, end = 8.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             week.forEach { day ->
                 val value = (state.focusMinutesByDay[Scoring.dayKey(day)] ?: 0).toFloat()
-                Box(Modifier.weight(1f).height((72f * value / max).dp.coerceAtLeast(8.dp)).clip(RoundedCornerShape(8.dp)).background(if (day == selected) Color(0xFFFF8C2E) else chrome.inset))
+                Box(
+                    Modifier.weight(1f).height((72f * value / max).dp.coerceAtLeast(12.dp)).clip(RoundedCornerShape(8.dp))
+                        .background(if (day == selected) Color(0xFFFF8C2E) else chrome.line),
+                )
+            }
+        }
+        Row(Modifier.fillMaxWidth().padding(top = 6.dp, start = 8.dp, end = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            week.forEach { day ->
+                Text(
+                    day.dayOfWeek.name.take(3),
+                    color = chrome.muted,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.weight(1f),
+                )
             }
         }
     }
-    Column(Modifier.fillMaxWidth().padding(bottom = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        CartoonBrain(BrainStyle.Meadow, Modifier.padding(top = 8.dp).size(140.dp), animated = false)
-        Text(
-            if (health == null) {
-                "You have spent ${Scoring.formatDuration(weekMinutes * 60L)} in focus time this week. Connect usage access to score Brain Health."
-            } else {
-                "You have spent ${Scoring.formatDuration(weekMinutes * 60L)} in focus time this week, regaining $health% of your brain health. With this average, you're on track to spend ${Scoring.formatDuration(year * 60L)} focused this year instead of rotting."
-            },
-            color = chrome.ink,
-            modifier = Modifier.padding(horizontal = 22.dp, vertical = 8.dp),
-            textAlign = TextAlign.Center,
-            fontWeight = FontWeight.SemiBold,
+    val storyBg = if (chrome.dark) chrome.page else Color(0xFFFCE6C7)
+    Column(Modifier.fillMaxWidth().background(storyBg).padding(bottom = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        CartoonBrain(BrainStyle.Meadow, Modifier.padding(top = 8.dp).size(150.dp), animated = false)
+        FocusStory(
+            weekLabel = Scoring.formatDuration(weekMinutes * 60L),
+            healthLabel = health?.let { "$it%" } ?: "—",
+            yearLabel = Scoring.formatDuration(year * 60L),
         )
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Mini("Longest", longest?.let { Scoring.formatDuration(it.value * 60L) } ?: "-")
-            Mini("Best day", longest?.key?.let { Scoring.parseDay(it)?.dayOfWeek?.name?.take(3) } ?: "-")
-            Mini("Lifetime", if (lifetime == 0) "-" else Scoring.formatDuration(lifetime * 60L))
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).clip(RoundedCornerShape(22.dp)).background(if (chrome.dark) chrome.inset else Color(0xFFF2F2F7)).padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Mini("Longest", longest?.let { Scoring.formatDuration(it.value * 60L) } ?: "-", Modifier.weight(1f))
+            Mini("Best day", longest?.key?.let { Scoring.parseDay(it)?.dayOfWeek?.name?.take(3) } ?: "-", Modifier.weight(1f))
+            Mini("Lifetime", if (lifetime == 0) "-" else Scoring.formatDuration(lifetime * 60L), Modifier.weight(1f))
         }
+    }
+}
+
+@Composable
+private fun FocusStory(weekLabel: String, healthLabel: String, yearLabel: String) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        StoryLine {
+            StoryText("You have spent")
+            StoryChip(weekLabel) { Icon(Icons.Default.Alarm, contentDescription = null, tint = Color(0xFFFF3B30), modifier = Modifier.size(14.dp)) }
+            StoryText("in")
+        }
+        StoryText("focus time this week,", fill = true)
+        StoryLine {
+            StoryText("regaining")
+            StoryChip(healthLabel) { Image(painterResource(R.drawable.rot_mascot), contentDescription = "Rot", modifier = Modifier.size(16.dp)) }
+        }
+        StoryText("of your brain health.", fill = true)
+        StoryText("With this average, you're on", fill = true)
+        StoryLine {
+            StoryText("track to spend")
+            StoryChip(yearLabel) { Icon(Icons.Default.DateRange, contentDescription = null, tint = Color(0xFF5AC8FA), modifier = Modifier.size(14.dp)) }
+        }
+        StoryText("focused this year instead of rotting.", fill = true)
+    }
+}
+
+@Composable
+private fun StoryLine(content: @Composable () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(top = 2.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+        content()
+    }
+}
+
+@Composable
+private fun StoryText(text: String, fill: Boolean = false) {
+    Text(
+        text,
+        color = rot().ink,
+        fontWeight = FontWeight.Bold,
+        fontSize = 20.sp,
+        textAlign = TextAlign.Center,
+        modifier = if (fill) Modifier.fillMaxWidth().padding(top = 2.dp) else Modifier.padding(horizontal = 4.dp),
+    )
+}
+
+@Composable
+private fun StoryChip(text: String, icon: @Composable () -> Unit) {
+    Row(
+        Modifier.padding(horizontal = 3.dp).clip(RoundedCornerShape(10.dp)).background(rot().card).padding(horizontal = 8.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        icon()
+        Text(text, color = rot().ink, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 1)
     }
 }
 
@@ -197,6 +270,7 @@ private fun LeaderboardBody(state: SavedState, screenMinutes: Int?, repo: RotRun
                 }
             }
         }
+        Spacer(Modifier.height(28.dp))
     }
 }
 
@@ -227,10 +301,13 @@ private fun Toggle(label: String, on: Boolean, modifier: Modifier = Modifier, cl
 }
 
 @Composable
-private fun Mini(title: String, value: String) {
-    Column(Modifier.clip(RoundedCornerShape(14.dp)).background(rot().card).padding(10.dp)) {
-        Text(title, color = rot().muted, fontSize = 12.sp)
-        Text(value, color = rot().ink, fontWeight = FontWeight.Bold)
+private fun Mini(title: String, value: String, modifier: Modifier = Modifier) {
+    Column(
+        modifier.clip(RoundedCornerShape(16.dp)).background(rot().card).padding(vertical = 14.dp, horizontal = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(value, color = rot().ink, fontWeight = FontWeight.Bold, fontSize = 18.sp, textAlign = TextAlign.Center, maxLines = 1)
+        Text(title, color = rot().muted, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp), textAlign = TextAlign.Center)
     }
 }
 

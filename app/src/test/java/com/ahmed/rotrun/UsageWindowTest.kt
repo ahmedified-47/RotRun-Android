@@ -1,7 +1,10 @@
 package com.ahmed.rotrun
 
+import com.ahmed.rotrun.data.countedSampleMillis
+import com.ahmed.rotrun.data.ForegroundMark
 import com.ahmed.rotrun.data.UsageSlice
 import com.ahmed.rotrun.data.dedupedUsageSlices
+import com.ahmed.rotrun.data.foregroundSeconds
 import com.ahmed.rotrun.data.usageBucketDay
 import com.ahmed.rotrun.data.visibleSecondsOnDay
 import org.junit.Assert.assertEquals
@@ -41,6 +44,76 @@ class UsageWindowTest {
         )
         assertEquals(1, dedupedUsageSlices(slices).size)
         assertEquals(25, visibleSecondsOnDay(slices, "com.example.app", today, zone))
+    }
+
+    @Test
+    fun sampleLongerThanTheWindowIsNotTodaysUsage() {
+        val window = 14 * 60 * 60 * 1000L
+        val thirtySevenHours = 37L * 60 * 60 * 1000L
+        assertEquals(0L, countedSampleMillis(0L, thirtySevenHours, window))
+        assertEquals(5 * 60 * 1000L, countedSampleMillis(5 * 60 * 1000L, thirtySevenHours, window))
+        assertEquals(90_000L, countedSampleMillis(0L, 90_000L, window))
+    }
+
+    @Test
+    fun openSessionCountsThroughTheWindowEnd() {
+        val start = 1_000L
+        val end = 91_000L
+        val marks = listOf(ForegroundMark("com.example.chrome", start, resumed = true))
+        assertEquals(90L, foregroundSeconds(marks, start, end, "com.ahmed.rotrun")["com.example.chrome"])
+    }
+
+    @Test
+    fun pauseWithoutResumeCountsFromTheWindowStart() {
+        val start = 0L
+        val marks = listOf(ForegroundMark("com.example.chrome", 45_000L, resumed = false))
+        assertEquals(45L, foregroundSeconds(marks, start, 60_000L, "")["com.example.chrome"])
+    }
+
+    @Test
+    fun extraPausesDoNotCountTheWindowAgain() {
+        val marks = listOf(
+            ForegroundMark("com.example.launcher", 10_000L, resumed = false),
+            ForegroundMark("com.example.launcher", 20_000L, resumed = false),
+        )
+        assertEquals(10L, foregroundSeconds(marks, 0L, 60_000L, "")["com.example.launcher"])
+    }
+
+    @Test
+    fun overlappingActivitiesCountOnce() {
+        val marks = listOf(
+            ForegroundMark("com.example.launcher", 10_000L, resumed = true),
+            ForegroundMark("com.example.launcher", 12_000L, resumed = true),
+            ForegroundMark("com.example.launcher", 18_000L, resumed = false),
+            ForegroundMark("com.example.launcher", 25_000L, resumed = false),
+        )
+        assertEquals(8L, foregroundSeconds(marks, 0L, 60_000L, "")["com.example.launcher"])
+    }
+
+    @Test
+    fun nextAppResumeClosesThePreviousApp() {
+        val marks = listOf(
+            ForegroundMark("com.example.launcher", 0L, resumed = true),
+            ForegroundMark("com.example.chrome", 10_000L, resumed = true),
+            ForegroundMark("com.example.chrome", 16_000L, resumed = false),
+        )
+        val totals = foregroundSeconds(marks, 0L, 60_000L, "")
+        assertEquals(10L, totals["com.example.launcher"])
+        assertEquals(6L, totals["com.example.chrome"])
+    }
+
+    @Test
+    fun ownAppResumeClosesThePreviousAppWithoutCountingItself() {
+        val marks = listOf(
+            ForegroundMark("com.example.launcher", 0L, resumed = true),
+            ForegroundMark("com.ahmed.rotrun", 5_000L, resumed = true),
+            ForegroundMark("com.example.chrome", 20_000L, resumed = true),
+            ForegroundMark("com.example.chrome", 23_000L, resumed = false),
+        )
+        val totals = foregroundSeconds(marks, 0L, 60_000L, "com.ahmed.rotrun")
+        assertEquals(5L, totals["com.example.launcher"])
+        assertEquals(3L, totals["com.example.chrome"])
+        assertEquals(null, totals["com.ahmed.rotrun"])
     }
 
     @Test

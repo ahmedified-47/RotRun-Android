@@ -16,6 +16,7 @@ class BlockAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        live = this
         connected = true
         val current = UsageReader.foreground(this) ?: return
         consider(current)
@@ -32,6 +33,11 @@ class BlockAccessibilityService : AccessibilityService() {
 
     private fun consider(packageName: String) {
         if (!RotRunGraph.ready()) return
+        if (ShieldSession.blocks(packageName)) {
+            hide()
+            if (ShieldSession.openedInto(packageName) && !repoReadyBlocked(packageName)) ShieldSession.release()
+            return
+        }
         val repo = RotRunGraph.repo
         if (!repo.isBlocked(packageName, repo.safetyPackages())) {
             hide()
@@ -59,14 +65,26 @@ class BlockAccessibilityService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        if (live === this) live = null
         connected = false
         hide()
         super.onDestroy()
     }
 
+    private fun repoReadyBlocked(packageName: String): Boolean {
+        if (!RotRunGraph.ready()) return false
+        val repo = RotRunGraph.repo
+        return repo.isBlocked(packageName, repo.safetyPackages())
+    }
+
     private fun openAsk(packageName: String, label: String) {
+        ShieldSession.hold(packageName)
         hide()
-        if (!RotRunGraph.ready()) return
+        BlockWatchService.dismiss()
+        if (!RotRunGraph.ready()) {
+            ShieldSession.release()
+            return
+        }
         val mode = RotRunGraph.repo.pickStyle() ?: "standard"
         val open = Intent(this, InterventionActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
@@ -74,7 +92,8 @@ class BlockAccessibilityService : AccessibilityService() {
             putExtra(InterventionActivity.EXTRA_PACKAGE, packageName)
             putExtra(InterventionActivity.EXTRA_MODE, mode)
         }
-        runCatching { startActivity(open) }
+        val started = runCatching { startActivity(open) }.isSuccess
+        if (!started) ShieldSession.release()
     }
 
     private fun hide() {
@@ -86,9 +105,16 @@ class BlockAccessibilityService : AccessibilityService() {
 
     companion object {
         @Volatile
+        private var live: BlockAccessibilityService? = null
+
+        @Volatile
         var connected: Boolean = false
 
         @Volatile
         var covering: Boolean = false
+
+        fun dismiss() {
+            live?.hide()
+        }
     }
 }

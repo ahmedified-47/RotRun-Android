@@ -512,15 +512,16 @@ private fun IconPage(state: SavedState, repo: RotRunRepository, onBack: () -> Un
 
 @Composable
 private fun SupportPage(open: (String) -> Unit) {
-    val context = LocalContext.current
+    var legal by remember { mutableStateOf<String?>(null) }
+    LegalDialog(legal) { legal = null }
     BackHeader("Support & Feedback") { open("root") }
     Text("Need help? Reach out or leave us feedback!", color = Melt.Muted, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp))
     CardGroup {
         RowLink("Help") { open("help") }
         RowLink("Feedback / Bug Report") { open("feedback") }
         RowLink("Contact Us") { open("contact") }
-        RowLink("Privacy Policy") { HostedPolicy.open(context, HostedPolicy.PRIVACY) }
-        RowLink("Terms & Conditions") { HostedPolicy.open(context, HostedPolicy.TERMS) }
+        RowLink("Privacy Policy") { legal = "privacy" }
+        RowLink("Terms & Conditions") { legal = "terms" }
         RowLink("Manage Subscription") { open("subscription") }
     }
     Text("Follow us", fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp))

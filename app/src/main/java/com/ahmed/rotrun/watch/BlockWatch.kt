@@ -54,6 +54,7 @@ class BlockWatchService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        live = this
         startInForeground("RotRun is watching the apps you chose.")
         handler.removeCallbacks(tick)
         handler.post {
@@ -64,6 +65,7 @@ class BlockWatchService : Service() {
     }
 
     override fun onDestroy() {
+        if (live === this) live = null
         handler.removeCallbacks(tick)
         hideOverlay()
         super.onDestroy()
@@ -113,6 +115,13 @@ class BlockWatchService : Service() {
             hideOverlay()
             return
         }
+        if (ShieldSession.blocks(packageName)) {
+            hideOverlay()
+            if (ShieldSession.openedInto(packageName) && !repo.isBlocked(packageName, repo.safetyPackages())) {
+                ShieldSession.release()
+            }
+            return
+        }
         val blocked = repo.isBlocked(packageName, repo.safetyPackages())
         if (packageName != lastForeground) {
             lastForeground = packageName
@@ -156,8 +165,13 @@ class BlockWatchService : Service() {
     }
 
     private fun openAsk(packageName: String, label: String) {
+        ShieldSession.hold(packageName)
         hideOverlay()
-        if (!RotRunGraph.ready()) return
+        BlockAccessibilityService.dismiss()
+        if (!RotRunGraph.ready()) {
+            ShieldSession.release()
+            return
+        }
         val mode = RotRunGraph.repo.pickStyle() ?: "standard"
         val open = Intent(this, InterventionActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
@@ -165,7 +179,8 @@ class BlockWatchService : Service() {
             putExtra(InterventionActivity.EXTRA_PACKAGE, packageName)
             putExtra(InterventionActivity.EXTRA_MODE, mode)
         }
-        runCatching { startActivity(open) }
+        val started = runCatching { startActivity(open) }.isSuccess
+        if (!started) ShieldSession.release()
     }
 
     private fun hideOverlay() {
@@ -197,5 +212,12 @@ class BlockWatchService : Service() {
         private const val CHANNEL = "rotrun.watch"
         private const val NOTIFICATION_ID = 42
         private const val ALERT_ID = 43
+
+        @Volatile
+        private var live: BlockWatchService? = null
+
+        fun dismiss() {
+            live?.hideOverlay()
+        }
     }
 }

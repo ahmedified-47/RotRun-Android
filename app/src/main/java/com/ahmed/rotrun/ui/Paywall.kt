@@ -18,12 +18,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.runtime.collectAsState
@@ -48,8 +50,9 @@ fun GetAccessPaywall(
     onSelect: (String) -> Unit,
     settingsStyle: Boolean = false,
 ) {
-    val context = LocalContext.current
     val chrome = rot()
+    var legal by remember { mutableStateOf<String?>(null) }
+    LegalDialog(legal) { legal = null }
     Column(Modifier.fillMaxWidth().background(chrome.page).padding(horizontal = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             if (showClose) {
@@ -121,8 +124,8 @@ fun GetAccessPaywall(
             modifier = Modifier.padding(top = 14.dp).clickable(onClick = onRestore),
         )
         Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            Text("Terms of Use", color = chrome.blue, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.clickable { HostedPolicy.open(context, HostedPolicy.TERMS) })
-            Text("Privacy Policy", color = chrome.blue, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.clickable { HostedPolicy.open(context, HostedPolicy.PRIVACY) })
+            Text("Terms of Use", color = chrome.blue, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.clickable { legal = "terms" })
+            Text("Privacy Policy", color = chrome.blue, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.clickable { legal = "privacy" })
         }
         if (settingsStyle) {
             Text(
@@ -144,8 +147,9 @@ fun OneTimeOffer(
     showClose: Boolean,
     onClose: () -> Unit,
 ) {
-    val context = LocalContext.current
     val chrome = rot()
+    var legal by remember { mutableStateOf<String?>(null) }
+    LegalDialog(legal) { legal = null }
     Column(Modifier.fillMaxWidth().background(chrome.page).padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         if (showClose) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
@@ -207,8 +211,8 @@ fun OneTimeOffer(
         Spacer(Modifier.height(8.dp))
         PrimaryButton(if (off > 0) "Redeem $off% Off" else "Redeem offer", onClick = onRedeem)
         Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            Text("Terms of Use", color = chrome.blue, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.clickable { HostedPolicy.open(context, HostedPolicy.TERMS) })
-            Text("Privacy Policy", color = chrome.blue, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.clickable { HostedPolicy.open(context, HostedPolicy.PRIVACY) })
+            Text("Terms of Use", color = chrome.blue, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.clickable { legal = "terms" })
+            Text("Privacy Policy", color = chrome.blue, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.clickable { legal = "privacy" })
         }
         Text(
             "See other plans",

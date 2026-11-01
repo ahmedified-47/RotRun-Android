@@ -38,29 +38,45 @@ object UsageReader {
         val own = context.packageName
         val daily = mutableMapOf<LocalDate, Long>()
         val drainDaily = mutableMapOf<LocalDate, Long>()
-        val todayApps = mutableListOf<Offender>()
-        val stats = manager.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, weekStart, now).orEmpty()
-        val slices = dedupedUsageSlices(stats.mapNotNull { stat ->
-            val millis = visibleMillis(stat)
-            if (stat.packageName == own || millis <= 0L) return@mapNotNull null
-            UsageSlice(stat.packageName, stat.firstTimeStamp, stat.lastTimeUsed, millis)
-        })
-        for (slice in slices) {
-            val day = usageBucketDay(slice, zone) ?: continue
-            if (day.isBefore(today.minusDays(6)) || day.isAfter(today)) continue
-            val seconds = slice.visibleMillis / 1000L
-            daily[day] = (daily[day] ?: 0L) + seconds
-            if (slice.packageName !in excluded) {
-                drainDaily[day] = (drainDaily[day] ?: 0L) + seconds
-            }
-            if (day == today && slice.packageName !in excluded) {
-                val index = todayApps.indexOfFirst { it.packageName == slice.packageName }
-                if (index >= 0) {
-                    val old = todayApps[index]
-                    todayApps[index] = old.copy(seconds = old.seconds + seconds)
-                } else {
-                    todayApps += Offender(slice.packageName, label(context, slice.packageName), seconds)
+        val todayApps = mutableMapOf<String, Long>()
+        val todayByPackage = mutableMapOf<String, Long>()
+        // A week-long INTERVAL_DAILY query stamps every row with the query start, so
+        // today's time lands on an older day and Home shows 0m. Ask for each day.
+        // Samples longer than that day are not clipped by the platform (Permission
+        // controller reported 37h of "visible" time). Drop those and keep the rest.
+        for (offset in 0..6) {
+            val day = today.minusDays(offset.toLong())
+            val start = day.atStartOfDay(zone).toInstant().toEpochMilli()
+            val end = if (offset == 0) now else day.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+            val window = (end - start).coerceAtLeast(0L)
+            val aggregated = manager.queryAndAggregateUsageStats(start, end).orEmpty()
+            var dayTotal = 0L
+            var drainTotal = 0L
+            for ((pkg, stat) in aggregated) {
+                if (pkg == own) continue
+                val seconds = countedSampleMillis(stat.totalTimeInForeground, visibleMillis(stat), window) / 1000L
+                if (seconds <= 0L) continue
+                dayTotal += seconds
+                if (offset == 0) todayByPackage[pkg] = seconds
+                if (pkg !in excluded) {
+                    drainTotal += seconds
+                    if (offset == 0) todayApps[pkg] = seconds
                 }
+            }
+            daily[day] = dayTotal
+            drainDaily[day] = drainTotal
+        }
+        val todayStart = today.atStartOfDay(zone).toInstant().toEpochMilli()
+        val live = foregroundSeconds(eventMarks(manager, todayStart, now), todayStart, now, own)
+        for ((pkg, seconds) in live) {
+            if (seconds <= 0L) continue
+            val previous = todayByPackage[pkg] ?: 0L
+            if (seconds <= previous) continue
+            todayByPackage[pkg] = seconds
+            daily[today] = (daily[today] ?: 0L) + (seconds - previous)
+            if (pkg !in excluded) {
+                drainDaily[today] = (drainDaily[today] ?: 0L) + (seconds - previous)
+                todayApps[pkg] = seconds
             }
         }
         val todaySeconds = daily[today] ?: 0L
@@ -72,7 +88,11 @@ object UsageReader {
         readEvents(manager, weekStart, now, zone, own, hourlyToday, hourlyAll, hourlyDays, today)
         val pickups = countPickups(manager, today.atStartOfDay(zone).toInstant().toEpochMilli(), now, own)
         val hourCount = hourlyDays.size.coerceAtLeast(1)
-        val offenders = todayApps.sortedByDescending { it.seconds }.take(5)
+        val offenders = todayApps.entries
+            .filter { it.value > 0L }
+            .sortedByDescending { it.value }
+            .take(5)
+            .map { (pkg, seconds) -> Offender(pkg, label(context, pkg), seconds) }
         val week = (6 downTo 0).map { offset ->
             val day = today.minusDays(offset.toLong())
             DayUsage(Scoring.dayKey(day), day.dayOfWeek.name.take(1), daily[day] ?: 0L)
@@ -167,10 +187,8 @@ object UsageReader {
         }
     }
 
-    private fun visibleMillis(stat: UsageStats): Long {
-        val visible = if (Build.VERSION.SDK_INT >= 29) stat.totalTimeVisible else 0L
-        return maxOf(stat.totalTimeInForeground, visible)
-    }
+    private fun visibleMillis(stat: UsageStats): Long =
+        if (Build.VERSION.SDK_INT >= 29) stat.totalTimeVisible else 0L
 
     fun todaySeconds(context: Context, packageName: String): Long {
         if (!hasAccess(context)) return 0L
@@ -178,9 +196,13 @@ object UsageReader {
         val zone = ZoneId.systemDefault()
         val today = LocalDate.now()
         val start = today.atStartOfDay(zone).toInstant().toEpochMilli()
-        val stats = manager.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, start, System.currentTimeMillis()).orEmpty()
-        val slices = stats.map { UsageSlice(it.packageName, it.firstTimeStamp, it.lastTimeUsed, visibleMillis(it)) }
-        return visibleSecondsOnDay(slices, packageName, today, zone)
+        val end = System.currentTimeMillis()
+        val window = (end - start).coerceAtLeast(0L)
+        val aggregated = manager.queryAndAggregateUsageStats(start, end)[packageName]?.let { stat ->
+            countedSampleMillis(stat.totalTimeInForeground, visibleMillis(stat), window) / 1000L
+        } ?: 0L
+        val live = foregroundSeconds(eventMarks(manager, start, end), start, end, "")[packageName] ?: 0L
+        return maxOf(aggregated, live)
     }
 
     fun label(context: Context, packageName: String): String = runCatching {
@@ -281,6 +303,89 @@ internal fun dedupedUsageSlices(slices: List<UsageSlice>): List<UsageSlice> =
     slices.groupBy { slice ->
         slice.packageName to if (slice.bucketStartMillis > 0L) slice.bucketStartMillis else slice.lastUsedMillis
     }.values.map { group -> group.maxBy { it.visibleMillis } }
+
+/**
+ * Foreground time when it fits in the query window. Otherwise visible time, if that fits.
+ * A sample longer than the window is the unclipped bucket, not time spent today.
+ */
+internal fun countedSampleMillis(foreground: Long, visible: Long, windowMillis: Long): Long {
+    if (windowMillis <= 0L) return 0L
+    val fg = foreground.coerceAtLeast(0L)
+    val vis = visible.coerceAtLeast(0L)
+    return when {
+        fg > 0L && fg <= windowMillis -> fg
+        vis > 0L && vis <= windowMillis -> vis
+        else -> 0L
+    }
+}
+
+internal data class ForegroundMark(val packageName: String, val timeMillis: Long, val resumed: Boolean)
+
+/**
+ * Foreground time inside the window. Only one package is in the foreground, so the
+ * next app's resume closes the previous one. Extra pauses do not start another
+ * span from the beginning of the day. A package cannot exceed the window.
+ */
+internal fun foregroundSeconds(marks: List<ForegroundMark>, windowStart: Long, windowEnd: Long, skipPackage: String): Map<String, Long> {
+    if (windowEnd <= windowStart) return emptyMap()
+    val cap = (windowEnd - windowStart) / 1000L
+    val totals = HashMap<String, Long>()
+    var current: String? = null
+    var since = windowStart
+    var seenOther = false
+    var countedLeading = false
+    fun add(packageName: String?, began: Long, ended: Long) {
+        if (packageName.isNullOrBlank() || packageName == skipPackage) return
+        val from = maxOf(began, windowStart)
+        val to = minOf(ended, windowEnd)
+        if (to > from) totals[packageName] = ((totals[packageName] ?: 0L) + (to - from) / 1000L).coerceAtMost(cap)
+    }
+    for (mark in marks.sortedBy { it.timeMillis }) {
+        if (mark.packageName.isBlank()) continue
+        if (mark.packageName == skipPackage) {
+            if (mark.resumed && current != null) {
+                add(current, since, mark.timeMillis)
+                current = null
+            }
+            continue
+        }
+        if (mark.resumed) {
+            seenOther = true
+            if (current != mark.packageName) {
+                add(current, since, mark.timeMillis)
+                current = mark.packageName
+                since = mark.timeMillis
+            }
+        } else if (current == mark.packageName) {
+            add(current, since, mark.timeMillis)
+            current = null
+        } else if (current == null && !seenOther && !countedLeading) {
+            countedLeading = true
+            add(mark.packageName, windowStart, mark.timeMillis)
+        }
+    }
+    add(current, since, windowEnd)
+    return totals
+}
+
+private fun eventMarks(manager: UsageStatsManager, start: Long, end: Long): List<ForegroundMark> {
+    val events = manager.queryEvents(start, end)
+    val event = UsageEvents.Event()
+    val marks = mutableListOf<ForegroundMark>()
+    val resume = if (Build.VERSION.SDK_INT >= 29) UsageEvents.Event.ACTIVITY_RESUMED else UsageEvents.Event.MOVE_TO_FOREGROUND
+    val pause = if (Build.VERSION.SDK_INT >= 29) UsageEvents.Event.ACTIVITY_PAUSED else UsageEvents.Event.MOVE_TO_BACKGROUND
+    while (events.hasNextEvent()) {
+        events.getNextEvent(event)
+        val resumed = when (event.eventType) {
+            resume -> true
+            pause -> false
+            else -> continue
+        }
+        val name = event.packageName ?: continue
+        marks += ForegroundMark(name, event.timeStamp, resumed)
+    }
+    return marks
+}
 
 /** Today's rows only, summed when the platform splits the day into more than one record. */
 internal fun visibleSecondsOnDay(slices: List<UsageSlice>, packageName: String, day: LocalDate, zone: ZoneId): Long =

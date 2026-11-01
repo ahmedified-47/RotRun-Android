@@ -103,6 +103,7 @@ fun OnboardingScreen(repo: RotRunRepository) {
     val step = OnboardingStep.fromRaw(state.onboardingStep)
     var plan by remember { mutableStateOf(Products.YEARLY) }
     var upgrade by remember { mutableStateOf(false) }
+    var legal by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) {
         repo.pulses.collect { pulse ->
             if (pulse == UiPulse.OpenPaywall) upgrade = true
@@ -111,12 +112,17 @@ fun OnboardingScreen(repo: RotRunRepository) {
     val context = LocalContext.current
     val askNotify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { repo.advance() }
     val catalog by com.ahmed.rotrun.logic.PlayCatalog.status.collectAsState()
-    BackHandler(enabled = upgrade || state.onboardingStep > 0) {
-        if (upgrade) upgrade = false else repo.back()
+    BackHandler(enabled = legal != null || upgrade || state.onboardingStep > 0) {
+        when {
+            legal != null -> legal = null
+            upgrade -> upgrade = false
+            else -> repo.back()
+        }
     }
     androidx.compose.runtime.LaunchedEffect(catalog, state.onboardingStep, state.premium, state.yearly70Dismissed) {
         if (step.skipped(repo.state.value)) repo.advance()
     }
+    LegalDialog(legal) { legal = null }
     Box(Modifier.fillMaxSize().statusBarsPadding()) {
         OnboardingBackdrop(step)
         when (step) {
@@ -142,7 +148,7 @@ fun OnboardingScreen(repo: RotRunRepository) {
             OnboardingStep.DidYouKnow -> DidYouKnow(repo)
             OnboardingStep.SocialProof -> SocialProof(repo)
             OnboardingStep.CarouselWelcome, OnboardingStep.CarouselThemes, OnboardingStep.CarouselFocus -> Carousel(step, { which ->
-                HostedPolicy.open(context, if (which == "terms") HostedPolicy.TERMS else HostedPolicy.PRIVACY)
+                legal = which
             }, repo)
             OnboardingStep.PeakFocus -> Choices(step, "Pick your peak focus time!", state.peakFocus, peakOptions, false, repo, "This is the time where you want to block the most distracting apps.", chrome = false)
             OnboardingStep.Notifications -> Notifications {
