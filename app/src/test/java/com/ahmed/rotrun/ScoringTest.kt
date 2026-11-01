@@ -60,6 +60,26 @@ class ScoringTest {
     }
 
     @Test
+    fun healthIsUnknownUntilUsageIsConnected() {
+        assertEquals(null, Scoring.shownHealth(false, 0, 0, BrainHealthLevel.Medium))
+        assertEquals(null, Scoring.shownHealth(false, 3 * 3600, 40, BrainHealthLevel.Medium))
+    }
+
+    @Test
+    fun healthShowsBelowOneMinuteOfUsage() {
+        assertEquals(100, Scoring.shownHealth(true, 30, 0, BrainHealthLevel.Medium))
+        assertEquals(75, Scoring.shownHealth(true, (1.5 * 3600).toLong(), 0, BrainHealthLevel.Medium))
+    }
+
+    @Test
+    fun streakAdvancesOnlyOnTheNextDay() {
+        assertEquals(5, Scoring.nextOpenStreak("2026-10-31", 4, "2026-11-01", "2026-10-31"))
+        assertEquals(4, Scoring.nextOpenStreak("2026-11-01", 4, "2026-11-01", "2026-10-31"))
+        assertEquals(1, Scoring.nextOpenStreak("2026-10-30", 9, "2026-11-01", "2026-10-31"))
+        assertEquals(1, Scoring.nextOpenStreak("", 0, "2026-11-01", "2026-10-31"))
+    }
+
+    @Test
     fun durationFormat() {
         assertEquals("5m", Scoring.formatDuration(5 * 60L))
         assertEquals("2h", Scoring.formatDuration(2 * 3600L))

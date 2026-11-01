@@ -11,7 +11,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -50,7 +52,7 @@ fun TalkSheet(repo: RotRunRepository, onClose: () -> Unit) {
         else startVoice(repo) { note = it }
     }
     CompositionLocalProvider(LocalContentColor provides rot().ink) {
-    Column(Modifier.fillMaxSize().background(rot().page).padding(16.dp)) {
+    Column(Modifier.fillMaxSize().background(rot().page).statusBarsPadding().navigationBarsPadding().padding(16.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text("Talk to Brain", fontWeight = FontWeight.Bold, fontSize = 22.sp)
             Text("Close", color = Melt.Action, modifier = Modifier.clickable {

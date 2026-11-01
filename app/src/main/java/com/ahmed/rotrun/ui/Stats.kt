@@ -43,7 +43,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 @Composable
-fun StatsScreen(state: SavedState, health: Int, screenMinutes: Int, repo: RotRunRepository) {
+fun StatsScreen(state: SavedState, health: Int?, screenMinutes: Int?, repo: RotRunRepository) {
     var page by remember { mutableStateOf("focus") }
     Column(Modifier.padding(bottom = 24.dp)) {
         Row(
@@ -57,7 +57,7 @@ fun StatsScreen(state: SavedState, health: Int, screenMinutes: Int, repo: RotRun
 }
 
 @Composable
-private fun FocusStats(state: SavedState, health: Int) {
+private fun FocusStats(state: SavedState, health: Int?) {
     val week = Scoring.thursdayWeek()
     var selected by remember { mutableStateOf(LocalDate.now()) }
     val minutes = state.focusMinutesByDay[Scoring.dayKey(selected)] ?: 0
@@ -99,7 +99,11 @@ private fun FocusStats(state: SavedState, health: Int) {
     Column(Modifier.fillMaxWidth().padding(bottom = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         CartoonBrain(BrainStyle.Meadow, Modifier.padding(top = 8.dp).size(140.dp), animated = false)
         Text(
-            "You have spent ${Scoring.formatDuration(weekMinutes * 60L)} in focus time this week, regaining $health% of your brain health. With this average, you're on track to spend ${Scoring.formatDuration(year * 60L)} focused this year instead of rotting.",
+            if (health == null) {
+                "You have spent ${Scoring.formatDuration(weekMinutes * 60L)} in focus time this week. Connect usage access to score Brain Health."
+            } else {
+                "You have spent ${Scoring.formatDuration(weekMinutes * 60L)} in focus time this week, regaining $health% of your brain health. With this average, you're on track to spend ${Scoring.formatDuration(year * 60L)} focused this year instead of rotting."
+            },
             color = chrome.ink,
             modifier = Modifier.padding(horizontal = 22.dp, vertical = 8.dp),
             textAlign = TextAlign.Center,
@@ -114,24 +118,25 @@ private fun FocusStats(state: SavedState, health: Int) {
 }
 
 @Composable
-private fun Leaderboard(state: SavedState, screenMinutes: Int, repo: RotRunRepository) {
+private fun Leaderboard(state: SavedState, screenMinutes: Int?, repo: RotRunRepository) {
     Column(Modifier.padding(horizontal = 20.dp)) {
     LeaderboardBody(state, screenMinutes, repo)
     }
 }
 
 @Composable
-private fun LeaderboardBody(state: SavedState, screenMinutes: Int, repo: RotRunRepository) {
+private fun LeaderboardBody(state: SavedState, screenMinutes: Int?, repo: RotRunRepository) {
     var friends by remember { mutableStateOf(false) }
-    val xp = Scoring.dailyXp(screenMinutes, state.goalHours * 60, state.askBrainCount, state.ransomDebit)
+    val xp = screenMinutes?.let { Scoring.dailyXp(it, state.goalHours * 60, state.askBrainCount, state.ransomDebit) }
     var rows by remember { mutableStateOf<List<Pair<String, Int>>>(emptyList()) }
     LaunchedEffect(xp, repo.backend.signedIn) {
+        val score = xp ?: return@LaunchedEffect
         rows = withContext(Dispatchers.IO) {
-            repo.backend.syncXp(xp, "You")
+            repo.backend.syncXp(score, "You")
             repo.backend.leaderboard()
         }
     }
-    val board = dailyBoard(rows, xp)
+    val board = if (xp == null) emptyList() else dailyBoard(rows, xp)
     val chrome = rot()
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center, modifier = Modifier.fillMaxWidth()) {
         Icon(Icons.Default.EmojiEvents, contentDescription = null, tint = Melt.Orange, modifier = Modifier.size(28.dp))
@@ -142,7 +147,12 @@ private fun LeaderboardBody(state: SavedState, screenMinutes: Int, repo: RotRunR
         Toggle("Daily XP", !friends, Modifier.weight(1f)) { friends = false }
         Toggle("Friends", friends, Modifier.weight(1f)) { friends = true }
     }
-    if (friends) {
+    if (xp == null && !friends) {
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(chrome.card).padding(16.dp)) {
+            Text("Daily XP", color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Text("Connect usage access to score Daily XP. A blank day is not a perfect score.", color = chrome.muted, modifier = Modifier.padding(top = 4.dp))
+        }
+    } else if (friends) {
         Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(chrome.card).padding(16.dp)) {
             Text("Friends", color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 18.sp)
             Text(
@@ -174,7 +184,13 @@ private fun LeaderboardBody(state: SavedState, screenMinutes: Int, repo: RotRunR
                 }
                 if (you) {
                     Box(Modifier.size(36.dp).clip(CircleShape).background(Melt.Orange), contentAlignment = Alignment.Center) {
-                        Text("$score", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text(
+                            "$score",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = if (score > 999) 11.sp else 13.sp,
+                            maxLines = 1,
+                        )
                     }
                 } else {
                     Text("$score XP", color = chrome.muted, fontWeight = FontWeight.SemiBold)

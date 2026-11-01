@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.LocalContentColor
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -38,6 +39,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
@@ -137,19 +139,20 @@ private fun MainShell(repo: RotRunRepository) {
     val refreshing by repo.refreshing.collectAsState()
     val installed by repo.installed.collectAsState()
     val batteryAsk by repo.batteryAsk.collectAsState()
-    var tab by remember { mutableStateOf(Tab.Home) }
-    var focusSheet by remember { mutableStateOf(false) }
-    var audio by remember { mutableStateOf(false) }
-    var talk by remember { mutableStateOf(false) }
-    var upgrade by remember { mutableStateOf(false) }
-    var offer by remember { mutableStateOf(false) }
+    var tabName by rememberSaveable { mutableStateOf(Tab.Home.name) }
+    val tab = runCatching { Tab.valueOf(tabName) }.getOrDefault(Tab.Home)
+    var focusSheet by rememberSaveable { mutableStateOf(false) }
+    var audio by rememberSaveable { mutableStateOf(false) }
+    var talk by rememberSaveable { mutableStateOf(false) }
+    var upgrade by rememberSaveable { mutableStateOf(false) }
+    var offer by rememberSaveable { mutableStateOf(false) }
     var plan by remember { mutableStateOf(Products.YEARLY) }
     val offerNow by androidx.compose.runtime.rememberUpdatedState(offer)
     val context = LocalContext.current
     val look = Looks.byId(state.theme)
     val level = BrainHealthLevel.fromLabel(state.brainHealth)
-    val health = Scoring.displayedHealth(Scoring.drainHealth(usage.drainSeconds, level), state.focusMinutesToday(), level.restoreMinutes)
-    val screenMinutes = (usage.todaySeconds / 60).toInt()
+    val health = Scoring.shownHealth(usage.authorized, usage.drainSeconds, state.focusMinutesToday(), level)
+    val screenMinutes = if (usage.authorized) (usage.todaySeconds / 60).toInt() else null
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         repo.onForeground()
         if (com.ahmed.rotrun.logic.PaywallGate.shows && !repo.state.value.premiumActive() && !offerNow) upgrade = true
@@ -165,11 +168,22 @@ private fun MainShell(repo: RotRunRepository) {
         }
     }
     val scenicHome = tab == Tab.Home && sceneFor(state.theme) != null
-    val canvas = if (tab == Tab.Home) look.canvas else rot().page
+    val canvas = if (scenicHome) look.canvas else rot().page
     val barColor = if (scenicHome) look.tab else rot().tab
+    val tabClearance = 148.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val homeScroll = rememberScrollState()
+    val blockScroll = rememberScrollState()
+    val statsScroll = rememberScrollState()
+    val settingsScroll = rememberScrollState()
+    val scroll = when (tab) {
+        Tab.Home -> homeScroll
+        Tab.Block -> blockScroll
+        Tab.Stats -> statsScroll
+        Tab.Settings -> settingsScroll
+    }
     Box(Modifier.fillMaxSize().background(canvas)) {
         CompositionLocalProvider(LocalContentColor provides if (scenicHome) Color.White else rot().ink) {
-        Column(Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState()).padding(bottom = 132.dp)) {
+        Column(Modifier.fillMaxSize().statusBarsPadding().verticalScroll(scroll).padding(bottom = tabClearance)) {
             when (tab) {
                 Tab.Home -> HomeScreen(state, usage, refreshing, repo::refreshUsage, { talk = true }) {
                     context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
@@ -184,10 +198,10 @@ private fun MainShell(repo: RotRunRepository) {
             tab = tab,
             bar = barColor,
             light = !rot().dark && !scenicHome,
-            onHome = { tab = Tab.Home },
-            onBlock = { tab = Tab.Block },
-            onStats = { tab = Tab.Stats },
-            onSettings = { tab = Tab.Settings },
+            onHome = { tabName = Tab.Home.name },
+            onBlock = { tabName = Tab.Block.name },
+            onStats = { tabName = Tab.Stats.name },
+            onSettings = { tabName = Tab.Settings.name },
             onFocus = { if (state.focus == null) focusSheet = true },
             modifier = Modifier.align(Alignment.BottomCenter),
         )
@@ -243,6 +257,18 @@ private fun MainShell(repo: RotRunRepository) {
         if (audio) {
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.55f)), contentAlignment = Alignment.Center) {
                 AudioSlap(state.cameoName.ifBlank { "a friend" }) { audio = false }
+            }
+        }
+        val offerUp = offer && PaywallGate.shows && !state.yearly70Dismissed
+        val upgradeUp = !offerUp && upgrade && PaywallGate.shows && !state.premiumActive()
+        BackHandler(enabled = audio || offerUp || upgradeUp || talk || focusSheet || state.focus != null) {
+            when {
+                audio -> audio = false
+                offerUp -> offer = false
+                upgradeUp -> upgrade = false
+                talk -> talk = false
+                focusSheet -> focusSheet = false
+                else -> Unit
             }
         }
     }

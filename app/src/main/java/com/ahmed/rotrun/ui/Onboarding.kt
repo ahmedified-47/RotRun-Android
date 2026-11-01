@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Intent
 import android.os.Build
 import android.provider.Settings
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
@@ -76,7 +77,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import com.ahmed.rotrun.data.AppList
+import com.ahmed.rotrun.data.UsageReader
 import com.ahmed.rotrun.data.OnboardingStep
 import com.ahmed.rotrun.data.RotRunRepository
 import com.ahmed.rotrun.data.SavedState
@@ -107,6 +111,9 @@ fun OnboardingScreen(repo: RotRunRepository) {
     val context = LocalContext.current
     val askNotify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { repo.advance() }
     val catalog by com.ahmed.rotrun.logic.PlayCatalog.status.collectAsState()
+    BackHandler(enabled = upgrade || state.onboardingStep > 0) {
+        if (upgrade) upgrade = false else repo.back()
+    }
     androidx.compose.runtime.LaunchedEffect(catalog, state.onboardingStep, state.premium, state.yearly70Dismissed) {
         if (step.skipped(repo.state.value)) repo.advance()
     }
@@ -1027,7 +1034,19 @@ private fun SelectApps(state: SavedState, installed: List<TrackedApp>, repo: Rot
 
 @Composable
 private fun ScreenDialog(repo: RotRunRepository, onAllow: () -> Unit) {
-    ScreenFrame(footer = { PrimaryButton("Continue") { onAllow(); repo.advance() } }) {
+    val context = LocalContext.current
+    var asked by remember { mutableStateOf(false) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        if (!asked) return@LifecycleEventEffect
+        if (UsageReader.hasAccess(context)) repo.advance()
+        else repo.toast("Usage access is still off. Allow it, or tap Don't Allow and connect later from Home or Settings.")
+    }
+    ScreenFrame(footer = {
+        PrimaryButton("Continue") {
+            asked = true
+            onAllow()
+        }
+    }) {
         Text("Connect RotRun to Screen Time", fontSize = 24.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 20.dp))
         Text("Your data is completely private and never leaves your device.", color = Melt.Muted, textAlign = TextAlign.Center, fontSize = 15.sp, modifier = Modifier.fillMaxWidth().padding(horizontal = 28.dp))
         Column(
@@ -1038,9 +1057,26 @@ private fun ScreenDialog(repo: RotRunRepository, onAllow: () -> Unit) {
             Text("Providing “RotRun” access to Screen Time may allow it to see your activity data, restrict content, and limit the usage of apps and websites.", color = Melt.Muted, fontSize = 13.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp))
             Row(Modifier.fillMaxWidth().padding(top = 12.dp)) {
                 Text("Continue", fontWeight = FontWeight.SemiBold, fontSize = 17.sp, textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
-                Text("Don't Allow", color = Melt.Action, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, textAlign = TextAlign.Center, modifier = Modifier.weight(1f).clickable { repo.advance() })
+                Text(
+                    "Don't Allow",
+                    color = Melt.Action,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 17.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.weight(1f).clickable {
+                        repo.declineUsageAccess()
+                        repo.advance()
+                    },
+                )
             }
         }
+        Text(
+            "Don't Allow leaves usage off. Brain Health stays blank until you connect it from Home or Settings.",
+            color = Melt.Muted,
+            fontSize = 14.sp,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 28.dp),
+        )
         CartoonBrain(BrainStyle.Meadow, Modifier.size(120.dp))
     }
 }

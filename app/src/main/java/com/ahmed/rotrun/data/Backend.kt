@@ -577,16 +577,10 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
     private fun context(state: SavedState): JSONObject {
         val usage = repo.usage.value
         val level = com.ahmed.rotrun.logic.BrainHealthLevel.fromLabel(state.brainHealth)
-        val health = if (usage.drainSeconds >= 60) {
-            Scoring.displayedHealth(Scoring.drainHealth(usage.drainSeconds, level), state.focusMinutesToday(), level.restoreMinutes)
-        } else {
-            null
-        }
-        val xp = Scoring.dailyXp((usage.todaySeconds / 60).toInt(), state.goalHours * 60, state.askBrainCount, state.ransomDebit)
+        val health = Scoring.shownHealth(usage.authorized, usage.drainSeconds, state.focusMinutesToday(), level)
         val objectJson = JSONObject()
             .put("local_time", ZonedDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME))
             .put("timezone", ZoneId.systemDefault().id)
-            .put("xp", xp)
             .put("unlock_minutes_left", ((state.unlockUntil - System.currentTimeMillis()) / 60_000).toInt().coerceAtLeast(0))
             .put("streak_days", state.streak)
             .put("screen_time_goal_min", state.goalHours * 60)
@@ -594,9 +588,13 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
             .put("app_version", BuildConfig.VERSION_NAME)
             .put("caught_doomscrolling", false)
             .put("leaderboard", "unknown")
-        if (health != null) objectJson.put("brain_health", health)
-        if (usage.todaySeconds >= 60) objectJson.put("screen_time_today_min", usage.todaySeconds / 60)
-        if (usage.pickups > 0) objectJson.put("pickups_today", usage.pickups)
+        if (usage.authorized) {
+            val xp = Scoring.dailyXp((usage.todaySeconds / 60).toInt(), state.goalHours * 60, state.askBrainCount, state.ransomDebit)
+            objectJson.put("xp", xp)
+            if (health != null) objectJson.put("brain_health", health)
+            objectJson.put("screen_time_today_min", usage.todaySeconds / 60)
+        }
+        if (usage.authorized && usage.pickups > 0) objectJson.put("pickups_today", usage.pickups)
         if (state.focusMinutesToday() > 0) objectJson.put("focus_time_today_min", state.focusMinutesToday())
         val offenders = usage.offenders.filter { it.seconds >= 60 }
         if (offenders.isNotEmpty()) {
@@ -612,15 +610,15 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
         val asksPickups = "pickup" in lower
         val asksOffenders = "offender" in lower || "which app" in lower
         if (!asksScreen && !asksPickups && !asksOffenders) return null
-        if (!usage.authorized) return "Screen time is not in yet."
+        if (!usage.authorized) return "Usage access is off. Connect it from Home or Settings."
         if (asksPickups && !asksScreen && !asksOffenders) {
-            return if (usage.pickups > 0) "Pickups today: ${usage.pickups}." else "Pickups are not in yet."
+            return "Pickups today: ${usage.pickups}."
         }
         if (asksOffenders && !asksScreen) {
             val rows = usage.offenders.filter { it.seconds >= 60 }
-            return if (rows.isEmpty()) "Top offenders are not in yet." else rows.joinToString { "${it.label} ${Scoring.formatDuration(it.seconds)}" }
+            return if (rows.isEmpty()) "No apps over a minute yet." else rows.joinToString { "${it.label} ${Scoring.formatDuration(it.seconds)}" }
         }
-        return if (usage.todaySeconds >= 60) "Screen time today is ${Scoring.formatDuration(usage.todaySeconds)}." else "Screen time is not in yet."
+        return "Screen time today is ${Scoring.formatDuration(usage.todaySeconds)}."
     }
 
     private fun remember(role: String, content: String) {

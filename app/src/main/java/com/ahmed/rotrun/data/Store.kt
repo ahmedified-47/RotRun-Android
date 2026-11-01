@@ -117,12 +117,17 @@ class RotRunRepository(context: Context) {
     }
 
     fun onForeground() {
+        rollOpenDay()
         refreshAccess()
         refreshUsage()
         loadInstalled()
         billing.start()
         com.ahmed.rotrun.watch.UpgradeReminders.sync(app, _state.value)
         com.ahmed.rotrun.watch.RotNudges.consider(app, this)
+    }
+
+    fun declineUsageAccess() {
+        toast("Usage access is off. Connect it from Home or Settings.")
     }
 
     fun refreshAccess() {
@@ -135,6 +140,7 @@ class RotRunRepository(context: Context) {
     }
 
     fun refreshUsage() {
+        rollOpenDay()
         _refreshing.value = true
         scope.launch {
             val snapshot = withContext(Dispatchers.Default) { UsageReader.read(app, _state.value) }
@@ -144,8 +150,10 @@ class RotRunRepository(context: Context) {
             withContext(Dispatchers.IO) {
                 backend.syncScreenTime(snapshot)
                 backend.syncStreak(_state.value)
-                val xp = Scoring.dailyXp((snapshot.todaySeconds / 60).toInt(), _state.value.goalHours * 60, _state.value.askBrainCount, _state.value.ransomDebit)
-                backend.syncXp(xp, "You")
+                if (snapshot.authorized) {
+                    val xp = Scoring.dailyXp((snapshot.todaySeconds / 60).toInt(), _state.value.goalHours * 60, _state.value.askBrainCount, _state.value.ransomDebit)
+                    backend.syncXp(xp, "You")
+                }
             }
         }
     }
@@ -468,15 +476,25 @@ class RotRunRepository(context: Context) {
 
     private fun brainrotPackages(current: SavedState): Set<String> = brickPackages(current)
 
+    private fun rollOpenDay() {
+        val changed = synchronized(lock) {
+            val previous = _state.value
+            val next = clampRewards(expireFocus(rollDay(previous)))
+            if (next == previous) return@synchronized false
+            _state.value = next
+            persist(next)
+            true
+        }
+        if (changed) {
+            publishWidget()
+            WatchController.sync(app, _state.value)
+        }
+    }
+
     private fun rollDay(current: SavedState): SavedState {
         val today = Scoring.dayKey()
         val yesterday = Scoring.dayKey(LocalDate.now().minusDays(1))
-        val streak = when (current.lastOpenDay) {
-            "" -> maxOf(1, current.streak)
-            today -> maxOf(1, current.streak)
-            yesterday -> current.streak + 1
-            else -> 1
-        }
+        val streak = Scoring.nextOpenStreak(current.lastOpenDay, current.streak, today, yesterday)
         var next = current.copy(streak = streak, longestStreak = maxOf(current.longestStreak, streak), lastOpenDay = today)
         if (next.xpDay != today) {
             next = next.copy(xpDay = today, askBrainCount = 0, ransomDebit = 0)
@@ -508,17 +526,22 @@ class RotRunRepository(context: Context) {
     private fun publishWidget() {
         val current = _state.value
         val level = com.ahmed.rotrun.logic.BrainHealthLevel.fromLabel(current.brainHealth)
-        val drain = Scoring.drainHealth(_usage.value.drainSeconds, level)
-        val known = _usage.value.authorized && _usage.value.drainSeconds >= 60
-        val health = Scoring.displayedHealth(drain, current.focusMinutesToday(), level.restoreMinutes)
-        val offenders = _usage.value.offenders.filter { it.seconds >= 60 }.take(3)
-            .joinToString("\n") { "${it.label}  ${Scoring.formatDuration(it.seconds)}" }
+        val health = Scoring.shownHealth(_usage.value.authorized, _usage.value.drainSeconds, current.focusMinutesToday(), level)
+        val known = health != null
+        val shown = health ?: 0
+        val offenders = if (!known) {
+            "Connect usage"
+        } else {
+            _usage.value.offenders.filter { it.seconds >= 60 }.take(3)
+                .joinToString("\n") { "${it.label}  ${Scoring.formatDuration(it.seconds)}" }
+                .ifBlank { "No apps yet" }
+        }
         val focus = current.focus
         prefs.edit()
             .putBoolean("widget_known", known)
-            .putInt("widget_health", health)
-            .putString("widget_caption", if (known) Scoring.caption(health) else "Not in yet")
-            .putString("widget_offenders", offenders.ifBlank { "Not in yet" })
+            .putInt("widget_health", shown)
+            .putString("widget_caption", if (known) Scoring.caption(shown) else "Connect usage")
+            .putString("widget_offenders", offenders)
             .putInt("widget_streak", current.streak)
             .putBoolean("widget_focus_on", focus != null)
             .putLong("widget_focus_started", focus?.startedAt ?: 0L)

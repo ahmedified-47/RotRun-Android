@@ -54,7 +54,7 @@ private fun BrainWidgetContent(context: Context, known: Boolean, health: Int, ca
     ) {
         Text("ROTRUN", style = white.copy(fontWeight = FontWeight.Bold))
         Image(provider = ImageProvider(R.drawable.rot_mascot), contentDescription = "Rot")
-        Text(if (known) "$health%" else "Not in yet", style = white.copy(fontSize = 28.sp, fontWeight = FontWeight.Bold))
+        Text(if (known) "$health%" else "—", style = white.copy(fontSize = 28.sp, fontWeight = FontWeight.Bold))
         Text(caption, style = white)
         Text(offenders, style = white)
         Text("Streak $streak", style = white)

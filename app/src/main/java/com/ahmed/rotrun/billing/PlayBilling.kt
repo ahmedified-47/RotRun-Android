@@ -143,8 +143,9 @@ class PlayBilling(
                 mapBasePlans(product, offers, quotes)
             } else {
                 val offer = offers.firstOrNull() ?: return@forEach
+                val quote = quoteFor(product.productId, offer) ?: return@forEach
                 details[product.productId] = product
-                quotes[product.productId] = quoteFor(product.productId, offer)
+                quotes[product.productId] = quote
             }
         }
         val tagged = products.firstOrNull { it.productId == Products.SUBSCRIPTION }
@@ -152,9 +153,10 @@ class PlayBilling(
             ?.firstOrNull { offer ->
                 offer.offerTags.any { it.equals("yearly70", true) } || offer.offerId?.contains("70") == true
             }
-        if (tagged != null && quotes[Products.YEARLY70] == null) {
+        val yearly70 = tagged?.let { quoteFor(Products.YEARLY70, it) }
+        if (yearly70 != null && quotes[Products.YEARLY70] == null) {
             details[Products.YEARLY70] = products.first { it.productId == Products.SUBSCRIPTION }
-            quotes[Products.YEARLY70] = quoteFor(Products.YEARLY70, tagged)
+            quotes[Products.YEARLY70] = yearly70
         }
         PlayCatalog.plans.value = quotes
         PlayCatalog.status.value = if (quotes.isEmpty()) CatalogStatus.Unavailable else CatalogStatus.Ready
@@ -171,16 +173,17 @@ class PlayBilling(
                 offer.offerTags.any { it.contains("70", true) } || offer.offerId?.contains("70") == true
             }
             val offer = regular.firstOrNull { it.offerId != null } ?: regular.firstOrNull() ?: return
+            val quote = quoteFor(planId, offer) ?: return
             details[planId] = product
-            quotes[planId] = quoteFor(planId, offer)
+            quotes[planId] = quote
         }
         pick("monthly", Products.MONTHLY)
         pick("yearly", Products.YEARLY)
     }
 
-    private fun quoteFor(id: String, offer: ProductDetails.SubscriptionOfferDetails): PlanQuote {
+    private fun quoteFor(id: String, offer: ProductDetails.SubscriptionOfferDetails): PlanQuote? {
         val phases = offer.pricingPhases.pricingPhaseList
-        val first = phases.first()
+        val first = phases.firstOrNull() ?: return null
         val last = phases.last()
         val renewal = if (phases.size > 1 && last.priceAmountMicros != first.priceAmountMicros) last else null
         return PlanQuote(

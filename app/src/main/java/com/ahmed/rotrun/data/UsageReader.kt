@@ -40,17 +40,27 @@ object UsageReader {
         val drainDaily = mutableMapOf<LocalDate, Long>()
         val todayApps = mutableListOf<Offender>()
         val stats = manager.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, weekStart, now).orEmpty()
-        for (stat in stats) {
-            val seconds = visibleMillis(stat) / 1000L
-            if (stat.packageName == own || seconds <= 0L) continue
-            val day = Instant.ofEpochMilli(stat.lastTimeUsed).atZone(zone).toLocalDate()
+        val slices = dedupedUsageSlices(stats.mapNotNull { stat ->
+            val millis = visibleMillis(stat)
+            if (stat.packageName == own || millis <= 0L) return@mapNotNull null
+            UsageSlice(stat.packageName, stat.firstTimeStamp, stat.lastTimeUsed, millis)
+        })
+        for (slice in slices) {
+            val day = usageBucketDay(slice, zone) ?: continue
             if (day.isBefore(today.minusDays(6)) || day.isAfter(today)) continue
+            val seconds = slice.visibleMillis / 1000L
             daily[day] = (daily[day] ?: 0L) + seconds
-            if (stat.packageName !in excluded) {
+            if (slice.packageName !in excluded) {
                 drainDaily[day] = (drainDaily[day] ?: 0L) + seconds
             }
-            if (day == today && stat.packageName !in excluded) {
-                todayApps += Offender(stat.packageName, label(context, stat.packageName), seconds)
+            if (day == today && slice.packageName !in excluded) {
+                val index = todayApps.indexOfFirst { it.packageName == slice.packageName }
+                if (index >= 0) {
+                    val old = todayApps[index]
+                    todayApps[index] = old.copy(seconds = old.seconds + seconds)
+                } else {
+                    todayApps += Offender(slice.packageName, label(context, slice.packageName), seconds)
+                }
             }
         }
         val todaySeconds = daily[today] ?: 0L
@@ -165,10 +175,12 @@ object UsageReader {
     fun todaySeconds(context: Context, packageName: String): Long {
         if (!hasAccess(context)) return 0L
         val manager = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager ?: return 0L
-        val start = LocalDate.now().atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        val zone = ZoneId.systemDefault()
+        val today = LocalDate.now()
+        val start = today.atStartOfDay(zone).toInstant().toEpochMilli()
         val stats = manager.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, start, System.currentTimeMillis()).orEmpty()
-        val stat = stats.firstOrNull { it.packageName == packageName } ?: return 0L
-        return visibleMillis(stat) / 1000L
+        val slices = stats.map { UsageSlice(it.packageName, it.firstTimeStamp, it.lastTimeUsed, visibleMillis(it)) }
+        return visibleSecondsOnDay(slices, packageName, today, zone)
     }
 
     fun label(context: Context, packageName: String): String = runCatching {
@@ -246,3 +258,32 @@ object UsageReader {
         return if (keyguard > 0) keyguard else interactive
     }
 }
+
+internal data class UsageSlice(
+    val packageName: String,
+    val bucketStartMillis: Long,
+    val lastUsedMillis: Long,
+    val visibleMillis: Long,
+)
+
+/** Daily buckets are dated by their start. Last-used is only a fallback when the bucket start is missing. */
+internal fun usageBucketDay(slice: UsageSlice, zone: ZoneId): LocalDate? {
+    val millis = when {
+        slice.bucketStartMillis > 0L -> slice.bucketStartMillis
+        slice.lastUsedMillis > 0L -> slice.lastUsedMillis
+        else -> return null
+    }
+    return Instant.ofEpochMilli(millis).atZone(zone).toLocalDate()
+}
+
+/** Same package and same bucket keep the larger sample so a repeated row is not added twice. */
+internal fun dedupedUsageSlices(slices: List<UsageSlice>): List<UsageSlice> =
+    slices.groupBy { slice ->
+        slice.packageName to if (slice.bucketStartMillis > 0L) slice.bucketStartMillis else slice.lastUsedMillis
+    }.values.map { group -> group.maxBy { it.visibleMillis } }
+
+/** Today's rows only, summed when the platform splits the day into more than one record. */
+internal fun visibleSecondsOnDay(slices: List<UsageSlice>, packageName: String, day: LocalDate, zone: ZoneId): Long =
+    dedupedUsageSlices(slices.filter { it.packageName == packageName })
+        .filter { usageBucketDay(it, zone) == day }
+        .sumOf { it.visibleMillis } / 1000L

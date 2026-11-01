@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -30,8 +31,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ahmed.rotrun.data.SavedState
@@ -45,18 +48,20 @@ fun HomeScreen(state: SavedState, usage: UsageSnapshot, refreshing: Boolean, onR
     val look = Looks.byId(state.theme)
     val scenic = sceneFor(state.theme) != null
     val level = BrainHealthLevel.fromLabel(state.brainHealth)
-    val scored = usage.authorized && usage.drainSeconds >= 60
-    val health = Scoring.displayedHealth(Scoring.drainHealth(usage.drainSeconds, level), state.focusMinutesToday(), level.restoreMinutes)
-    val shown = if (scored) health else 0
-    val style = when (if (scored) health else 0) {
-        in 65..100 -> look.brain
-        in 40..64 -> BrainStyle.Sad
+    val health = Scoring.shownHealth(usage.authorized, usage.drainSeconds, state.focusMinutesToday(), level)
+    val shownLabel = health?.let { "$it%" } ?: "—"
+    val style = when {
+        health == null || health >= 65 -> look.brain
+        health >= 40 -> BrainStyle.Sad
         else -> BrainStyle.Pleading
     }
-    val on = if (scenic) Color.White else Melt.Ink
-    val brainSize = 136.dp
-    Column(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
-        Box(Modifier.fillMaxWidth().height(brainSize + 78.dp)) {
+    val chrome = rot()
+    val on = if (scenic) Color.White else chrome.ink
+    val short = LocalConfiguration.current.screenHeightDp < 500
+    val brainSize = if (short) 56.dp else 136.dp
+    Column(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(if (short) 4.dp else 18.dp)) {
+        if (!usage.authorized) ConnectUsageCard(onConnect)
+        Box(Modifier.fillMaxWidth().height(if (short) 118.dp else brainSize + 78.dp)) {
             if (scenic) HeroBackdrop(state.theme, Modifier.fillMaxWidth().fillMaxHeight())
             Column(Modifier.fillMaxWidth()) {
                 HomeHeader(state.streak.coerceAtLeast(1), refreshing, scenic, on, onRefresh, onTalk)
@@ -68,32 +73,32 @@ fun HomeScreen(state: SavedState, usage: UsageSnapshot, refreshing: Boolean, onR
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
             Text(
                 "BRAIN HEALTH",
-                color = if (scenic) Color.White.copy(alpha = 0.82f) else Melt.Muted,
+                color = if (scenic) Color.White.copy(alpha = 0.82f) else chrome.muted,
                 fontWeight = FontWeight.Bold,
                 fontSize = 12.sp,
                 letterSpacing = 1.3.sp,
             )
             Text(
-                "$shown%",
-                color = if (scenic) Color.Black else Melt.Ink,
+                shownLabel,
+                color = if (scenic) Color.Black else chrome.ink,
                 fontWeight = FontWeight.Black,
-                fontSize = 60.sp,
+                fontSize = if (short) 36.sp else 60.sp,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth(),
             )
             Text(
-                Scoring.caption(shown),
-                color = if (scenic) Color.White.copy(alpha = 0.9f) else Melt.Muted,
+                if (health == null) "Connect usage to score this" else Scoring.caption(health),
+                color = if (scenic) Color.White.copy(alpha = 0.9f) else chrome.muted,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 15.sp,
             )
             Box(
-                Modifier.padding(horizontal = 44.dp, vertical = 8.dp).fillMaxWidth().height(12.dp).clip(CircleShape)
-                    .background(if (scenic) Color.Black.copy(alpha = 0.22f) else Color(0xFFE5E5EA)),
+                Modifier.padding(horizontal = 44.dp, vertical = if (short) 2.dp else 8.dp).fillMaxWidth().height(if (short) 8.dp else 12.dp).clip(CircleShape)
+                    .background(if (scenic) Color.Black.copy(alpha = 0.22f) else chrome.line),
                 contentAlignment = Alignment.CenterStart,
             ) {
-                val fraction = (shown / 100f).coerceIn(0f, 1f)
-                if (fraction <= 0f) {
+                val fraction = ((health ?: 0) / 100f).coerceIn(0f, 1f)
+                if (health != null && fraction <= 0f) {
                     Box(Modifier.padding(start = 2.dp).size(12.dp).clip(CircleShape).background(if (scenic) Color.White else Melt.Action))
                 } else {
                     Box(
@@ -105,13 +110,13 @@ fun HomeScreen(state: SavedState, usage: UsageSnapshot, refreshing: Boolean, onR
             }
         }
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            MetricCard("Screen Time", if (scored) Scoring.formatDuration(usage.todaySeconds) else "0m", MetricKind.Screen, Modifier.weight(1f))
-            MetricCard("Pickups", if (usage.authorized) usage.pickups.toString() else "0", MetricKind.Pickups, Modifier.weight(1f))
+            MetricCard("Screen Time", if (usage.authorized) Scoring.formatDuration(usage.todaySeconds) else "—", MetricKind.Screen, Modifier.weight(1f))
+            MetricCard("Pickups", if (usage.authorized) usage.pickups.toString() else "—", MetricKind.Pickups, Modifier.weight(1f))
             MetricCard("Focus Time", Scoring.formatDuration(state.focusMinutesToday() * 60L), MetricKind.Focus, Modifier.weight(1f))
         }
         Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             SectionTitle("Top Offenders", scenic)
-            RaisedCard {
+            RaisedCard(Modifier.fillMaxWidth()) {
                 val offenders = usage.offenders.filter { it.seconds >= 60 }
                 if (offenders.isEmpty()) {
                     Text("No apps yet", color = Color.White.copy(alpha = 0.85f), fontWeight = FontWeight.Medium, modifier = Modifier.padding(16.dp))
@@ -131,14 +136,15 @@ fun HomeScreen(state: SavedState, usage: UsageSnapshot, refreshing: Boolean, onR
                     }
                 }
             }
+            if (usage.authorized) {
             SectionTitle("Highlights", scenic)
             RaisedCard {
                 Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(Scoring.paceLine(usage.aheadOfPace), color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Legend(Melt.Orange, "Today", Scoring.visibleDuration(usage.todaySeconds), Melt.Orange)
+                        Legend(Melt.Orange, "Today", if (usage.authorized) Scoring.formatDuration(usage.todaySeconds) else "—", Melt.Orange)
                         Spacer(Modifier.weight(1f))
-                        Legend(Color.White, "Average", Scoring.visibleDuration(usage.avgSeconds), Color.White)
+                        Legend(Color.White, "Average", if (usage.authorized) Scoring.formatDuration(usage.avgSeconds) else "—", Color.White)
                     }
                     TrendChart(usage.hourlyToday, usage.hourlyAvg, Modifier.fillMaxWidth().height(120.dp))
                 }
@@ -146,8 +152,8 @@ fun HomeScreen(state: SavedState, usage: UsageSnapshot, refreshing: Boolean, onR
             RaisedCard {
                 Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     Text(Scoring.comparisonLine(usage.todaySeconds, usage.avgSeconds, usage.diffPercent, usage.belowAverage), color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
-                    CompareBar(Scoring.visibleDuration(usage.todaySeconds), "Today", usage.todaySeconds, usage.avgSeconds, Melt.Orange)
-                    CompareBar(Scoring.visibleDuration(usage.avgSeconds), "7-day avg", usage.avgSeconds, usage.avgSeconds, Color.White.copy(alpha = 0.38f))
+                    CompareBar(if (usage.authorized) Scoring.formatDuration(usage.todaySeconds) else "—", "Today", usage.todaySeconds, usage.avgSeconds, Melt.Orange)
+                    CompareBar(if (usage.authorized) Scoring.formatDuration(usage.avgSeconds) else "—", "7-day avg", usage.avgSeconds, usage.avgSeconds, Color.White.copy(alpha = 0.38f))
                 }
             }
             RaisedCard {
@@ -157,24 +163,27 @@ fun HomeScreen(state: SavedState, usage: UsageSnapshot, refreshing: Boolean, onR
                     WeekBars(usage, Modifier.fillMaxWidth().height(148.dp))
                 }
             }
+            }
         }
-        if (!usage.authorized) {
-            Row(
-                Modifier.padding(horizontal = 16.dp).fillMaxWidth().clickable(onClick = onConnect),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                RaisedCard(Modifier.fillMaxWidth()) {
-                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(36.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
-                            Text("⌛", color = Color.White)
-                        }
-                        Column(Modifier.padding(start = 12.dp).weight(1f)) {
-                            Text("Connect Screen Time", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                            Text("Load today’s real usage", color = Color.White.copy(alpha = 0.8f), fontSize = 13.sp)
-                        }
-                        Text("›", color = Color.White.copy(alpha = 0.7f), fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                    }
+    }
+}
+
+@Composable
+private fun ConnectUsageCard(onConnect: () -> Unit) {
+    Row(
+        Modifier.padding(horizontal = 16.dp).fillMaxWidth().clickable(onClick = onConnect),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RaisedCard(Modifier.fillMaxWidth()) {
+            Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(36.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
+                    Text("⌛", color = Color.White)
                 }
+                Column(Modifier.padding(start = 12.dp).weight(1f)) {
+                    Text("Connect usage access", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text("Brain Health stays blank until you allow it", color = Color.White.copy(alpha = 0.8f), fontSize = 13.sp)
+                }
+                Text("›", color = Color.White.copy(alpha = 0.7f), fontWeight = FontWeight.Bold, fontSize = 18.sp)
             }
         }
     }
@@ -182,25 +191,57 @@ fun HomeScreen(state: SavedState, usage: UsageSnapshot, refreshing: Boolean, onR
 
 @Composable
 private fun HomeHeader(streak: Int, refreshing: Boolean, scenic: Boolean, on: Color, onRefresh: () -> Unit, onTalk: () -> Unit) {
-    Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), contentAlignment = Alignment.Center) {
-        Text("BRAINROT", color = on, fontWeight = FontWeight.Black, fontSize = 28.sp, letterSpacing = 0.6.sp)
-        Box(
-            Modifier.align(Alignment.CenterStart).size(40.dp).clip(CircleShape).background(Color.White.copy(alpha = if (scenic) 0.28f else 0.7f)).clickable(onClick = onRefresh),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = on.copy(alpha = if (refreshing) 0.45f else 1f), modifier = Modifier.size(22.dp))
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        // Padding is inside so maxWidth is the full screen. The centered title collides with the streak badge below ~400dp.
+        val headerMod = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+        if (maxWidth < 400.dp) {
+            Row(headerMod, verticalAlignment = Alignment.CenterVertically) {
+                RefreshOrb(refreshing, scenic, on, onRefresh)
+                Text(
+                    "BRAINROT",
+                    color = on,
+                    fontWeight = FontWeight.Black,
+                    fontSize = 20.sp,
+                    letterSpacing = 0.4.sp,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f).padding(horizontal = 6.dp),
+                )
+                StreakTalk(streak, on, onTalk)
+            }
+        } else {
+            Box(headerMod, contentAlignment = Alignment.Center) {
+                Text("BRAINROT", color = on, fontWeight = FontWeight.Black, fontSize = 28.sp, letterSpacing = 0.6.sp, maxLines = 1)
+                Box(Modifier.align(Alignment.CenterStart)) { RefreshOrb(refreshing, scenic, on, onRefresh) }
+                Box(Modifier.align(Alignment.CenterEnd)) { StreakTalk(streak, on, onTalk) }
+            }
         }
-        Row(Modifier.align(Alignment.CenterEnd), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Box(
-                    Modifier.size(36.dp).clip(CircleShape).background(Brush.verticalGradient(listOf(Color(0xFFFFC740), Color(0xFFFF6B1F)))),
-                    contentAlignment = Alignment.Center,
-                ) { Text("🔥", fontSize = 16.sp) }
-                Text("$streak", color = on, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp)
-            }
-            Box(Modifier.size(44.dp).clip(CircleShape).background(Color.White).clickable(onClick = onTalk), contentAlignment = Alignment.Center) {
-                CartoonBrain(BrainStyle.Meadow, Modifier.size(40.dp), animated = false)
-            }
+    }
+}
+
+@Composable
+private fun RefreshOrb(refreshing: Boolean, scenic: Boolean, on: Color, onRefresh: () -> Unit) {
+    Box(
+        Modifier.size(40.dp).clip(CircleShape).background(Color.White.copy(alpha = if (scenic) 0.28f else 0.7f)).clickable(onClick = onRefresh),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = on.copy(alpha = if (refreshing) 0.45f else 1f), modifier = Modifier.size(22.dp))
+    }
+}
+
+@Composable
+private fun StreakTalk(streak: Int, on: Color, onTalk: () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(
+                Modifier.size(36.dp).clip(CircleShape).background(Brush.verticalGradient(listOf(Color(0xFFFFC740), Color(0xFFFF6B1F)))),
+                contentAlignment = Alignment.Center,
+            ) { Text("🔥", fontSize = 16.sp) }
+            Text("$streak", color = on, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp)
+        }
+        Box(Modifier.size(44.dp).clip(CircleShape).background(Color.White).clickable(onClick = onTalk), contentAlignment = Alignment.Center) {
+            CartoonBrain(BrainStyle.Meadow, Modifier.size(40.dp), animated = false)
         }
     }
 }
@@ -229,7 +270,7 @@ private fun MetricCard(title: String, value: String, kind: MetricKind, modifier:
 
 @Composable
 private fun SectionTitle(title: String, scenic: Boolean) {
-    Text(title, color = if (scenic) Color.White else Melt.Ink, fontWeight = FontWeight.Bold, fontSize = 20.sp, modifier = Modifier.padding(start = 4.dp))
+    Text(title, color = if (scenic) Color.White else rot().ink, fontWeight = FontWeight.Bold, fontSize = 20.sp, modifier = Modifier.padding(start = 4.dp))
 }
 
 @Composable

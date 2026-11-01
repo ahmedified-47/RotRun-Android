@@ -1,6 +1,7 @@
 package com.ahmed.rotrun.ui
 
 import android.Manifest
+import androidx.activity.compose.BackHandler
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -50,6 +51,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -82,7 +84,7 @@ import kotlinx.coroutines.withContext
 
 @Composable
 fun SettingsScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunRepository) {
-    var page by remember { mutableStateOf("root") }
+    var page by rememberSaveable { mutableStateOf("root") }
     var plan by remember { mutableStateOf(state.productId ?: Products.YEARLY) }
     var authError by remember { mutableStateOf(false) }
     var showDisclosure by remember { mutableStateOf(false) }
@@ -90,6 +92,15 @@ fun SettingsScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunR
     val context = LocalContext.current
     val askNotify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         repo.refreshAccess()
+    }
+    BackHandler(enabled = page != "root" || showDisclosure || authError) {
+        when {
+            authError -> authError = false
+            showDisclosure -> showDisclosure = false
+            page == "help" || page == "feedback" || page == "contact" || page == "subscription" -> page = "support"
+            page == "plans" -> page = "subscription"
+            else -> page = "root"
+        }
     }
     when (page) {
         "styles" -> StylesPage(state, repo) { page = "root" }
@@ -171,6 +182,19 @@ private fun RootSettings(
             contentAlignment = Alignment.Center,
         ) { CartoonBrain(BrainStyle.Meadow, Modifier.size(72.dp), animated = false) }
         Text("Settings", color = chrome.ink, fontSize = 34.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 8.dp))
+        if (!access.usage) {
+            CardGroup {
+                Column(Modifier.fillMaxWidth().clickable(onClick = onUsage).padding(16.dp)) {
+                    Text("Usage access is off", color = chrome.danger, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                    Text(
+                        "Brain Health and Screen Time stay blank until you connect usage. Tap to open Settings.",
+                        color = chrome.muted,
+                        fontSize = 14.sp,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+            }
+        }
         CardGroup {
             Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
                 Text("Upgrade reminders", color = chrome.ink, fontWeight = FontWeight.Bold)

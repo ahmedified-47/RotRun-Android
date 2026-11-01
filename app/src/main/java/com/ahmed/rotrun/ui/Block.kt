@@ -9,8 +9,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -81,11 +83,11 @@ fun BlockScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunRepo
             }
         }
         SectionLabel("Presets for you", chrome.muted)
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(Modifier.horizontalScroll(rememberScrollState()).padding(end = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Presets.catalog.forEach { preset ->
                 val look = presetLook(preset.title)
                 Column(
-                    Modifier.width(196.dp).height(248.dp).clip(RoundedCornerShape(28.dp)).background(look.first).clickable {
+                    Modifier.width(210.dp).heightIn(min = 248.dp).clip(RoundedCornerShape(28.dp)).background(look.first).clickable {
                         editing = Blocker(
                             id = "preset:${preset.title}",
                             name = preset.title,
@@ -100,7 +102,11 @@ fun BlockScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunRepo
                     CartoonBrain(look.second, Modifier.size(120.dp), animated = false)
                     Text(preset.title, fontWeight = FontWeight.Bold, fontSize = 17.sp, color = Color.Black)
                     Text(preset.subtitle, color = Color.Black.copy(alpha = 0.45f), fontSize = 12.sp, textAlign = TextAlign.Center)
-                    Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FlowRow(
+                        Modifier.padding(top = 8.dp).fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
                         preset.tags.forEach { tag ->
                             Text(
                                 tag,

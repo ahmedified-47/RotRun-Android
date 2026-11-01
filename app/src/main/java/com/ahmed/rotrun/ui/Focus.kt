@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -131,7 +133,10 @@ fun FocusOverlay(session: FocusSession, repo: RotRunRepository) {
     }
     val elapsed = ((now - session.startedAt) / 1000).coerceAtLeast(0)
     val remaining = session.targetMinutes?.let { (it * 60 - elapsed).coerceAtLeast(0) }
-    Column(Modifier.fillMaxSize().background(Melt.Meadow.copy(alpha = 0.97f)).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(
+        Modifier.fillMaxSize().background(Melt.Meadow.copy(alpha = 0.97f)).statusBarsPadding().navigationBarsPadding().padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
         Spacer(Modifier.weight(1f))
         CartoonBrain(BrainStyle.Meditating, Modifier.size(140.dp))
         Text("Focus Mode", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)

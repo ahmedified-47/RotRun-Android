@@ -91,6 +91,23 @@ object Scoring {
         return (drain + points).coerceIn(0, 100)
     }
 
+    /**
+     * One Brain Health number for Home, Stats, and the widget.
+     * Missing usage access is unknown, not 0% and not 100%.
+     * There is no minimum number of seconds before a real score is shown.
+     */
+    fun shownHealth(authorized: Boolean, drainSeconds: Long, focusMinutes: Int, level: BrainHealthLevel): Int? {
+        if (!authorized) return null
+        return displayedHealth(drainHealth(drainSeconds, level), focusMinutes, level.restoreMinutes)
+    }
+
+    /** Streak after an open. Same calendar day keeps it. The next day adds one. A gap starts over. */
+    fun nextOpenStreak(lastOpenDay: String, streak: Int, today: String, yesterday: String): Int = when (lastOpenDay) {
+        "", today -> maxOf(1, streak)
+        yesterday -> streak + 1
+        else -> 1
+    }
+
     fun caption(percentage: Int): String = when (percentage) {
         in 85..100 -> "Looking sharp today"
         in 65..84 -> "Holding steady"
