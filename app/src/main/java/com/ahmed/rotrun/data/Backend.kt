@@ -11,6 +11,10 @@ import com.ahmed.rotrun.logic.FreeTier
 import com.ahmed.rotrun.logic.PaywallGate
 import com.ahmed.rotrun.logic.Scoring
 import com.ahmed.rotrun.logic.ScreenTimeSync
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -51,13 +55,15 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
         val nonce = randomNonce()
         val hashed = sha256(nonce)
         GoogleSignIn.start(activity, clientId, hashed) { result ->
-            result.fold(
-                onSuccess = { idToken ->
-                    val error = exchange(idToken, nonce)
-                    onDone(error)
-                },
-                onFailure = { onDone(signInNote(it.message)) },
-            )
+            // Credential Manager returns on the main thread. The token exchange is a network call.
+            CoroutineScope(Dispatchers.IO).launch {
+                val error = result.fold(
+                    onSuccess = { idToken -> exchange(idToken, nonce) },
+                    onFailure = { signInNote(it.message) },
+                )
+                if (activity.isDestroyed) return@launch
+                withContext(Dispatchers.Main) { onDone(error) }
+            }
         }
     }
 

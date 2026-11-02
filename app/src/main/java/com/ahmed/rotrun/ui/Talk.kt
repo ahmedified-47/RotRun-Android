@@ -45,6 +45,8 @@ fun TalkSheet(repo: RotRunRepository, onClose: () -> Unit) {
     val context = LocalContext.current
     var draft by remember { mutableStateOf("") }
     var note by remember { mutableStateOf<String?>(null) }
+    var signedIn by remember { mutableStateOf(repo.backend.signedIn) }
+    var needsConsent by remember { mutableStateOf(repo.backend.needsConsent()) }
     var turns by remember { mutableStateOf(repo.backend.turns()) }
     var busy by remember { mutableStateOf(false) }
     val mic = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -60,12 +62,14 @@ fun TalkSheet(repo: RotRunRepository, onClose: () -> Unit) {
                 onClose()
             })
         }
-        if (!repo.backend.signedIn) {
+        if (!signedIn) {
             CartoonBrain(BrainStyle.Meadow, Modifier.padding(vertical = 16.dp).size(120.dp))
             Text("Sign in with Google to talk to your brain. Your conversations help it learn about you and give better advice.")
             PrimaryButton("Sign in with Google") {
                 val activity = context as? Activity ?: return@PrimaryButton
                 repo.backend.signIn(activity) { error ->
+                    signedIn = repo.backend.signedIn
+                    needsConsent = repo.backend.needsConsent()
                     note = when {
                         error.isNullOrBlank() -> null
                         error.contains("GOOGLE_WEB_CLIENT_ID") || error.contains("local.properties") || error.contains("does not create") -> "Sign-in isn’t set up yet"
@@ -73,12 +77,15 @@ fun TalkSheet(repo: RotRunRepository, onClose: () -> Unit) {
                     }
                 }
             }
-        } else if (repo.backend.needsConsent()) {
+        } else if (needsConsent) {
             Text("Rot can remember facts you share so advice gets better. You can forget everything later. Streak and XP stay.")
             PrimaryButton("I agree") {
                 CoroutineScope(Dispatchers.IO).launch {
                     val error = repo.backend.grantConsent()
-                    withContext(Dispatchers.Main) { note = error }
+                    withContext(Dispatchers.Main) {
+                        needsConsent = repo.backend.needsConsent()
+                        note = error
+                    }
                 }
             }
             Text("Not now", color = Melt.Muted, modifier = Modifier.padding(top = 12.dp).clickable(onClick = onClose))
