@@ -110,30 +110,35 @@ fun HomeScreen(state: SavedState, usage: UsageSnapshot, refreshing: Boolean, onR
             }
         }
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            MetricCard("Screen Time", if (usage.authorized) Scoring.formatDuration(usage.todaySeconds) else "—", MetricKind.Screen, Modifier.weight(1f))
-            MetricCard("Pickups", if (usage.authorized) usage.pickups.toString() else "—", MetricKind.Pickups, Modifier.weight(1f))
-            MetricCard("Focus Time", Scoring.formatDuration(state.focusMinutesToday() * 60L), MetricKind.Focus, Modifier.weight(1f))
+            MetricCard("Screen Time", Scoring.visibleDuration(if (usage.authorized) usage.todaySeconds else 0L), MetricKind.Screen, Modifier.weight(1f))
+            MetricCard("Pickups", if (usage.authorized) Scoring.visibleCount(usage.pickups) else "Not in yet", MetricKind.Pickups, Modifier.weight(1f))
+            MetricCard("Focus Time", Scoring.visibleDuration(state.focusMinutesToday() * 60L), MetricKind.Focus, Modifier.weight(1f))
         }
         Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             SectionTitle("Top Offenders", scenic)
             RaisedCard(Modifier.fillMaxWidth()) {
                 Column {
-                val offenders = usage.offenders.filter { it.seconds > 0L }
-                if (offenders.isEmpty()) {
-                    Text("No apps yet", color = Color.White.copy(alpha = 0.85f), fontWeight = FontWeight.Medium, modifier = Modifier.padding(16.dp))
-                } else {
-                    offenders.forEachIndexed { index, app ->
-                        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            AppDot(app.label)
-                            Column(Modifier.padding(start = 12.dp).weight(1f)) {
-                                Text(app.label, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, maxLines = 1)
-                                Text("App", color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp)
-                            }
-                            Text(Scoring.formatDuration(app.seconds), color = Color.White, fontWeight = FontWeight.SemiBold)
-                        }
-                        if (index < offenders.lastIndex) {
-                            Box(Modifier.padding(start = 64.dp).fillMaxWidth().height(1.dp).background(Color.White.copy(alpha = 0.12f)))
-                        }
+                val offenders = usage.offenders.filter { it.seconds >= 60L }
+                val rows = if (offenders.isEmpty()) listOf(null, null) else offenders.map { it }
+                rows.forEachIndexed { index, app ->
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        AppDot(app?.label ?: "?")
+                        Text(
+                            app?.label ?: "Not in yet",
+                            color = Color.White,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 17.sp,
+                            maxLines = 1,
+                            modifier = Modifier.padding(start = 12.dp).weight(1f),
+                        )
+                        Text(
+                            if (app == null) "Not in yet" else Scoring.visibleDuration(app.seconds),
+                            color = Color.White,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                    if (index < rows.lastIndex) {
+                        Box(Modifier.padding(start = 64.dp).fillMaxWidth().height(1.dp).background(Color.White.copy(alpha = 0.12f)))
                     }
                 }
                 }
@@ -144,9 +149,9 @@ fun HomeScreen(state: SavedState, usage: UsageSnapshot, refreshing: Boolean, onR
                 Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(Scoring.paceLine(usage.aheadOfPace), color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Legend(Melt.Orange, "Today", if (usage.authorized) Scoring.formatDuration(usage.todaySeconds) else "—", Melt.Orange)
+                        Legend(Melt.Orange, "Today", Scoring.visibleDuration(if (usage.authorized) usage.todaySeconds else 0L), Melt.Orange)
                         Spacer(Modifier.weight(1f))
-                        Legend(Color.White, "Average", if (usage.authorized) Scoring.formatDuration(usage.avgSeconds) else "—", Color.White)
+                        Legend(Color.White, "Average", Scoring.visibleDuration(if (usage.authorized) usage.avgSeconds else 0L), Color.White)
                     }
                     TrendChart(usage.hourlyToday, usage.hourlyAvg, Modifier.fillMaxWidth().height(120.dp))
                 }
@@ -154,8 +159,8 @@ fun HomeScreen(state: SavedState, usage: UsageSnapshot, refreshing: Boolean, onR
             RaisedCard {
                 Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     Text(Scoring.comparisonLine(usage.todaySeconds, usage.avgSeconds, usage.diffPercent, usage.belowAverage), color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
-                    CompareBar(if (usage.authorized) Scoring.formatDuration(usage.todaySeconds) else "—", "Today", usage.todaySeconds, usage.avgSeconds, Melt.Orange)
-                    CompareBar(if (usage.authorized) Scoring.formatDuration(usage.avgSeconds) else "—", "7-day avg", usage.avgSeconds, usage.avgSeconds, Color.White.copy(alpha = 0.38f))
+                    CompareBar(Scoring.visibleDuration(if (usage.authorized) usage.todaySeconds else 0L), "Today", usage.todaySeconds, usage.avgSeconds, Melt.Orange)
+                    CompareBar(Scoring.visibleDuration(if (usage.authorized) usage.avgSeconds else 0L), "7-day avg", usage.avgSeconds, usage.avgSeconds, Color.White.copy(alpha = 0.38f))
                 }
             }
             RaisedCard {

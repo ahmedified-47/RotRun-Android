@@ -26,6 +26,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
@@ -38,6 +39,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
@@ -221,17 +227,19 @@ fun AppPickerDialog(
                 items(filtered, key = { it.packageName }) { app ->
                     val on = app.packageName in chosen
                     Row(
-                        Modifier.fillMaxWidth().clickable { flip(app.packageName) }.padding(horizontal = 16.dp, vertical = 10.dp),
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { flip(app.packageName) }
+                            .semantics {
+                                role = Role.Checkbox
+                                toggleableState = if (on) ToggleableState.On else ToggleableState.Off
+                            }
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         AppGlyph(app.packageName, Modifier.size(40.dp))
                         Text(app.label, color = chrome.ink, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f).padding(horizontal = 12.dp))
-                        Box(
-                            Modifier.size(26.dp).clip(CircleShape).background(if (on) chrome.blue else Color.Transparent).border(1.5.dp, if (on) chrome.blue else chrome.muted, CircleShape),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            if (on) Text("✓", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                        }
+                        Checkbox(checked = on, onCheckedChange = null)
                     }
                 }
             }

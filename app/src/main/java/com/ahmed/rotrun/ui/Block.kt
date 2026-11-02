@@ -24,6 +24,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material3.AlertDialog
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import com.ahmed.rotrun.R
+import com.ahmed.rotrun.data.DeviceAccessReader
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -43,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ahmed.rotrun.data.AppList
 import com.ahmed.rotrun.data.Blocker
+import com.ahmed.rotrun.data.DeviceAccess
 import com.ahmed.rotrun.data.RotRunRepository
 import com.ahmed.rotrun.data.SavedState
 import com.ahmed.rotrun.data.TrackedApp
@@ -57,7 +64,14 @@ fun BlockScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunRepo
     var listsOpen by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf<Blocker?>(null) }
     val chrome = rot()
+    val context = LocalContext.current
+    val access by repo.access.collectAsState()
+    var disclose by remember { mutableStateOf(false) }
+    var pickBrick by remember { mutableStateOf(false) }
     val brick = state.blockers.firstOrNull { it.id == "brick" }
+    LaunchedEffect(editing?.id, editingList?.id, pickBrick) {
+        if (editing != null || editingList != null || pickBrick) repo.loadInstalled()
+    }
     val scheduled = state.blockers.filter { it.id != "brick" }
     Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
@@ -72,6 +86,25 @@ fun BlockScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunRepo
                 }.padding(horizontal = 14.dp, vertical = 9.dp),
             )
         }
+        BlockingAccess(access, onUsage = {
+            DeviceAccessReader.open(context, DeviceAccessReader.usageIntent(context))
+        }, onAccessibility = { disclose = true }, onNotifications = {
+            DeviceAccessReader.open(context, DeviceAccessReader.notificationIntent(context))
+        }, onOverlay = {
+            DeviceAccessReader.open(context, DeviceAccessReader.overlayIntent(context))
+        }, onBattery = {
+            DeviceAccessReader.open(context, DeviceAccessReader.batteryIntent(context))
+        })
+        Text(
+            "Choose apps to block",
+            color = Color.White,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 12.dp).fillMaxWidth().clip(CircleShape).background(chrome.blue).clickable {
+                repo.loadInstalled()
+                pickBrick = true
+            }.padding(vertical = 14.dp),
+        )
         SectionLabel("Blocking Now", chrome.muted)
         if (brick != null) {
             BlockerCard(brick, listName(state, brick), active = true, onClick = { editing = brick }, onList = { listsOpen = true })
@@ -153,6 +186,33 @@ fun BlockScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunRepo
             )
         }
     }
+    if (disclose) {
+        AlertDialog(
+            onDismissRequest = { disclose = false },
+            title = { Text("Accessibility") },
+            text = { Text(stringResource(R.string.accessibility_disclosure)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    disclose = false
+                    DeviceAccessReader.open(context, DeviceAccessReader.accessibilityIntent())
+                }) { Text("Open settings") }
+            },
+            dismissButton = { TextButton(onClick = { disclose = false }) { Text("Not now") } },
+        )
+    }
+    if (pickBrick) {
+        val current = brick ?: Blocker(id = "brick", name = "Brick Mode", mode = "allDay")
+        AppPickerDialog(
+            apps = installed,
+            selected = current.apps,
+            onDismiss = { pickBrick = false },
+            onSave = { chosen ->
+                if (repo.saveBlocker(current.copy(apps = chosen))) pickBrick = false
+            },
+            exceedsCap = { proposed -> repo.wouldExceedFreeCap(proposed, exceptBlocker = current.id, exceptList = current.appListId) },
+            onUpgrade = { repo.toast(BlockRules.FREE_LIMIT_MESSAGE); repo.requestPaywall() },
+        )
+    }
     if (listsOpen) {
         BottomSheet(onDismiss = { listsOpen = false }) {
             Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp)) {
@@ -232,6 +292,44 @@ fun BlockScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunRepo
 
 private fun listName(state: SavedState, blocker: Blocker): String =
     state.appLists.firstOrNull { it.id == blocker.appListId }?.name ?: "RotRun Apps"
+
+@Composable
+private fun BlockingAccess(
+    access: DeviceAccess,
+    onUsage: () -> Unit,
+    onAccessibility: () -> Unit,
+    onNotifications: () -> Unit,
+    onOverlay: () -> Unit,
+    onBattery: () -> Unit,
+) {
+    val chrome = rot()
+    Column(Modifier.padding(top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(chrome.card)) {
+        AccessRow("Usage Access", "Which app is open, today’s time, and daily limits.", access.usage, onUsage)
+        Box(Modifier.padding(start = 16.dp).fillMaxWidth().height(1.dp).background(chrome.line))
+        AccessRow("Accessibility", "Shows the Rot shield over apps you chose. RotRun does not read what you type.", access.accessibility, onAccessibility)
+        Box(Modifier.padding(start = 16.dp).fillMaxWidth().height(1.dp).background(chrome.line))
+        AccessRow("Notifications", "The shield can still open if the overlay is off.", access.notifications, onNotifications)
+        Box(Modifier.padding(start = 16.dp).fillMaxWidth().height(1.dp).background(chrome.line))
+        AccessRow("Display over other apps", "Fallback shield when Accessibility is off.", access.overlay, onOverlay)
+        Box(Modifier.padding(start = 16.dp).fillMaxWidth().height(1.dp).background(chrome.line))
+        AccessRow("Battery", "Keep blocking after a restart and when RotRun is swiped away.", access.batteryUnrestricted, onBattery)
+    }
+}
+
+@Composable
+private fun AccessRow(title: String, detail: String, granted: Boolean, onClick: () -> Unit) {
+    val chrome = rot()
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f).padding(end = 8.dp)) {
+            Text(title, color = chrome.ink, fontWeight = FontWeight.SemiBold)
+            Text(detail, color = chrome.muted, fontSize = 12.sp)
+        }
+        Text(if (granted) "On" else "Off", color = if (granted) chrome.green else chrome.danger, fontWeight = FontWeight.Bold)
+    }
+}
 
 @Composable
 private fun BlockerCard(blocker: Blocker, listName: String, active: Boolean, onClick: () -> Unit, onList: () -> Unit) {

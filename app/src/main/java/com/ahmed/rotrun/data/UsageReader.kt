@@ -6,6 +6,7 @@ import android.app.usage.UsageStatsManager
 import android.app.usage.UsageStats
 import android.content.Context
 import android.content.Intent
+import android.content.pm.LauncherApps
 import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
 import android.os.Build
@@ -146,14 +147,22 @@ object UsageReader {
      */
     fun installedApps(context: Context): List<TrackedApp> {
         val hidden = safetyPackages(context)
-        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-        return resolve(context, intent)
-            .mapNotNull { info ->
-                val packageName = info.activityInfo?.packageName ?: return@mapNotNull null
-                if (packageName in hidden) return@mapNotNull null
-                val label = info.loadLabel(context.packageManager).toString().ifBlank { return@mapNotNull null }
+        val fromLauncher = runCatching {
+            val launcher = context.getSystemService(LauncherApps::class.java)
+            launcher.getActivityList(null, Process.myUserHandle()).map { activity ->
+                val packageName = activity.componentName.packageName
+                val label = activity.label?.toString()?.ifBlank { null } ?: label(context, packageName)
                 TrackedApp(packageName, label)
             }
+        }.getOrDefault(emptyList())
+        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val fromQuery = resolve(context, intent).mapNotNull { info ->
+            val packageName = info.activityInfo?.packageName ?: return@mapNotNull null
+            val label = info.loadLabel(context.packageManager).toString().ifBlank { label(context, packageName) }
+            TrackedApp(packageName, label)
+        }
+        return (fromLauncher + fromQuery)
+            .filter { it.packageName !in hidden && it.label.isNotBlank() }
             .distinctBy { it.packageName }
             .sortedBy { it.label.lowercase() }
     }

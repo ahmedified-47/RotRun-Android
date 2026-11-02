@@ -146,7 +146,7 @@ class BlockWatchService : Service() {
             }
             return
         }
-        if (now - (shownAt[packageName] ?: 0L) < 20_000) return
+        if (now - (shownAt[packageName] ?: 0L) < 8_000) return
         shownAt[packageName] = now
         val copy = InterventionCopy.forPackage(packageName, label)
         val open = Intent(this, InterventionActivity::class.java).apply {
@@ -161,7 +161,8 @@ class BlockWatchService : Service() {
             open,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        getSystemService(NotificationManager::class.java).notify(ALERT_ID, buildNotification(copy.headline, pending))
+        runCatching { startActivity(open) }
+        getSystemService(NotificationManager::class.java).notify(ALERT_ID, shieldNotification(copy.headline, pending))
     }
 
     private fun openAsk(packageName: String, label: String) {
@@ -201,6 +202,23 @@ class BlockWatchService : Service() {
             .build()
     }
 
+    private fun shieldNotification(text: String, tap: PendingIntent): Notification {
+        if (Build.VERSION.SDK_INT >= 26) {
+            val channel = NotificationChannel(ALERT_CHANNEL, "Rot shield", NotificationManager.IMPORTANCE_HIGH)
+            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+        }
+        return NotificationCompat.Builder(this, ALERT_CHANNEL)
+            .setSmallIcon(R.drawable.ic_stat_rot)
+            .setContentTitle("Your Brain")
+            .setContentText(text)
+            .setContentIntent(tap)
+            .setFullScreenIntent(tap, true)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .build()
+    }
+
     private fun ensureChannel() {
         if (Build.VERSION.SDK_INT < 26) return
         val manager = getSystemService(NotificationManager::class.java)
@@ -210,6 +228,7 @@ class BlockWatchService : Service() {
 
     companion object {
         private const val CHANNEL = "rotrun.watch"
+        private const val ALERT_CHANNEL = "rotrun.shield"
         private const val NOTIFICATION_ID = 42
         private const val ALERT_ID = 43
 
