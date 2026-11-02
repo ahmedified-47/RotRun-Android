@@ -1,6 +1,8 @@
 package com.ahmed.rotrun
 
+import com.ahmed.rotrun.data.OnboardingStep
 import com.ahmed.rotrun.data.freshState
+import com.ahmed.rotrun.data.stepForward
 import com.ahmed.rotrun.logic.BlockBackup
 import com.ahmed.rotrun.logic.BlockRules
 import com.ahmed.rotrun.logic.InterventionCopy
@@ -178,6 +180,15 @@ class BlockRulesTest {
         val cleared = PickerSelection.toggle(first.chosen, "com.google.android.calendar", cap)
         assertTrue(cleared.chosen.isEmpty())
         assertFalse(cleared.capped)
+    }
+
+    @Test
+    fun onboardingSkipsTheFakeScreenTimeDialog() {
+        val state = freshState().copy(onboardingStep = OnboardingStep.SelectApps.raw)
+        assertTrue(OnboardingStep.ScreenTimeDialog.skipped(state))
+        assertTrue(OnboardingStep.SeeForYourself.skipped(state))
+        assertTrue(OnboardingStep.ConnectScreenTime.skipped(state))
+        assertEquals(OnboardingStep.EnableFirstRule.raw, stepForward(state).onboardingStep)
     }
 
     @Test
