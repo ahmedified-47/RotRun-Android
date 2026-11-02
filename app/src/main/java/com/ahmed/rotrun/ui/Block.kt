@@ -56,6 +56,7 @@ fun BlockScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunRepo
     var editingList by remember { mutableStateOf<AppList?>(null) }
     var listsOpen by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf<Blocker?>(null) }
+    var confirmList by remember { mutableStateOf<AppList?>(null) }
     val chrome = rot()
     val brick = state.blockers.firstOrNull { it.id == "brick" }
     val scheduled = state.blockers.filter { it.id != "brick" }
@@ -139,6 +140,13 @@ fun BlockScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunRepo
                         textAlign = TextAlign.Center,
                         modifier = Modifier.padding(top = 10.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(chrome.pill).clickable { editingList = list }.padding(vertical = 10.dp),
                     )
+                    Text(
+                        "Delete",
+                        color = chrome.danger,
+                        fontWeight = FontWeight.SemiBold,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(top = 8.dp).fillMaxWidth().clickable { confirmList = list }.padding(vertical = 6.dp),
+                    )
                 }
             }
             Text(
@@ -172,6 +180,16 @@ fun BlockScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunRepo
                                 listsOpen = false
                                 editingList = list
                             }.padding(vertical = 10.dp),
+                        )
+                        Text(
+                            "Delete",
+                            color = chrome.danger,
+                            fontWeight = FontWeight.SemiBold,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(top = 8.dp).fillMaxWidth().clickable {
+                                listsOpen = false
+                                confirmList = list
+                            }.padding(vertical = 6.dp),
                         )
                     }
                 }
@@ -226,6 +244,21 @@ fun BlockScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunRepo
                 TextButton(onClick = { repo.deleteBlocker(blocker.id); confirmDelete = null; editing = null }) { Text("Delete") }
             },
             dismissButton = { TextButton(onClick = { confirmDelete = null }) { Text("Cancel") } },
+        )
+    }
+    confirmList?.let { list ->
+        AlertDialog(
+            onDismissRequest = { confirmList = null },
+            title = { Text("Delete ${list.name}?") },
+            text = { Text("This removes the list and stops blocking its apps.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    repo.deleteList(list.id)
+                    if (editingList?.id == list.id) editingList = null
+                    confirmList = null
+                }) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { confirmList = null }) { Text("Cancel") } },
         )
     }
 }

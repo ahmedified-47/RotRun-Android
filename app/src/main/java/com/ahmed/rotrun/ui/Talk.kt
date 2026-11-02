@@ -2,6 +2,7 @@ package com.ahmed.rotrun.ui
 
 import android.Manifest
 import android.app.Activity
+import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -33,8 +34,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import com.ahmed.rotrun.data.RotRunRepository
 import com.ahmed.rotrun.logic.FreeTier
+import com.ahmed.rotrun.logic.PaywallGate
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -49,15 +52,24 @@ fun TalkSheet(repo: RotRunRepository, onClose: () -> Unit) {
     var needsConsent by remember { mutableStateOf(repo.backend.needsConsent()) }
     var turns by remember { mutableStateOf(repo.backend.turns()) }
     var busy by remember { mutableStateOf(false) }
+    var calling by remember { mutableStateOf(false) }
     val mic = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (!granted) note = "Microphone access is off."
-        else startVoice(repo) { note = it }
+        if (!granted) {
+            calling = false
+            note = "Microphone access is off. Allow the microphone to call Rot."
+        } else {
+            startVoice(repo) { error ->
+                calling = error == null
+                note = error
+            }
+        }
     }
     CompositionLocalProvider(LocalContentColor provides rot().ink) {
     Column(Modifier.fillMaxSize().background(rot().page).statusBarsPadding().navigationBarsPadding().padding(16.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text("Talk to Brain", fontWeight = FontWeight.Bold, fontSize = 22.sp)
             Text("Close", color = Melt.Action, modifier = Modifier.clickable {
+                calling = false
                 repo.backend.stopVoice()
                 onClose()
             })
@@ -119,9 +131,33 @@ fun TalkSheet(repo: RotRunRepository, onClose: () -> Unit) {
                         }
                     }
                 })
-                Text("Voice", color = Melt.Action, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp).clickable {
-                    mic.launch(Manifest.permission.RECORD_AUDIO)
-                })
+                Text(
+                    if (calling) "End" else "Voice",
+                    color = Melt.Action,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(top = 8.dp).clickable {
+                        if (calling) {
+                            calling = false
+                            repo.backend.stopVoice()
+                            note = null
+                            return@clickable
+                        }
+                        if (!repo.state.value.premiumActive()) {
+                            note = FreeTier.voiceMessage
+                            if (PaywallGate.shows) repo.requestPaywall()
+                            return@clickable
+                        }
+                        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+                        if (granted) {
+                            startVoice(repo) { error ->
+                                calling = error == null
+                                note = error
+                            }
+                        } else {
+                            mic.launch(Manifest.permission.RECORD_AUDIO)
+                        }
+                    },
+                )
             }
         }
         note?.let { Text(it, color = Melt.Muted, modifier = Modifier.padding(top = 8.dp)) }

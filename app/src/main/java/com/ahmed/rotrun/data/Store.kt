@@ -5,6 +5,7 @@ import android.content.Context
 import com.ahmed.rotrun.billing.PlayBilling
 import com.ahmed.rotrun.icon.LauncherIcons
 import com.ahmed.rotrun.logic.BlockRules
+import com.ahmed.rotrun.logic.withoutAppList
 import com.ahmed.rotrun.logic.PaywallGate
 import com.ahmed.rotrun.logic.Products
 import com.ahmed.rotrun.logic.Scoring
@@ -298,6 +299,12 @@ class RotRunRepository(context: Context) {
         }
         toast("Saved ${list.name}")
         return true
+    }
+
+    fun deleteList(id: String) {
+        val name = _state.value.appLists.firstOrNull { it.id == id }?.name ?: return
+        update { it.withoutAppList(id) }
+        toast("Deleted $name")
     }
 
     fun startFocus(targetMinutes: Int?, legendary: Boolean, scopeName: String) {
@@ -618,7 +625,7 @@ class RotRunRepository(context: Context) {
 
     private fun decode(json: JSONObject): SavedState {
         val fresh = freshState()
-        val lists = json.optJSONArray("appLists").toLists().ifEmpty { fresh.appLists }
+        val lists = if (json.has("appLists")) json.optJSONArray("appLists").toLists() else fresh.appLists
         val blockers = json.optJSONArray("blockers").toBlockers().ifEmpty { fresh.blockers }
         val focusJson = json.optJSONObject("focus")
         return SavedState(

@@ -1,8 +1,12 @@
 package com.ahmed.rotrun
 
+import com.ahmed.rotrun.data.AppList
+import com.ahmed.rotrun.data.TrackedApp
 import com.ahmed.rotrun.data.freshState
 import com.ahmed.rotrun.logic.BlockBackup
 import com.ahmed.rotrun.logic.BlockRules
+import com.ahmed.rotrun.logic.VoiceLimits
+import com.ahmed.rotrun.logic.withoutAppList
 import com.ahmed.rotrun.logic.InterventionCopy
 import com.ahmed.rotrun.logic.Marketing
 import com.ahmed.rotrun.logic.PickerSelection
@@ -178,6 +182,49 @@ class BlockRulesTest {
         val cleared = PickerSelection.toggle(first.chosen, "com.google.android.calendar", cap)
         assertTrue(cleared.chosen.isEmpty())
         assertFalse(cleared.capped)
+    }
+
+    @Test
+    fun deletingAListClearsBrickAndDropsRulesThatUsedIt() {
+        val instagram = TrackedApp("com.instagram.android", "Instagram")
+        val state = freshState().copy(
+            appLists = listOf(
+                AppList("list.brainmelt", "RotRun Apps", listOf(instagram)),
+                AppList("list.other", "Night", listOf(TrackedApp("com.zhiliaoapp.musically", "TikTok"))),
+            ),
+            blockers = freshState().blockers.map { blocker ->
+                if (blocker.id == "brick") blocker.copy(apps = listOf(instagram)) else blocker
+            } + com.ahmed.rotrun.data.Blocker(
+                id = "custom",
+                name = "Custom",
+                mode = "allDay",
+                appListId = "list.other",
+                apps = listOf(TrackedApp("com.zhiliaoapp.musically", "TikTok")),
+            ),
+        )
+        val next = state.withoutAppList("list.brainmelt")
+        assertTrue(next.appLists.none { it.id == "list.brainmelt" })
+        assertEquals(emptyList<TrackedApp>(), next.blockers.first { it.id == "brick" }.apps)
+        assertTrue(next.blockers.none { it.id == "work" })
+        assertEquals("list.other", next.blockers.first { it.id == "custom" }.appListId)
+        assertEquals(state, state.withoutAppList("missing"))
+    }
+
+    @Test
+    fun androidBackupIdsDoNotMatchAnIosBlob() {
+        assertTrue(BlockBackup.clientId("list.brainmelt").startsWith("android:"))
+        assertFalse(BlockBackup.isAndroidOwned("""{"familyControls":true}"""))
+        assertTrue(BlockBackup.isAndroidOwned(BlockBackup.selectionData(emptyList())))
+    }
+
+    @Test
+    fun voiceStaysInsideTheProCaps() {
+        assertEquals(null, VoiceLimits.denial(4, 29))
+        assertEquals(VoiceLimits.dailyMessage, VoiceLimits.denial(5, 10))
+        assertEquals(VoiceLimits.monthlyMessage, VoiceLimits.denial(1, 30))
+        assertEquals(300.0, VoiceLimits.cappedSeconds(null), 0.0)
+        assertEquals(300.0, VoiceLimits.cappedSeconds(900.0), 0.0)
+        assertEquals(90.0, VoiceLimits.cappedSeconds(90.0), 0.0)
     }
 
     @Test

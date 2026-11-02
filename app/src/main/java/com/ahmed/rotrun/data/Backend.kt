@@ -10,6 +10,7 @@ import com.ahmed.rotrun.logic.BlockBackup
 import com.ahmed.rotrun.logic.FreeTier
 import com.ahmed.rotrun.logic.PaywallGate
 import com.ahmed.rotrun.logic.Scoring
+import com.ahmed.rotrun.logic.VoiceLimits
 import com.ahmed.rotrun.logic.ScreenTimeSync
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -167,13 +168,17 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
 
     fun startVoice(instructions: String): String? {
         val state = repo.state.value
-        if (PaywallGate.shows && !state.premiumActive()) {
-            repo.requestPaywall()
+        if (!state.premiumActive()) {
+            if (PaywallGate.shows) repo.requestPaywall()
             return FreeTier.voiceMessage
         }
         if (!signedIn) return "Sign in with Google to talk to your brain."
         if (needsConsent()) return "Rot needs your OK before a voice call."
-        if (voiceBlocked()) return session.getString("voice_limit_message", "Voice limit reached, resets tomorrow")
+        if (voiceBlocked()) return session.getString("voice_limit_message", VoiceLimits.dailyMessage)
+        voiceAllowance()?.let { message ->
+            session.edit().putString("voice_limit_message", message).putLong("voice_limit_until", voiceResetAt(message)).apply()
+            return message
+        }
         val response = call("POST", "/functions/v1/agent-qa", JSONObject().put("type", "voice_secret").toString(), accessToken())
         val payload = response.json
         val code = payload?.optString("error_code").orEmpty()
@@ -193,8 +198,10 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
             onEnded = { reason -> if (reason != null) repo.toast(reason) },
         )
         voice = call
-        val max = payload?.optDouble("voice_token_seconds")?.takeIf { !it.isNaN() && it > 0 }
+        noteVoiceStart()
+        val serverMax = payload?.optDouble("voice_token_seconds")?.takeIf { !it.isNaN() && it > 0 }
             ?: payload?.optDouble("max_session_seconds")?.takeIf { !it.isNaN() && it > 0 }
+        val max = VoiceLimits.cappedSeconds(serverMax)
         call.start(
             token = token,
             model = payload?.optString("model").takeUnless { it.isNullOrBlank() } ?: "grok-voice-latest",
@@ -573,6 +580,39 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
     }
 
     private fun voiceBlocked(): Boolean = session.getLong("voice_limit_until", 0L) > System.currentTimeMillis()
+
+    private fun voiceAllowance(): String? {
+        val now = ZonedDateTime.now()
+        val day = now.toLocalDate().toString()
+        val month = day.take(7)
+        val dayCount = if (session.getString("voice_day", "") == day) session.getInt("voice_day_count", 0) else 0
+        val monthCount = if (session.getString("voice_month", "") == month) session.getInt("voice_month_count", 0) else 0
+        return VoiceLimits.denial(dayCount, monthCount)
+    }
+
+    private fun noteVoiceStart() {
+        val now = ZonedDateTime.now()
+        val day = now.toLocalDate().toString()
+        val month = day.take(7)
+        val dayCount = if (session.getString("voice_day", "") == day) session.getInt("voice_day_count", 0) else 0
+        val monthCount = if (session.getString("voice_month", "") == month) session.getInt("voice_month_count", 0) else 0
+        session.edit()
+            .putString("voice_day", day)
+            .putInt("voice_day_count", dayCount + 1)
+            .putString("voice_month", month)
+            .putInt("voice_month_count", monthCount + 1)
+            .apply()
+    }
+
+    private fun voiceResetAt(message: String): Long {
+        val zone = ZoneId.systemDefault()
+        val start = if (message == VoiceLimits.monthlyMessage) {
+            java.time.LocalDate.now(zone).withDayOfMonth(1).plusMonths(1).atStartOfDay(zone)
+        } else {
+            java.time.LocalDate.now(zone).plusDays(1).atStartOfDay(zone)
+        }
+        return start.toInstant().toEpochMilli()
+    }
 
     private fun nextReset(payload: JSONObject?): Long {
         val raw = payload?.optString("budget_resets_at").orEmpty()
