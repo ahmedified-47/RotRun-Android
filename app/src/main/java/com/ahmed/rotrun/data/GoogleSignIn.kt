@@ -4,7 +4,7 @@ import android.app.Activity
 import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
-import com.google.android.libraries.identity.googleid.GetGoogleIdOption
+import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -12,9 +12,7 @@ import kotlinx.coroutines.launch
 
 object GoogleSignIn {
     fun start(activity: Activity, serverClientId: String, hashedNonce: String, onDone: (Result<String>) -> Unit) {
-        val option = GetGoogleIdOption.Builder()
-            .setFilterByAuthorizedAccounts(false)
-            .setServerClientId(serverClientId)
+        val option = GetSignInWithGoogleOption.Builder(serverClientId)
             .setNonce(hashedNonce)
             .build()
         val request = GetCredentialRequest.Builder().addCredentialOption(option).build()
