@@ -4,6 +4,10 @@ import android.content.Intent
 import android.provider.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -205,13 +209,16 @@ private fun MainShell(repo: RotRunRepository) {
             onFocus = { if (state.focus == null) focusSheet = true },
             modifier = Modifier.align(Alignment.BottomCenter),
         )
-        if (focusSheet) {
-            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)).clickable { focusSheet = false })
-            Box(Modifier.align(Alignment.BottomCenter).padding(12.dp).navigationBarsPadding()) {
-                FocusChooser(onClose = { focusSheet = false }, repo = repo)
-            }
+        var focusShown by remember { mutableStateOf(state.focus) }
+        LaunchedEffect(state.focus?.startedAt) {
+            if (state.focus != null) focusShown = state.focus
         }
-        state.focus?.let { FocusOverlay(it, repo) }
+        AnimatedVisibility(visible = focusSheet, modifier = Modifier.fillMaxSize(), enter = fadeIn(tween(250)), exit = fadeOut(tween(250))) {
+            FocusChooser(onClose = { focusSheet = false }, repo = repo)
+        }
+        AnimatedVisibility(visible = state.focus != null, modifier = Modifier.fillMaxSize(), enter = fadeIn(tween(250)), exit = fadeOut(tween(250))) {
+            focusShown?.let { FocusOverlay(it, repo) }
+        }
         if (talk) TalkSheet(repo) { talk = false }
         if (offer && PaywallGate.shows && !state.yearly70Dismissed) {
             Box(Modifier.fillMaxSize().background(rot().page).statusBarsPadding().verticalScroll(rememberScrollState())) {

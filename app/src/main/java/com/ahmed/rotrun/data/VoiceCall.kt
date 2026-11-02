@@ -20,6 +20,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 class VoiceCall(
     private val onStatus: (String) -> Unit,
     private val onEnded: (String?) -> Unit,
+    private val onTranscript: (String) -> Unit = {},
 ) {
     private val running = AtomicBoolean(false)
     private val client = OkHttpClient.Builder().readTimeout(0, TimeUnit.MILLISECONDS).build()
@@ -67,8 +68,13 @@ class VoiceCall(
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
-                val type = runCatching { JSONObject(text).optString("type") }.getOrDefault("")
-                if (type.contains("speech_started") || type.contains("audio")) onStatus("Rot is talking")
+                val json = runCatching { JSONObject(text) }.getOrNull() ?: return
+                val type = json.optString("type")
+                transcriptOf(json).takeIf { it.isNotBlank() }?.let(onTranscript)
+                when {
+                    type.contains("speech_stopped") || type.contains("response.done") || type.contains("response.audio.done") -> onStatus("Listening")
+                    type.contains("speech_started") || type.contains("output_audio") || type.contains("audio") -> onStatus("Talking")
+                }
             }
 
             override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
@@ -156,6 +162,17 @@ class VoiceCall(
                 it.play()
             }
         track.write(pcm, 0, pcm.size)
+    }
+
+    private fun transcriptOf(json: JSONObject): String {
+        json.optString("transcript").takeIf { it.isNotBlank() }?.let { return it }
+        if (json.optString("type").contains("transcript")) {
+            json.optString("delta").takeIf { it.isNotBlank() }?.let { return it }
+        }
+        listOf("item", "part", "audio").forEach { key ->
+            json.optJSONObject(key)?.optString("transcript")?.takeIf { it.isNotBlank() }?.let { return it }
+        }
+        return ""
     }
 
     private fun releaseAudio() {

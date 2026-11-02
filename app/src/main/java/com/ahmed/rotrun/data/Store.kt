@@ -539,9 +539,9 @@ class RotRunRepository(context: Context) {
         val offenders = if (!known) {
             "Connect usage"
         } else {
-            _usage.value.offenders.filter { it.seconds >= 60 }.take(3)
-                .joinToString("\n") { "${it.label}  ${Scoring.formatDuration(it.seconds)}" }
-                .ifBlank { "No apps yet" }
+            _usage.value.offenders.filter { it.seconds > 0 }.take(5)
+                .joinToString("\n") { "${it.label}\t${it.seconds}" }
+                .ifBlank { "" }
         }
         val focus = current.focus
         prefs.edit()

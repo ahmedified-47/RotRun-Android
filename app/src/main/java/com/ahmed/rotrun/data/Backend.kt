@@ -31,11 +31,15 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
+data class ChatCard(val type: String, val data: Map<String, String>)
+
 class Backend(private val app: Context, private val repo: RotRunRepository) {
     private val http = OkHttpClient.Builder().callTimeout(30, TimeUnit.SECONDS).build()
     private val jsonType = "application/json".toMediaType()
     private val session = openSession(app)
     private var voice: VoiceCall? = null
+    private val cardLock = Any()
+    private var pendingCards: List<ChatCard> = emptyList()
     val signedIn: Boolean get() = accessToken().isNotBlank()
     val userId: String? get() = session.getString("user_id", null)
 
@@ -111,6 +115,17 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
         return !(session.getBoolean("ai_consent", false) && session.getString("ai_consent_user", "") == id)
     }
 
+    fun seedGreeting() {
+        if (turns().isNotEmpty()) return
+        remember("assistant", "Hey, how are you? How can I help you?")
+    }
+
+    fun chatCards(): List<ChatCard> = synchronized(cardLock) { pendingCards.toList() }
+
+    fun clearChatCards() {
+        synchronized(cardLock) { pendingCards = emptyList() }
+    }
+
     fun sendChat(message: String, surface: String): String {
         val text = message.trim()
         if (text.isEmpty()) return ""
@@ -156,6 +171,7 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
         if (answer.isBlank()) return payload?.optString("error").takeUnless { it.isNullOrBlank() } ?: FreeTier.tryAgain
         remember("user", text)
         remember("assistant", answer)
+        absorbCards(payload?.optJSONArray("cards"))
         if (PaywallGate.shows && !state.premiumActive()) {
             repo.update { current ->
                 val day = Scoring.dayKey()
@@ -166,7 +182,7 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
         return answer
     }
 
-    fun startVoice(instructions: String): String? {
+    fun startVoice(instructions: String, onUpdate: (String, String) -> Unit = { _, _ -> }): String? {
         val state = repo.state.value
         if (!state.premiumActive()) {
             if (PaywallGate.shows) repo.requestPaywall()
@@ -193,9 +209,20 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
         }
         val token = payload?.optString("token").orEmpty()
         if (response.code !in 200..299 || token.isBlank()) return payload?.optString("error").takeUnless { it.isNullOrBlank() } ?: "Rot couldn’t start voice just now."
+        val main = android.os.Handler(android.os.Looper.getMainLooper())
+        fun emit(kind: String, value: String) {
+            main.post { onUpdate(kind, value) }
+        }
         val call = VoiceCall(
-            onStatus = { repo.toast(it) },
-            onEnded = { reason -> if (reason != null) repo.toast(reason) },
+            onStatus = { status ->
+                emit("status", status)
+                if (status != "Listening" && status != "Talking" && status != FreeTier.voiceWrapUp) repo.toast(status)
+            },
+            onEnded = { reason ->
+                if (reason != null) repo.toast(reason)
+                emit("status", "ended")
+            },
+            onTranscript = { emit("transcript", it) },
         )
         voice = call
         noteVoiceStart()
@@ -215,6 +242,61 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
     fun stopVoice() {
         voice?.stop()
         voice = null
+    }
+
+    fun saveChatNote(body: String): String? {
+        val id = userId ?: return "Sign in first."
+        val text = body.trim().take(200)
+        if (text.isEmpty()) return "Nothing to remember."
+        val response = call(
+            "POST",
+            "/rest/v1/memory_notes",
+            JSONObject().put("user_id", id).put("body", text).toString(),
+            accessToken(),
+            "return=minimal",
+        )
+        return if (response.code in 200..299) null else response.error ?: "Couldn’t save that."
+    }
+
+    fun confirmChatFact(key: String, value: String): String? {
+        val response = call(
+            "POST",
+            "/functions/v1/agent-qa",
+            JSONObject().put("type", "confirm_fact").put("key", key).put("value", value).toString(),
+            accessToken(),
+        )
+        return if (response.code in 200..299) null else response.error ?: "Couldn’t save that."
+    }
+
+    fun updateChatPrefs(quietStart: String?, quietEnd: String?, maxPerDay: Int?): String? {
+        val body = JSONObject().put("type", "update_prefs")
+        if (!quietStart.isNullOrBlank()) body.put("quiet_start", quietStart)
+        if (!quietEnd.isNullOrBlank()) body.put("quiet_end", quietEnd)
+        if (maxPerDay != null) body.put("max_per_day", maxPerDay)
+        val response = call("POST", "/functions/v1/agent-qa", body.toString(), accessToken())
+        return if (response.code in 200..299) null else response.error ?: "Couldn’t update that."
+    }
+
+    fun archiveChat() {
+        val rows = turns().filter { it.second.isNotBlank() }
+        if (rows.none { it.first == "user" }) return
+        val id = userId ?: return
+        val summary = rows.takeLast(12).joinToString("\n") { "${it.first}: ${it.second}" }.take(600)
+        call(
+            "POST",
+            "/rest/v1/conversation_summaries",
+            JSONObject().put("user_id", id).put("summary", summary).put("topics", JSONArray()).toString(),
+            accessToken(),
+            "return=minimal",
+        )
+        call(
+            "POST",
+            "/rest/v1/memory_notes",
+            JSONObject().put("user_id", id).put("body", summary.take(200)).toString(),
+            accessToken(),
+            "return=minimal",
+        )
+        rows.lastOrNull { it.first == "user" }?.second?.let { postFact("last_chat", it) }
     }
 
     fun noteFromRot(text: String) {
@@ -687,6 +769,45 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
                 add(row.optString("role") to row.optString("content"))
             }
         }
+    }
+
+    private fun absorbCards(array: JSONArray?) {
+        if (array == null) return
+        val parsed = buildList {
+            for (index in 0 until array.length()) {
+                val item = array.optJSONObject(index) ?: continue
+                val type = item.optString("type")
+                if (type.isBlank()) continue
+                val data = linkedMapOf<String, String>()
+                val raw = item.optJSONObject("data")
+                if (raw != null) {
+                    val keys = raw.keys()
+                    while (keys.hasNext()) {
+                        val key = keys.next()
+                        val value = raw.opt(key)
+                        if (value != null && value != JSONObject.NULL) data[key] = value.toString()
+                    }
+                }
+                add(ChatCard(type, data))
+                if (type == "confirm_fact") postFact(data["key"].orEmpty(), data["value"].orEmpty())
+            }
+        }
+        if (parsed.isEmpty()) return
+        synchronized(cardLock) { pendingCards = pendingCards + parsed }
+    }
+
+    private fun postFact(key: String, value: String) {
+        val id = userId ?: return
+        val factKey = key.trim().take(50)
+        val factValue = value.trim().take(200)
+        if (factKey.isEmpty() || factValue.isEmpty()) return
+        call(
+            "POST",
+            "/rest/v1/user_facts?on_conflict=user_id,key",
+            JSONObject().put("user_id", id).put("key", factKey).put("value", factValue).put("source", "inferred").toString(),
+            accessToken(),
+            "resolution=merge-duplicates,return=minimal",
+        )
     }
 
     private fun accessToken(): String = session.getString("access", "").orEmpty()
