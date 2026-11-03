@@ -139,7 +139,7 @@ fun IconPage(state: SavedState, repo: RotRunRepository, onBack: () -> Unit) {
             modifier = Modifier.padding(start = 22.dp, end = 22.dp, top = 16.dp),
         )
         Text(
-            "Use any unlocked icon on your Home Screen. Icon changes apply on a physical iPhone.",
+            "Icon changes show on your home screen and may take a moment to appear.",
             color = StreakInk,
             fontSize = 16.sp,
             fontWeight = FontWeight.Medium,

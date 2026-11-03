@@ -12,7 +12,9 @@ Open `RotRun-Android` in Android Studio (compile SDK 37.2) and run the `app` con
 
 ## Premium
 
-Prices come from Google Play. Nothing is hard-coded. Product ids: `com.ahmed.rotrun.subscription.monthly`, `.yearly`, `.yearly70`, and lifetime `com.ahmed.rotrun.lifetime`. SAVE and the one-time offer percent are computed from the prices Play returns. A build with the paywall off: `rotrun.showPaywall=false` in `local.properties`.
+Live prices come from Google Play `formattedPrice`. Product ids: `com.ahmed.rotrun.subscription.monthly`, `.yearly`, `.yearly70`, and lifetime `com.ahmed.rotrun.lifetime`. SAVE and the one-time offer percent use the Play quote. Until a product exists, the paywall shows these placeholders only (confirmed 4 Nov 2026): monthly US$12.99, yearly US$59.99 then US$155.99, yearly70 US$46.99 then US$155.99, lifetime US$149.99. A build with the paywall off: `rotrun.showPaywall=false` in `local.properties`.
+
+Create the Play products at those numbers. yearly70's base plan is US$155.99 with offer id `first-year-70` at US$46.99 for the first year (A$69.99). yearly's base plan is US$155.99 with offer id `first-year` at US$59.99. Monthly is US$12.99 with no offer. Lifetime purchase option `buy` is US$149.99 and is not consumable.
 
 ## Blocking
 

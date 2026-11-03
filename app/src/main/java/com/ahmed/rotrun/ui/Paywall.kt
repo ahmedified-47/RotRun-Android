@@ -133,7 +133,8 @@ fun OneTimeOffer(onRedeem: () -> Unit, onClose: () -> Unit) {
     var legal by remember { mutableStateOf<String?>(null) }
     LegalDialog(legal) { legal = null }
     val offer = plans[Products.YEARLY70]
-    val off = BillingQuotes.savingsPercent(Products.YEARLY70, offer, null)
+    val place = if (offer == null) BillingQuotes.placeholder(Products.YEARLY70) else null
+    val off = if (offer != null) BillingQuotes.savingsPercent(Products.YEARLY70, offer, null) else BillingQuotes.placeholderSavings(Products.YEARLY70)
     Column(Modifier.fillMaxWidth().background(chrome.page).padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { CloseMark(onClose) }
         CartoonBrain(BrainStyle.Meadow, Modifier.padding(top = 8.dp).size(120.dp), animated = false)
@@ -148,10 +149,12 @@ fun OneTimeOffer(onRedeem: () -> Unit, onClose: () -> Unit) {
                 modifier = Modifier.padding(top = 12.dp).clip(CircleShape).background(Melt.Orange).padding(horizontal = 14.dp, vertical = 6.dp),
             )
         }
-        Text(offer?.formattedPrice ?: "Price from Google Play", color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 34.sp, modifier = Modifier.padding(top = 8.dp))
+        Text(offer?.formattedPrice ?: place?.shown ?: "Price from Google Play", color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 34.sp, modifier = Modifier.padding(top = 8.dp))
         Text("/ year", color = chrome.muted, fontSize = 16.sp)
         if (offer?.introPresent == true && offer.renewalFormatted != null) {
             Text("then ${offer.renewalFormatted}/ year", color = chrome.muted, fontSize = 14.sp, modifier = Modifier.padding(top = 4.dp))
+        } else if (place?.renewal != null) {
+            Text("then ${place.renewal}/ year", color = chrome.muted, fontSize = 14.sp, modifier = Modifier.padding(top = 4.dp))
         }
         if (purchasing) {
             CircularProgressIndicator(color = chrome.blue, modifier = Modifier.padding(top = 16.dp).size(28.dp))
@@ -186,15 +189,21 @@ private fun PlanCard(id: String, selected: Boolean, onClick: () -> Unit) {
     val quote = plans[id]
     val monthly = plans[Products.MONTHLY]
     val chrome = rot()
-    val price = quote?.formattedPrice ?: "Price from Google Play"
-    val period = if (quote == null) "" else Products.periodLabel(id)
+    val place = if (quote == null) BillingQuotes.placeholder(id) else null
+    val price = quote?.formattedPrice ?: place?.shown ?: "Price from Google Play"
+    val period = if (quote == null && place == null) "" else Products.periodLabel(id)
     val subtitle = when {
         id == Products.LIFETIME -> "One-time purchase"
         quote?.introPresent == true && quote.renewalFormatted != null -> "then ${quote.renewalFormatted}${Products.periodLabel(id)}"
+        place?.renewal != null -> "then ${place.renewal}${Products.periodLabel(id)}"
         id == Products.MONTHLY -> "Billed every month"
         else -> "Billed yearly"
     }
-    val badge = if (id == Products.YEARLY) BillingQuotes.savingsPercent(id, quote, monthly?.regularMicros) else null
+    val badge = if (id == Products.YEARLY) {
+        if (quote != null) BillingQuotes.savingsPercent(id, quote, monthly?.regularMicros) else BillingQuotes.placeholderSavings(id)
+    } else {
+        null
+    }
     Column(
         Modifier
             .fillMaxWidth()

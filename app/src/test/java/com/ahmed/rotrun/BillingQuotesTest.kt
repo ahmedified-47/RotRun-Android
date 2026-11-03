@@ -20,6 +20,20 @@ class BillingQuotesTest {
     }
 
     @Test
+    fun placeholdersMatchTheConfirmedPricesUntilPlayQuotes() {
+        assertEquals("US$12.99", BillingQuotes.placeholder(Products.MONTHLY)?.shown)
+        assertEquals("US$59.99", BillingQuotes.placeholder(Products.YEARLY)?.shown)
+        assertEquals("US$155.99", BillingQuotes.placeholder(Products.YEARLY)?.renewal)
+        assertEquals("US$46.99", BillingQuotes.placeholder(Products.YEARLY70)?.shown)
+        assertEquals("US$155.99", BillingQuotes.placeholder(Products.YEARLY70)?.renewal)
+        assertEquals("US$149.99", BillingQuotes.placeholder(Products.LIFETIME)?.shown)
+        assertEquals(62, BillingQuotes.placeholderSavings(Products.YEARLY))
+        assertEquals(70, BillingQuotes.placeholderSavings(Products.YEARLY70))
+        val live = quote(Products.YEARLY, 10_000_000L, 20_000_000L, intro = true)
+        assertEquals(50, BillingQuotes.savingsPercent(Products.YEARLY, live, 12_990_000L))
+    }
+
+    @Test
     fun yearly70OffIsIntroAgainstItsOwnRegularPrice() {
         val offer = quote(Products.YEARLY70, 17_990_000L, 59_990_000L, intro = true)
         assertEquals(70, BillingQuotes.savingsPercent(Products.YEARLY70, offer, 12_990_000L))

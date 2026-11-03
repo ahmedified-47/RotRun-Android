@@ -105,6 +105,46 @@ object BillingQuotes {
     }
 
     /**
+     * Shown only until Play returns a formatted price. Confirmed 4 Nov 2026.
+     * yearly70's Australian first year is A$69.99; this placeholder stays in US dollars.
+     */
+    data class PricePlaceholder(
+        val shown: String,
+        val renewal: String?,
+        val shownMicros: Long,
+        val regularMicros: Long,
+        val intro: Boolean,
+    )
+
+    fun placeholder(productId: String): PricePlaceholder? = when (productId) {
+        Products.MONTHLY -> PricePlaceholder("US$12.99", null, 12_990_000L, 12_990_000L, false)
+        Products.YEARLY -> PricePlaceholder("US$59.99", "US$155.99", 59_990_000L, 155_990_000L, true)
+        Products.YEARLY70 -> PricePlaceholder("US$46.99", "US$155.99", 46_990_000L, 155_990_000L, true)
+        Products.LIFETIME -> PricePlaceholder("US$149.99", null, 149_990_000L, 149_990_000L, false)
+        else -> null
+    }
+
+    /** Badge maths for a missing quote. A real [PlanQuote] never uses these micros. */
+    fun placeholderSavings(productId: String): Int? {
+        val place = placeholder(productId) ?: return null
+        return savingsPercent(
+            productId,
+            PlanQuote(
+                id = productId,
+                formattedPrice = place.shown,
+                priceMicros = place.shownMicros,
+                regularFormatted = place.renewal ?: place.shown,
+                regularMicros = place.regularMicros,
+                introPresent = place.intro,
+                renewalFormatted = place.renewal,
+                renewalMicros = if (place.intro) place.regularMicros else null,
+                offerToken = "",
+            ),
+            placeholder(Products.MONTHLY)?.regularMicros,
+        )
+    }
+
+    /**
      * Intro versus that product's regular price. Otherwise yearly or yearly70 versus 12× monthly.
      * Hidden when the result is missing or not a real saving.
      */
