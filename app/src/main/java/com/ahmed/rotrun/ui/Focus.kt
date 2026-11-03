@@ -5,11 +5,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -36,13 +38,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ahmed.rotrun.data.FocusSession
@@ -170,9 +178,9 @@ fun FocusOverlay(session: FocusSession, repo: RotRunRepository) {
     val clock = Scoring.formatClock(if (unlimited) elapsed else (remaining ?: elapsed))
     Box(Modifier.fillMaxSize()) {
         FocusGarden()
-        Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(), horizontalAlignment = Alignment.CenterHorizontally) {
-            Spacer(Modifier.weight(1f))
-            HangingBrain(Modifier.padding(top = 8.dp), 1f)
+        Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+            Spacer(Modifier.heightIn(min = 12.dp).weight(1f))
+            HangingBrain(Modifier.padding(top = 8.dp), 1f, BrainStyle.Sleeping)
             Text(
                 if (unlimited) "As long as you can" else "Time remaining",
                 color = Color(red = 0.16f, green = 0.22f, blue = 0.32f).copy(alpha = 0.72f),
@@ -182,9 +190,9 @@ fun FocusOverlay(session: FocusSession, repo: RotRunRepository) {
                 modifier = Modifier.padding(top = 18.dp),
             )
             OutlinedClock(clock, Modifier.padding(top = 4.dp, start = 12.dp, end = 12.dp))
-            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.heightIn(min = 16.dp).weight(1f))
             Box(
-                Modifier.padding(bottom = 36.dp).size(78.dp).clip(CircleShape).background(Color.White).clickable { repo.endFocus() },
+                Modifier.padding(bottom = 36.dp).size(78.dp).shadow(10.dp, CircleShape, ambientColor = Color.Black.copy(alpha = 0.16f), spotColor = Color.Black.copy(alpha = 0.16f)).clip(CircleShape).background(Color.White).clickable { repo.endFocus() },
                 contentAlignment = Alignment.Center,
             ) {
                 Box(Modifier.size(26.dp).clip(RoundedCornerShape(6.dp)).background(Color(red = 0.93f, green = 0.22f, blue = 0.24f)))
@@ -194,10 +202,10 @@ fun FocusOverlay(session: FocusSession, repo: RotRunRepository) {
 }
 
 @Composable
-private fun HangingBrain(modifier: Modifier, scale: Float) {
+private fun HangingBrain(modifier: Modifier, scale: Float, style: BrainStyle = BrainStyle.Meditating) {
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         CoilSpring(Modifier.size(width = 34.dp, height = 78.dp))
-        CartoonBrain(BrainStyle.Meditating, Modifier.size((168 * scale).dp).offset(y = (-6).dp), animated = true)
+        CartoonBrain(style, Modifier.size((168 * scale).dp).offset(y = (-6).dp), animated = true)
     }
 }
 
@@ -210,9 +218,9 @@ private fun CoilSpring(modifier: Modifier) {
             val y = index * step
             drawOval(
                 color = Color(red = 0.20f, green = 0.22f, blue = 0.26f),
-                topLeft = Offset(1f, y),
-                size = Size(size.width - 2f, step * 1.35f),
-                style = Stroke(width = 3.5f),
+                topLeft = Offset(1.dp.toPx(), y),
+                size = Size(size.width - 2.dp.toPx(), step * 1.35f),
+                style = Stroke(width = 3.5.dp.toPx()),
             )
         }
     }
@@ -220,21 +228,36 @@ private fun CoilSpring(modifier: Modifier) {
 
 @Composable
 private fun OutlinedClock(text: String, modifier: Modifier = Modifier) {
-    Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-        repeat(12) { index ->
-            val angle = index / 12.0 * 2 * Math.PI
-            Text(
-                text,
-                color = Color.White,
-                fontFamily = Nunito,
-                fontWeight = FontWeight.Black,
-                fontSize = 84.sp,
-                maxLines = 1,
-                modifier = Modifier.offset(x = (cos(angle) * 5).dp, y = (sin(angle) * 5).dp),
-            )
+    BoxWithConstraints(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        val size = outlinedClockSize(maxWidth, text)
+        val face = TextStyle(
+            fontFamily = Nunito,
+            fontWeight = FontWeight.Black,
+            fontSize = size,
+            fontFeatureSettings = "tnum",
+            shadow = Shadow(color = Color.Black.copy(alpha = 0.12f), offset = Offset(0f, 3f), blurRadius = 0f),
+        )
+        Box(contentAlignment = Alignment.Center) {
+            repeat(12) { index ->
+                val angle = index / 12.0 * 2 * Math.PI
+                Text(
+                    text,
+                    color = Color.White,
+                    style = face.copy(shadow = null),
+                    maxLines = 1,
+                    softWrap = false,
+                    modifier = Modifier.offset(x = (cos(angle) * 5).dp, y = (sin(angle) * 5).dp),
+                )
+            }
+            Text(text, color = ClockInk, style = face, maxLines = 1, softWrap = false)
         }
-        Text(text, color = ClockInk, fontFamily = Nunito, fontWeight = FontWeight.Black, fontSize = 84.sp, maxLines = 1)
     }
+}
+
+/** 84pt outlined clock, shrinking to half size so a long countdown stays on one line. */
+private fun outlinedClockSize(width: Dp, text: String): TextUnit {
+    val fitted = width.value / (text.length.coerceAtLeast(4) * 0.62f)
+    return fitted.coerceIn(42f, 84f).sp
 }
 
 @Composable
@@ -304,7 +327,7 @@ private fun FocusGarden() {
                     Color.White.copy(alpha = 0.45f),
                     topLeft = Offset(sand.x - w / 2f, sand.y - w * 0.18f),
                     size = Size(w, w * 0.36f),
-                    style = Stroke(width = 2f),
+                    style = Stroke(width = 2.dp.toPx()),
                 )
             }
             fun rock(at: Offset, scale: Float) {
@@ -329,7 +352,7 @@ private fun FocusTree(modifier: Modifier) {
         Canopy(Color(red = 0.36f, green = 0.62f, blue = 0.28f), 150.dp, 78.dp, Modifier.offset(x = (-8).dp, y = (-70).dp))
         Canopy(Color(red = 0.48f, green = 0.74f, blue = 0.34f), 120.dp, 64.dp, Modifier.offset(x = 28.dp, y = (-96).dp))
         Canopy(Color(red = 0.30f, green = 0.55f, blue = 0.26f), 90.dp, 50.dp, Modifier.offset(x = (-36).dp, y = (-108).dp))
-        Box(Modifier.offset(x = 18.dp, y = (-58).dp).size(width = 54.dp, height = 8.dp).clip(RoundedCornerShape(50)).background(Color(red = 0.40f, green = 0.28f, blue = 0.18f)))
+        Box(Modifier.offset(x = 18.dp, y = (-58).dp).rotate(-18f).size(width = 54.dp, height = 8.dp).clip(RoundedCornerShape(50)).background(Color(red = 0.40f, green = 0.28f, blue = 0.18f)))
     }
 }
 

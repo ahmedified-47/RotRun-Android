@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -72,6 +73,7 @@ class RotRunRepository(context: Context) {
     val backend = Backend(app, this)
     private val billing = PlayBilling(app, ::applyEntitlement, ::toast)
     private val launchFinished = AtomicBoolean(false)
+    private var usageGeneration = 0
 
     fun attach(activity: Activity) {
         host = WeakReference(activity)
@@ -142,17 +144,29 @@ class RotRunRepository(context: Context) {
 
     fun refreshUsage() {
         rollOpenDay()
+        val generation = ++usageGeneration
+        val previous = _usage.value
+        val saved = _state.value
         _refreshing.value = true
         scope.launch {
-            val snapshot = withContext(Dispatchers.Default) { UsageReader.read(app, _state.value) }
-            _usage.value = snapshot
+            val snapshot = try {
+                withContext(Dispatchers.Default) { UsageReader.read(app, saved) }
+            } catch (cancelled: CancellationException) {
+                if (generation == usageGeneration) _refreshing.value = false
+                throw cancelled
+            } catch (_: Exception) {
+                previous
+            }
+            if (generation != usageGeneration) return@launch
+            val shown = mergeHomeUsage(previous, snapshot)
+            _usage.value = shown
             publishWidget()
             _refreshing.value = false
             withContext(Dispatchers.IO) {
-                backend.syncScreenTime(snapshot)
+                backend.syncScreenTime(shown)
                 backend.syncStreak(_state.value)
-                if (snapshot.authorized) {
-                    val xp = Scoring.dailyXp((snapshot.todaySeconds / 60).toInt(), _state.value.goalHours * 60, _state.value.askBrainCount, _state.value.ransomDebit)
+                if (shown.authorized) {
+                    val xp = Scoring.dailyXp((shown.todaySeconds / 60).toInt(), _state.value.goalHours * 60, _state.value.askBrainCount, _state.value.ransomDebit)
                     backend.syncXp(xp, "You")
                 }
             }

@@ -387,6 +387,42 @@ private fun eventMarks(manager: UsageStatsManager, start: Long, end: Long): List
     return marks
 }
 
+/**
+ * Home figures to draw after a refresh.
+ * A missing, failed, or all-zero read keeps the last measured numbers so the screen
+ * does not flash empty. A positive new figure replaces that field.
+ */
+internal fun mergeHomeUsage(current: UsageSnapshot, next: UsageSnapshot): UsageSnapshot {
+    if (!next.authorized) return if (current.authorized) current else next
+    if (!current.authorized) return next
+    val today = next.todaySeconds.takeIf { it > 0L } ?: current.todaySeconds
+    val drain = next.drainSeconds.takeIf { it > 0L } ?: current.drainSeconds
+    val pickups = next.pickups.takeIf { it > 0 } ?: current.pickups
+    val avg = next.avgSeconds.takeIf { it > 0L } ?: current.avgSeconds
+    val offenders = next.offenders.filter { it.seconds > 0L }.ifEmpty { current.offenders }
+    val week = when {
+        next.week.any { it.seconds > 0L } -> next.week
+        current.week.any { it.seconds > 0L } -> current.week
+        else -> next.week
+    }
+    val hourlyToday = if (next.hourlyToday.any { it > 0f }) next.hourlyToday else current.hourlyToday
+    val hourlyAvg = if (next.hourlyAvg.any { it > 0f }) next.hourlyAvg else current.hourlyAvg
+    return next.copy(
+        authorized = true,
+        todaySeconds = today,
+        drainSeconds = drain,
+        pickups = pickups,
+        avgSeconds = avg,
+        diffPercent = Scoring.diffPercent(today, avg),
+        belowAverage = today <= avg,
+        aheadOfPace = Scoring.aheadOfPace(today, avg),
+        offenders = offenders,
+        hourlyToday = hourlyToday,
+        hourlyAvg = hourlyAvg,
+        week = week,
+    )
+}
+
 /** Today's rows only, summed when the platform splits the day into more than one record. */
 internal fun visibleSecondsOnDay(slices: List<UsageSlice>, packageName: String, day: LocalDate, zone: ZoneId): Long =
     dedupedUsageSlices(slices.filter { it.packageName == packageName })
