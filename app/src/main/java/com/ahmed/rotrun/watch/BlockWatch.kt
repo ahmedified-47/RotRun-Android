@@ -107,6 +107,11 @@ class BlockWatchService : Service() {
             FocusWidgetProvider.updateAll(this)
         }
         startInForeground(watching)
+        if (AskLaunchPolicy.leaveOverlayUp(AskBrainLaunch.launching)) return
+        if (!AskLaunchPolicy.showShield(ShieldSession.chatPackage() != null)) {
+            hideOverlay()
+            return
+        }
         if (BlockAccessibilityService.connected && BlockAccessibilityService.covering) {
             hideOverlay()
             return
@@ -166,7 +171,6 @@ class BlockWatchService : Service() {
     }
 
     private fun openAsk(packageName: String, label: String) {
-        hideOverlay()
         AskBrainLaunch.open(this, packageName, label)
     }
 

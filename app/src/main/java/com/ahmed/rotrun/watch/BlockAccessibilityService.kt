@@ -42,6 +42,11 @@ class BlockAccessibilityService : AccessibilityService() {
 
     private fun consider(packageName: String) {
         if (!RotRunGraph.ready()) return
+        if (AskLaunchPolicy.leaveOverlayUp(AskBrainLaunch.launching)) return
+        if (!AskLaunchPolicy.showShield(ShieldSession.chatPackage() != null)) {
+            hide()
+            return
+        }
         if (ShieldSession.blocks(packageName)) {
             hide()
             if (ShieldSession.openedInto(packageName) && !repoReadyBlocked(packageName)) ShieldSession.release()
@@ -88,7 +93,6 @@ class BlockAccessibilityService : AccessibilityService() {
     }
 
     private fun openAsk(packageName: String, label: String) {
-        hide()
         AskBrainLaunch.open(this, packageName, label)
     }
 

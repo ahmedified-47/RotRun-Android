@@ -3,6 +3,7 @@ package com.ahmed.rotrun
 import android.app.Application
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -29,6 +30,10 @@ class RotRunApplication : Application() {
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (Build.VERSION.SDK_INT >= 27) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+        }
         enableEdgeToEdge()
         if (RotRunGraph.ready()) RotRunGraph.repo.attach(this)
         handle(intent)
@@ -38,12 +43,19 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         if (RotRunGraph.ready()) RotRunGraph.repo.attach(this)
+        openHeldChat()
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         handle(intent)
+    }
+
+    private fun openHeldChat() {
+        if (ShieldSession.chatPackage() == null) return
+        AskBrainLaunch.cancel(this)
+        if (RotRunGraph.ready()) RotRunGraph.repo.requestChat()
     }
 
     private fun handle(intent: Intent?) {
