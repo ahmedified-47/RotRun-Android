@@ -613,6 +613,12 @@ class RotRunRepository(context: Context) {
         return next
     }
 
+    /** Same re-check RootView runs when Rewards or App Icon opens. */
+    fun recheckRewards() {
+        val next = clampRewards(_state.value)
+        if (next != _state.value) update { next }
+    }
+
     private fun expireFocus(current: SavedState, force: Boolean = false): SavedState {
         val session = current.focus ?: return current
         val elapsed = System.currentTimeMillis() - session.startedAt

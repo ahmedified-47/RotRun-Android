@@ -12,8 +12,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -41,7 +39,6 @@ import androidx.compose.material.icons.filled.QuestionMark
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -62,19 +59,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ahmed.rotrun.BuildConfig
 import com.ahmed.rotrun.R
-import com.ahmed.rotrun.icon.LauncherIcons
 import com.ahmed.rotrun.data.DeviceAccessReader
 import com.ahmed.rotrun.data.RotRunRepository
 import com.ahmed.rotrun.data.SavedState
 import com.ahmed.rotrun.data.TrackedApp
-import com.ahmed.rotrun.data.iconStreak
-import com.ahmed.rotrun.data.themeStreak
 import com.ahmed.rotrun.logic.BrainHealthLevel
 import com.ahmed.rotrun.logic.Products
 import com.ahmed.rotrun.logic.SupportCopy
@@ -405,109 +398,6 @@ private fun StyleToggle(title: String, subtitle: String, on: Boolean, change: (B
             Text(subtitle, color = chrome.muted, fontSize = 13.sp)
         }
         GreenSwitch(on, change)
-    }
-}
-
-@Composable
-private fun RewardsPage(state: SavedState, repo: RotRunRepository, onBack: () -> Unit) {
-    val chrome = rot()
-    val next = Looks.rewards.firstOrNull { reward -> reward.days != null && state.streak < reward.days }
-    val progress = if (next?.days == null) 1f else (state.streak.toFloat() / next.days).coerceIn(0f, 1f)
-    BackHeader("Rewards", onBack)
-    Text("Keep your streak alive to unlock Home looks, streak badges, and app icons.", color = chrome.muted, modifier = Modifier.padding(horizontal = 20.dp))
-    SettingsCard {
-        Column(Modifier.padding(16.dp)) {
-            Text("${state.streak.coerceAtLeast(1)}-day streak", color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 22.sp)
-            Text(
-                if (next == null) "Every streak reward is unlocked." else "Next: ${next.title} at ${next.days} days",
-                color = chrome.muted,
-                modifier = Modifier.padding(top = 4.dp, bottom = 10.dp),
-            )
-            LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth().height(8.dp).clip(CircleShape), color = chrome.blue, trackColor = chrome.inset)
-        }
-    }
-    Text("Themes", color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 22.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp).fillMaxWidth())
-    Text("Set a look for Home. Streak themes also change your Home brain and streak badge.", color = chrome.muted, modifier = Modifier.padding(horizontal = 20.dp))
-    Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(chrome.card)) {
-        Looks.rewards.forEachIndexed { index, reward ->
-            val unlocked = reward.days == null || state.streak >= reward.days
-            val look = Looks.byId(reward.themeId)
-            val selected = state.theme == reward.themeId
-            if (index > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(chrome.line))
-            Row(
-                Modifier.fillMaxWidth().clickable(enabled = unlocked) {
-                    repo.update { it.copy(theme = reward.themeId) }
-                    repo.toast("Using ${look.title}")
-                }.padding(14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)).background(look.canvas), contentAlignment = Alignment.Center) {
-                    if (unlocked) CartoonBrain(look.brain, Modifier.size(40.dp), animated = false)
-                    else Icon(Icons.Default.Lock, contentDescription = "Locked", tint = Color.White)
-                }
-                Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                    Text(look.title, color = if (unlocked) chrome.ink else chrome.muted, fontWeight = FontWeight.Bold, fontSize = 17.sp)
-                    if (!unlocked) Text("Unlock at ${reward.days}-day streak", color = chrome.muted, fontSize = 13.sp)
-                }
-                if (!unlocked) {
-                    Icon(Icons.Default.Lock, contentDescription = "Locked", tint = chrome.muted)
-                } else if (selected) {
-                    Box(Modifier.size(26.dp).clip(CircleShape).background(chrome.blue), contentAlignment = Alignment.Center) {
-                        Text("✓", color = Color.White, fontWeight = FontWeight.Bold)
-                    }
-                } else {
-                    Box(Modifier.size(26.dp).clip(CircleShape).border(1.5.dp, chrome.muted, CircleShape))
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun IconPage(state: SavedState, repo: RotRunRepository, onBack: () -> Unit) {
-    val chrome = rot()
-    BackHeader("App Icon", onBack)
-    Text(
-        "Use any unlocked icon on your Home Screen.",
-        color = chrome.muted,
-        modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
-    )
-    Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(chrome.card)) {
-        Looks.icons.forEachIndexed { index, (name, need) ->
-            val unlocked = need == null || state.streak >= need
-            val selected = state.appIcon == name
-            if (index > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(chrome.line))
-            Row(
-                Modifier.fillMaxWidth().clickable {
-                    if (!unlocked) repo.toast("Unlock at $need-day streak")
-                    else {
-                        repo.update { it.copy(appIcon = name) }
-                        repo.toast("Launcher icon set to $name")
-                    }
-                }.padding(14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Image(
-                    painterResource(LauncherIcons.preview(name)),
-                    contentDescription = name,
-                    modifier = Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)),
-                    alpha = if (unlocked) 1f else 0.45f,
-                )
-                Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                    Text(name, color = if (unlocked) chrome.ink else chrome.muted, fontWeight = FontWeight.Bold, fontSize = 17.sp)
-                    if (!unlocked) Text("Unlock at $need-day streak", color = chrome.muted, fontSize = 13.sp)
-                }
-                if (!unlocked) {
-                    Icon(Icons.Default.Lock, contentDescription = "Locked", tint = chrome.muted)
-                } else if (selected) {
-                    Box(Modifier.size(26.dp).clip(CircleShape).background(chrome.blue), contentAlignment = Alignment.Center) {
-                        Text("✓", color = Color.White, fontWeight = FontWeight.Bold)
-                    }
-                } else {
-                    Box(Modifier.size(26.dp).clip(CircleShape).border(1.5.dp, chrome.muted, CircleShape))
-                }
-            }
-        }
     }
 }
 
