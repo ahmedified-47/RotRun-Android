@@ -201,11 +201,11 @@ private fun MainShell(repo: RotRunRepository) {
         LaunchedEffect(state.focus?.startedAt) {
             if (state.focus != null) focusShown = state.focus
         }
+        AnimatedVisibility(visible = state.focus != null && !focusSheet, modifier = Modifier.fillMaxSize(), enter = fadeIn(tween(250)), exit = fadeOut(tween(250))) {
+            focusShown?.let { FocusOverlay(it, repo) }
+        }
         AnimatedVisibility(visible = focusSheet, modifier = Modifier.fillMaxSize(), enter = fadeIn(tween(250)), exit = fadeOut(tween(250))) {
             FocusChooser(onClose = { focusSheet = false }, repo = repo)
-        }
-        AnimatedVisibility(visible = state.focus != null, modifier = Modifier.fillMaxSize(), enter = fadeIn(tween(250)), exit = fadeOut(tween(250))) {
-            focusShown?.let { FocusOverlay(it, repo) }
         }
         if (talk) TalkSheet(repo) { talk = false }
         if (upgrade && PaywallGate.shows && !state.premiumActive()) {

@@ -38,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
@@ -90,18 +91,19 @@ fun FocusChooser(onClose: () -> Unit, repo: RotRunRepository) {
                     Icon(Icons.Default.Close, contentDescription = "Close", tint = Color(red = 0.16f, green = 0.20f, blue = 0.28f), modifier = Modifier.size(16.dp))
                 }
             }
-            Text(
-                "Heal your brain\nwith Focus.",
-                color = Ink,
-                fontFamily = Nunito,
-                fontWeight = FontWeight.Black,
-                fontSize = 34.sp,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-            )
-            HangingBrain(Modifier.padding(top = 4.dp).align(Alignment.CenterHorizontally), 0.82f)
-            OutlinedClock(if (choice.minutes == null) "Open" else "${choice.minutes}:00", Modifier.padding(horizontal = 24.dp))
-            Spacer(Modifier.weight(1f))
+            Column(Modifier.weight(1f).fillMaxWidth().clipToBounds(), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    "Heal your brain\nwith Focus.",
+                    color = Ink,
+                    fontFamily = Nunito,
+                    fontWeight = FontWeight.Black,
+                    fontSize = 34.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                )
+                HangingBrain(Modifier.padding(top = 4.dp), 0.72f)
+                OutlinedClock(if (choice.minutes == null) "Open" else "${choice.minutes}:00", Modifier.padding(horizontal = 24.dp))
+            }
             Column(
                 Modifier.padding(horizontal = 16.dp).padding(bottom = 16.dp).clip(RoundedCornerShape(28.dp)).background(Color.White.copy(alpha = 0.94f)).padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),

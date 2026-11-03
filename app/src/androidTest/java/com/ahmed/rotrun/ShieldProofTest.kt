@@ -48,8 +48,10 @@ class ShieldProofTest {
     fun pickerSavesAnAppAndSettingsAreCards() {
         launchHome()
         device.findObject(By.text("Block")).click()
-        assertTrue(settle(20_000) { device.hasObject(By.text("Choose apps to block")) })
-        device.findObject(By.text("Choose apps to block")).click()
+        assertTrue(settle(20_000) { device.hasObject(By.text("Edit")) })
+        device.findObject(By.text("Edit")).click()
+        assertTrue(settle(20_000) { device.hasObject(By.text("Add More Apps")) })
+        device.findObject(By.text("Add More Apps")).click()
         assertTrue("picker never opened", settle(20_000) { device.hasObject(By.text("Search apps")) })
         shot("picker")
         val box = device.findObject(By.checkable(true))

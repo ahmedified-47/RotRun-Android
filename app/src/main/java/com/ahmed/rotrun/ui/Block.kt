@@ -53,7 +53,6 @@ import com.ahmed.rotrun.data.DeviceAccess
 import com.ahmed.rotrun.data.RotRunRepository
 import com.ahmed.rotrun.data.SavedState
 import com.ahmed.rotrun.data.TrackedApp
-import com.ahmed.rotrun.logic.BlockRules
 import com.ahmed.rotrun.logic.Presets
 import com.ahmed.rotrun.logic.Scoring
 
@@ -68,10 +67,9 @@ fun BlockScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunRepo
     val context = LocalContext.current
     val access by repo.access.collectAsState()
     var disclose by remember { mutableStateOf(false) }
-    var pickBrick by remember { mutableStateOf(false) }
     val brick = state.blockers.firstOrNull { it.id == "brick" }
-    LaunchedEffect(editing?.id, editingList?.id, pickBrick) {
-        if (editing != null || editingList != null || pickBrick) repo.loadInstalled()
+    LaunchedEffect(editing?.id, editingList?.id) {
+        if (editing != null || editingList != null) repo.loadInstalled()
     }
     val scheduled = state.blockers.filter { it.id != "brick" }
     Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
@@ -96,16 +94,6 @@ fun BlockScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunRepo
         }, onBattery = {
             DeviceAccessReader.open(context, DeviceAccessReader.batteryIntent(context))
         })
-        Text(
-            "Choose apps to block",
-            color = Color.White,
-            fontWeight = FontWeight.Bold,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(top = 12.dp).fillMaxWidth().clip(CircleShape).background(chrome.blue).clickable {
-                repo.loadInstalled()
-                pickBrick = true
-            }.padding(vertical = 14.dp),
-        )
         SectionLabel("Blocking Now", chrome.muted)
         if (brick != null) {
             BlockerCard(brick, listName(state, brick), active = true, onClick = { editing = brick }, onList = { listsOpen = true })
@@ -178,7 +166,7 @@ fun BlockScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunRepo
                         color = chrome.danger,
                         fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(top = 8.dp).fillMaxWidth().clickable { confirmList = list }.padding(vertical = 6.dp),
+                        modifier = Modifier.padding(top = 8.dp).fillMaxWidth().listDeleteBar().clickable { confirmList = list },
                     )
                 }
             }
@@ -208,19 +196,6 @@ fun BlockScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunRepo
             dismissButton = { TextButton(onClick = { disclose = false }) { Text("Not now") } },
         )
     }
-    if (pickBrick) {
-        val current = brick ?: Blocker(id = "brick", name = "Brick Mode", mode = "allDay")
-        AppPickerDialog(
-            apps = installed,
-            selected = current.apps,
-            onDismiss = { pickBrick = false },
-            onSave = { chosen ->
-                if (repo.saveBlocker(current.copy(apps = chosen))) pickBrick = false
-            },
-            exceedsCap = { proposed -> repo.wouldExceedFreeCap(proposed, exceptBlocker = current.id, exceptList = current.appListId) },
-            onUpgrade = { repo.toast(BlockRules.FREE_LIMIT_MESSAGE); repo.requestPaywall() },
-        )
-    }
     if (listsOpen) {
         BottomSheet(onDismiss = { listsOpen = false }) {
             Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp)) {
@@ -246,10 +221,10 @@ fun BlockScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunRepo
                             color = chrome.danger,
                             fontWeight = FontWeight.SemiBold,
                             textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(top = 8.dp).fillMaxWidth().clickable {
+                            modifier = Modifier.padding(top = 8.dp).fillMaxWidth().listDeleteBar().clickable {
                                 listsOpen = false
                                 confirmList = list
-                            }.padding(vertical = 6.dp),
+                            },
                         )
                     }
                 }
@@ -279,8 +254,6 @@ fun BlockScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunRepo
                 saved
             },
             onDelete = { confirmDelete = it },
-            exceedsCap = { proposed, exceptBlocker, exceptList -> repo.wouldExceedFreeCap(proposed, exceptBlocker, exceptList) },
-            onUpgrade = { repo.toast(BlockRules.FREE_LIMIT_MESSAGE); repo.requestPaywall() },
         )
     }
     editingList?.let { list ->
@@ -288,8 +261,6 @@ fun BlockScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunRepo
             list,
             installed,
             onDismiss = { editingList = null },
-            exceedsCap = { proposed -> repo.wouldExceedFreeCap(proposed, exceptList = list.id) },
-            onUpgrade = { repo.toast(BlockRules.FREE_LIMIT_MESSAGE); repo.requestPaywall() },
         ) { list ->
             val saved = repo.saveList(list)
             if (saved) editingList = null
@@ -414,8 +385,6 @@ private fun BlockerEditor(
     onDismiss: () -> Unit,
     onSave: (Blocker) -> Boolean,
     onDelete: (Blocker) -> Unit,
-    exceedsCap: (Set<String>, String?, String?) -> Boolean,
-    onUpgrade: () -> Unit,
 ) {
     var draft by remember(initial.id) { mutableStateOf(initial) }
     var picking by remember { mutableStateOf(false) }
@@ -513,7 +482,6 @@ private fun BlockerEditor(
         }
     }
     if (picking) {
-        val reserved = draft.modeApps.filterKeys { it != draft.mode }.values.flatten().map { it.packageName }.toSet()
         AppPickerDialog(
             apps = installed,
             selected = draft.apps,
@@ -522,13 +490,6 @@ private fun BlockerEditor(
                 val next = draft.copy(apps = chosen, modeApps = draft.modeApps + (draft.mode to chosen))
                 draft = next
                 if (onSave(next)) picking = false
-            },
-            exceedsCap = { proposed ->
-                exceedsCap(proposed + reserved, draft.id, if (draft.id == "brick") draft.appListId else null)
-            },
-            onUpgrade = {
-                picking = false
-                onUpgrade()
             },
         )
     }
@@ -539,8 +500,6 @@ private fun ListEditor(
     initial: AppList,
     installed: List<TrackedApp>,
     onDismiss: () -> Unit,
-    exceedsCap: (Set<String>) -> Boolean,
-    onUpgrade: () -> Unit,
     onSave: (AppList) -> Boolean,
 ) {
     var draft by remember(initial.id) { mutableStateOf(initial) }
@@ -593,8 +552,6 @@ private fun ListEditor(
                 draft = next
                 if (onSave(next)) picking = false
             },
-            exceedsCap = exceedsCap,
-            onUpgrade = { picking = false; onUpgrade() },
         )
     }
 }
@@ -611,6 +568,15 @@ private fun modeLabel(mode: String) = when (mode) {
     "schedule" -> "Schedule"
     "dailyLimit" -> "Daily Limit"
     else -> "All Day"
+}
+
+@Composable
+private fun Modifier.listDeleteBar(): Modifier {
+    val chrome = rot()
+    val shape = RoundedCornerShape(12.dp)
+    return this.then(
+        Modifier.border(1.dp, chrome.muted, shape).clip(shape).padding(vertical = 10.dp),
+    )
 }
 
 @Composable
