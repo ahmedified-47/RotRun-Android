@@ -166,22 +166,8 @@ class BlockWatchService : Service() {
     }
 
     private fun openAsk(packageName: String, label: String) {
-        ShieldSession.hold(packageName)
         hideOverlay()
-        BlockAccessibilityService.dismiss()
-        if (!RotRunGraph.ready()) {
-            ShieldSession.release()
-            return
-        }
-        val mode = RotRunGraph.repo.pickStyle() ?: "standard"
-        val open = Intent(this, InterventionActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-            putExtra(InterventionActivity.EXTRA_APP, label)
-            putExtra(InterventionActivity.EXTRA_PACKAGE, packageName)
-            putExtra(InterventionActivity.EXTRA_MODE, mode)
-        }
-        val started = runCatching { startActivity(open) }.isSuccess
-        if (!started) ShieldSession.release()
+        AskBrainLaunch.open(this, packageName, label)
     }
 
     private fun hideOverlay() {

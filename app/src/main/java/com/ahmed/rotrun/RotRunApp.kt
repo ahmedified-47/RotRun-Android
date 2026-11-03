@@ -14,6 +14,8 @@ import com.ahmed.rotrun.data.RotRunRepository
 import com.ahmed.rotrun.ui.InterventionFlow
 import com.ahmed.rotrun.ui.RotRunRoot
 import com.ahmed.rotrun.ui.RotRunTheme
+import com.ahmed.rotrun.watch.AskBrainLaunch
+import com.ahmed.rotrun.watch.ShieldSession
 
 class RotRunApplication : Application() {
     override fun onCreate() {
@@ -45,6 +47,13 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handle(intent: Intent?) {
+        if (intent?.getBooleanExtra(AskBrainLaunch.EXTRA_OPEN_CHAT, false) == true) {
+            val held = intent.getStringExtra(AskBrainLaunch.EXTRA_HELD_PACKAGE).orEmpty()
+            if (held.isNotBlank()) ShieldSession.holdForChat(held)
+            AskBrainLaunch.cancel(this)
+            intent.removeExtra(AskBrainLaunch.EXTRA_OPEN_CHAT)
+            if (RotRunGraph.ready()) RotRunGraph.repo.requestChat()
+        }
         val uri = intent?.data ?: return
         if (uri.scheme != "rotrun") return
         val repo = RotRunGraph.repo

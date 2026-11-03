@@ -35,6 +35,7 @@ import androidx.glance.layout.size
 import androidx.glance.layout.width
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
+import androidx.glance.text.TextAlign
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
 import com.ahmed.rotrun.MainActivity
@@ -92,15 +93,15 @@ private fun IdleSmall(context: Context, white: TextStyle) {
         }
         Spacer(GlanceModifier.height(8.dp))
         Row(GlanceModifier.fillMaxWidth()) {
-            DurationButton(context, 15, GlanceModifier.defaultWeight())
+            DurationButton(context, 15, 13, 7, GlanceModifier.defaultWeight())
             Spacer(GlanceModifier.width(6.dp))
-            DurationButton(context, 30, GlanceModifier.defaultWeight())
+            DurationButton(context, 30, 13, 7, GlanceModifier.defaultWeight())
         }
         Spacer(GlanceModifier.height(6.dp))
         Row(GlanceModifier.fillMaxWidth()) {
-            DurationButton(context, 45, GlanceModifier.defaultWeight())
+            DurationButton(context, 45, 13, 7, GlanceModifier.defaultWeight())
             Spacer(GlanceModifier.width(6.dp))
-            DurationButton(context, 60, GlanceModifier.defaultWeight())
+            DurationButton(context, 60, 13, 7, GlanceModifier.defaultWeight())
         }
     }
 }
@@ -113,14 +114,17 @@ private fun IdleMedium(context: Context, white: TextStyle) {
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Image(provider = ImageProvider(R.drawable.rot_mascot), contentDescription = "Rot", modifier = GlanceModifier.size(72.dp))
+            Spacer(GlanceModifier.height(6.dp))
             Text("Focus Mode", style = white.copy(fontSize = 15.sp, fontWeight = FontWeight.Bold))
         }
-        Column(GlanceModifier.defaultWeight().padding(start = 8.dp)) {
+        Spacer(GlanceModifier.width(14.dp))
+        Column(GlanceModifier.defaultWeight()) {
             Text("Heal your brain", style = white.copy(fontSize = 13.sp, color = ColorProvider(Color.White.copy(alpha = 0.8f))))
             Spacer(GlanceModifier.height(10.dp))
             Row(GlanceModifier.fillMaxWidth()) {
-                listOf(15, 30, 45, 60).forEach { minutes ->
-                    DurationButton(context, minutes, GlanceModifier.defaultWeight().padding(end = 6.dp))
+                listOf(15, 30, 45, 60).forEachIndexed { index, minutes ->
+                    if (index > 0) Spacer(GlanceModifier.width(8.dp))
+                    DurationButton(context, minutes, 15, 9, GlanceModifier.defaultWeight())
                 }
             }
         }
@@ -158,14 +162,19 @@ private fun Active(context: Context, white: TextStyle, medium: Boolean, started:
 }
 
 @Composable
-private fun DurationButton(context: Context, minutes: Int, modifier: GlanceModifier) {
+private fun DurationButton(context: Context, minutes: Int, font: Int, vertical: Int, modifier: GlanceModifier) {
     Text(
         "${minutes}m",
-        style = TextStyle(color = ColorProvider(Color.White), fontSize = 13.sp, fontWeight = FontWeight.Bold),
+        style = TextStyle(
+            color = ColorProvider(Color.White),
+            fontSize = font.sp,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+        ),
         modifier = modifier
-            .padding(vertical = 7.dp)
             .cornerRadius(20.dp)
             .background(ColorProvider(Color(0xFF217AFF)))
+            .padding(vertical = vertical.dp)
             .clickable(actionStartActivity(focusIntent(context, minutes))),
     )
 }
@@ -174,7 +183,12 @@ private fun DurationButton(context: Context, minutes: Int, modifier: GlanceModif
 private fun EndButton(context: Context, fill: Boolean) {
     Text(
         "End Focus",
-        style = TextStyle(color = ColorProvider(Color(0xFF217AFF)), fontSize = if (fill) 13.sp else 14.sp, fontWeight = FontWeight.Bold),
+        style = TextStyle(
+            color = ColorProvider(Color(0xFF217AFF)),
+            fontSize = if (fill) 13.sp else 14.sp,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+        ),
         modifier = (if (fill) GlanceModifier.fillMaxWidth() else GlanceModifier)
             .cornerRadius(20.dp)
             .background(ColorProvider(Color.White))

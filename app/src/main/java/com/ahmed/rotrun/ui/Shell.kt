@@ -65,6 +65,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import com.ahmed.rotrun.data.DeviceAccessReader
 import com.ahmed.rotrun.data.RotRunRepository
 import com.ahmed.rotrun.data.UiPulse
+import com.ahmed.rotrun.watch.ShieldSession
 import com.ahmed.rotrun.logic.BrainHealthLevel
 import com.ahmed.rotrun.logic.PaywallGate
 import com.ahmed.rotrun.logic.PlayCatalog
@@ -149,13 +150,17 @@ private fun MainShell(repo: RotRunRepository) {
         if (PaywallGate.shows && !repo.state.value.premiumActive() && !PlayCatalog.purchasing.value) upgrade = true
     }
     LaunchedEffect(Unit) {
+        if (repo.takeChatRequest()) talk = true
         repo.pulses.collect { pulse ->
             when (pulse) {
                 UiPulse.OpenFocusChooser -> focusSheet = true
                 UiPulse.ShowAudioSlap -> audio = true
                 UiPulse.OpenPaywall -> upgrade = true
                 UiPulse.ClosePaywall -> upgrade = false
-                UiPulse.OpenChat -> talk = true
+                UiPulse.OpenChat -> {
+                    repo.takeChatRequest()
+                    talk = true
+                }
             }
         }
     }
@@ -207,7 +212,10 @@ private fun MainShell(repo: RotRunRepository) {
         AnimatedVisibility(visible = focusSheet, modifier = Modifier.fillMaxSize(), enter = fadeIn(tween(250)), exit = fadeOut(tween(250))) {
             FocusChooser(onClose = { focusSheet = false }, repo = repo)
         }
-        if (talk) TalkSheet(repo) { talk = false }
+        if (talk) TalkSheet(repo) {
+            talk = false
+            ShieldSession.endChat()
+        }
         if (upgrade && PaywallGate.shows && !state.premiumActive()) {
             Box(Modifier.fillMaxSize().background(rot().page).statusBarsPadding().verticalScroll(rememberScrollState())) {
                 GetAccessPaywall(

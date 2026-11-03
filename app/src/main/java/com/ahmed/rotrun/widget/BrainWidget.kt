@@ -40,6 +40,8 @@ import androidx.glance.unit.ColorProvider
 import com.ahmed.rotrun.MainActivity
 import com.ahmed.rotrun.R
 import com.ahmed.rotrun.logic.Scoring
+import com.ahmed.rotrun.logic.WidgetGlyph
+import com.ahmed.rotrun.logic.WidgetGlyphs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -56,14 +58,17 @@ class BrainGlanceWidget : GlanceAppWidget() {
             val parts = line.split("\t")
             val name = parts.getOrNull(0)?.trim().orEmpty()
             val seconds = parts.getOrNull(1)?.toLongOrNull() ?: return@mapNotNull null
-            if (name.isEmpty() || seconds <= 0L) null else name to seconds
+            val packageName = parts.getOrNull(2)?.trim().orEmpty()
+            if (name.isEmpty() || seconds <= 0L) null else WidgetOffender(name, seconds, packageName)
         }.toList()
         provideContent { BrainWidgetContent(context, night, known, health, offenders) }
     }
 }
 
+private data class WidgetOffender(val label: String, val seconds: Long, val packageName: String)
+
 @Composable
-private fun BrainWidgetContent(context: Context, night: Boolean, known: Boolean, health: Int, offenders: List<Pair<String, Long>>) {
+private fun BrainWidgetContent(context: Context, night: Boolean, known: Boolean, health: Int, offenders: List<WidgetOffender>) {
     val size = LocalSize.current
     val large = size.height > 220.dp
     val title = if (night) ColorProvider(Color(0xFFE6E6E6)) else ColorProvider(Color.White)
@@ -83,13 +88,13 @@ private fun BrainWidgetContent(context: Context, night: Boolean, known: Boolean,
                     HealthColumn(known, health, 52, 12, title, secondary, night, showBrain = false, modifier = GlanceModifier.padding(start = 14.dp).defaultWeight())
                 }
                 Spacer(GlanceModifier.height(14.dp))
-                Offenders(offenders, 5, 26, title, secondary)
+                Offenders(offenders, 5, 26, 8, title, secondary)
             }
         } else {
             Row(modifier = GlanceModifier.fillMaxSize(), verticalAlignment = Alignment.Top) {
                 HealthColumn(known, health, 34, 10, title, secondary, night, showBrain = true, modifier = GlanceModifier.defaultWeight())
                 Spacer(GlanceModifier.width(14.dp))
-                Offenders(offenders, 3, 22, title, secondary, modifier = GlanceModifier.defaultWeight())
+                Offenders(offenders, 3, 22, 7, title, secondary, modifier = GlanceModifier.defaultWeight())
             }
         }
     }
@@ -112,7 +117,7 @@ private fun HealthColumn(
             Image(provider = ImageProvider(R.drawable.rot_mascot), contentDescription = "Rot", modifier = GlanceModifier.size(52.dp))
             Spacer(GlanceModifier.height(6.dp))
         }
-        Text("Brain Health", style = TextStyle(color = secondary, fontSize = 12.sp, fontWeight = FontWeight.Medium))
+        Text("Brain Health", style = TextStyle(color = secondary, fontSize = 12.sp, fontWeight = FontWeight.Bold))
         Text(
             if (known) "$health%" else "Not in yet",
             style = TextStyle(color = title, fontSize = if (known) percentSize.sp else (percentSize * 0.55f).sp, fontWeight = FontWeight.Bold),
@@ -129,7 +134,7 @@ private fun HealthBar(health: Int?, height: Int, night: Boolean) {
     val fill = if (night) Color(0xFF217AFF) else Color.White
     LinearProgressIndicator(
         progress = (health ?: 0) / 100f,
-        modifier = GlanceModifier.fillMaxWidth().height(height.dp),
+        modifier = GlanceModifier.fillMaxWidth().height(height.dp).cornerRadius((height / 2f).dp),
         color = ColorProvider(fill),
         backgroundColor = ColorProvider(track),
     )
@@ -137,9 +142,10 @@ private fun HealthBar(health: Int?, height: Int, night: Boolean) {
 
 @Composable
 private fun Offenders(
-    offenders: List<Pair<String, Long>>,
+    offenders: List<WidgetOffender>,
     limit: Int,
     icon: Int,
+    rowSpacing: Int,
     title: ColorProvider,
     secondary: ColorProvider,
     modifier: GlanceModifier = GlanceModifier,
@@ -147,24 +153,52 @@ private fun Offenders(
     val apps = offenders.take(limit)
     Column(modifier) {
         Text("Top Offenders", style = TextStyle(color = secondary, fontSize = 12.sp, fontWeight = FontWeight.Bold))
-        Spacer(GlanceModifier.height(6.dp))
         if (apps.isEmpty()) {
-            Text("Not in yet", style = TextStyle(color = secondary, fontSize = 13.sp, fontWeight = FontWeight.Medium))
+            Text(
+                "Not in yet",
+                style = TextStyle(color = secondary, fontSize = 13.sp, fontWeight = FontWeight.Medium),
+                modifier = GlanceModifier.padding(top = (rowSpacing + 2).dp),
+            )
         } else {
-            apps.forEach { (name, seconds) ->
-                Row(modifier = GlanceModifier.fillMaxWidth().padding(bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        GlanceModifier.size(icon.dp).cornerRadius((icon * 0.28f).dp).background(ColorProvider(Color(0xFF8E8E93))),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(name.take(1).uppercase(), style = TextStyle(color = ColorProvider(Color.White), fontSize = (icon * 0.42f).sp, fontWeight = FontWeight.Bold))
-                    }
+            apps.forEach { app ->
+                Row(
+                    modifier = GlanceModifier.fillMaxWidth().padding(top = rowSpacing.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Glyph(app, icon)
                     Spacer(GlanceModifier.width(8.dp))
-                    Text(name, style = TextStyle(color = title, fontSize = 13.sp, fontWeight = FontWeight.Medium), maxLines = 1, modifier = GlanceModifier.defaultWeight())
-                    Text(Scoring.formatDuration(seconds), style = TextStyle(color = secondary, fontSize = 12.sp, fontWeight = FontWeight.Medium), maxLines = 1)
+                    Text(app.label, style = TextStyle(color = title, fontSize = 13.sp, fontWeight = FontWeight.Bold), maxLines = 1, modifier = GlanceModifier.defaultWeight())
+                    Text(Scoring.formatDuration(app.seconds), style = TextStyle(color = secondary, fontSize = 12.sp, fontWeight = FontWeight.Bold), maxLines = 1)
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun Glyph(app: WidgetOffender, icon: Int) {
+    val glyph = WidgetGlyphs.forApp(app.label, app.packageName)
+    val background = when (glyph) {
+        WidgetGlyph.Instagram -> R.drawable.glyph_instagram
+        WidgetGlyph.WhatsApp -> R.drawable.glyph_whatsapp
+        WidgetGlyph.Maps -> R.drawable.glyph_maps
+        WidgetGlyph.AppStore -> R.drawable.glyph_appstore
+        WidgetGlyph.Screenshots, WidgetGlyph.Other -> R.drawable.glyph_other
+    }
+    val symbol = when (glyph) {
+        WidgetGlyph.Instagram -> R.drawable.ic_glyph_camera
+        WidgetGlyph.WhatsApp -> R.drawable.ic_glyph_phone
+        WidgetGlyph.Maps -> R.drawable.ic_glyph_map
+        WidgetGlyph.AppStore -> R.drawable.ic_glyph_bag
+        WidgetGlyph.Screenshots -> R.drawable.ic_glyph_viewfinder
+        WidgetGlyph.Other -> R.drawable.ic_glyph_app
+    }
+    val mark = (icon * 0.42f).dp
+    Box(
+        GlanceModifier.size(icon.dp).cornerRadius((icon * 0.28f).dp).background(ImageProvider(background)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Image(provider = ImageProvider(symbol), contentDescription = null, modifier = GlanceModifier.size(mark))
     }
 }
 

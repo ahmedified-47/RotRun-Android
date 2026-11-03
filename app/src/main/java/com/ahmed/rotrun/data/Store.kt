@@ -473,6 +473,21 @@ class RotRunRepository(context: Context) {
         _pulses.tryEmit(UiPulse.OpenFocusChooser)
     }
 
+    @Volatile
+    private var chatPending = false
+
+    /** Talk sheet. Buffered so a launch that arrives before the shell collects still opens chat. */
+    fun requestChat() {
+        chatPending = true
+        _pulses.tryEmit(UiPulse.OpenChat)
+    }
+
+    fun takeChatRequest(): Boolean {
+        if (!chatPending) return false
+        chatPending = false
+        return true
+    }
+
     fun pickStyle(): String? {
         val current = _state.value
         val styles = buildList {
@@ -525,6 +540,7 @@ class RotRunRepository(context: Context) {
             now = ZonedDateTime.now(),
             usageSeconds = seconds,
             windows = windows,
+            chatPackage = com.ahmed.rotrun.watch.ShieldSession.chatPackage(),
         )
     }
 
@@ -621,7 +637,7 @@ class RotRunRepository(context: Context) {
             "Connect usage"
         } else {
             _usage.value.offenders.filter { it.seconds > 0 }.take(5)
-                .joinToString("\n") { "${it.label}\t${it.seconds}" }
+                .joinToString("\n") { "${it.label}\t${it.seconds}\t${it.packageName}" }
                 .ifBlank { "" }
         }
         val focus = current.focus

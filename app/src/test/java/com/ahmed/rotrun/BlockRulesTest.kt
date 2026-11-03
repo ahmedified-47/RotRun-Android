@@ -14,6 +14,8 @@ import com.ahmed.rotrun.logic.Marketing
 import com.ahmed.rotrun.logic.PickerSelection
 import com.ahmed.rotrun.logic.ScreenTimeSync
 import com.ahmed.rotrun.logic.ShieldPalette
+import com.ahmed.rotrun.logic.WidgetGlyph
+import com.ahmed.rotrun.logic.WidgetGlyphs
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -239,6 +241,40 @@ class BlockRulesTest {
     }
 
     @Test
+    fun askBrainChatLeavesThatPackageUnblocked() {
+        val window = BlockRules.Window(setOf("com.instagram.android", "com.whatsapp"), "allDay", allDays, 0, 24, 30)
+        assertFalse(blocked("com.instagram.android", listOf(window), tuesdayMorning, 0, chatPackage = "com.instagram.android"))
+        assertTrue(blocked("com.whatsapp", listOf(window), tuesdayMorning, 0, chatPackage = "com.instagram.android"))
+        assertTrue(blocked("com.instagram.android", listOf(window), tuesdayMorning, 0))
+        assertFalse(
+            BlockRules.isBlocked(
+                packageName = "com.instagram.android",
+                safety = emptySet(),
+                excluded = emptySet(),
+                focus = BlockRules.FocusGate(allApps = true, brainrot = emptySet()),
+                unlockUntil = 0,
+                nowMillis = 1_000,
+                now = tuesdayMorning,
+                usageSeconds = 0,
+                windows = emptyList(),
+                chatPackage = "com.instagram.android",
+            ),
+        )
+    }
+
+    @Test
+    fun widgetGlyphsFollowTheIosNameRules() {
+        assertEquals(WidgetGlyph.Instagram, WidgetGlyphs.forApp("Instagram"))
+        assertEquals(WidgetGlyph.Instagram, WidgetGlyphs.forApp("Photos", "com.instagram.android"))
+        assertEquals(WidgetGlyph.WhatsApp, WidgetGlyphs.forApp("WhatsApp"))
+        assertEquals(WidgetGlyph.Maps, WidgetGlyphs.forApp("Google Maps"))
+        assertEquals(WidgetGlyph.AppStore, WidgetGlyphs.forApp("App Store"))
+        assertEquals(WidgetGlyph.AppStore, WidgetGlyphs.forApp("Play Store", "com.android.vending"))
+        assertEquals(WidgetGlyph.Screenshots, WidgetGlyphs.forApp("Screenshots"))
+        assertEquals(WidgetGlyph.Other, WidgetGlyphs.forApp("Calendar"))
+    }
+
+    @Test
     fun dailyLimitZeroBlocksAsSoonAsTheAppIsOpened() {
         val window = BlockRules.Window(setOf("com.google.android.calendar"), "dailyLimit", allDays, 0, 24, 0)
         assertTrue(blocked("com.google.android.calendar", listOf(window), tuesdayMorning, 0))
@@ -250,6 +286,7 @@ class BlockRulesTest {
         now: ZonedDateTime,
         usageSeconds: Long,
         safety: Set<String> = emptySet(),
+        chatPackage: String? = null,
     ): Boolean = BlockRules.isBlocked(
         packageName = packageName,
         safety = safety,
@@ -260,5 +297,6 @@ class BlockRulesTest {
         now = now,
         usageSeconds = usageSeconds,
         windows = windows,
+        chatPackage = chatPackage,
     )
 }

@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.sp
 import com.ahmed.rotrun.data.RotRunRepository
 import com.ahmed.rotrun.logic.InterventionCopy
 import com.ahmed.rotrun.logic.ShieldPalette
+import com.ahmed.rotrun.watch.AskBrainLaunch
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -67,14 +68,14 @@ fun InterventionFlow(
     val shieldCopy = InterventionCopy.forPackage(packageName, name)
     val shield = if (mode == "shield") shieldColors(shieldCopy.id) else null
     if (mode == "shield") {
+        val context = LocalContext.current
         Column(
             Modifier.fillMaxSize().background(shield?.second ?: Color(0xFF3D1A28)).padding(horizontal = 28.dp, vertical = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Shield(name, packageName, shield?.first ?: Melt.Action, onAsk = {
-                val style = repo.pickStyle() ?: "standard"
-                repo.chargeAskBrain(System.currentTimeMillis())
-                mode = style
+                AskBrainLaunch.open(context, packageName, name)
+                (context as? android.app.Activity)?.finish()
             })
         }
     } else if (mode == "standard") {

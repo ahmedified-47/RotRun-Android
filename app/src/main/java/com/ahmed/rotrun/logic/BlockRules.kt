@@ -42,7 +42,9 @@ object BlockRules {
         now: ZonedDateTime,
         usageSeconds: Long,
         windows: List<Window>,
+        chatPackage: String? = null,
     ): Boolean {
+        if (!chatPackage.isNullOrBlank() && packageName == chatPackage) return false
         if (packageName in safety || packageName in excluded) return false
         if (focus != null) return if (focus.allApps) true else packageName in focus.brainrot
         if (nowMillis < unlockUntil) return false

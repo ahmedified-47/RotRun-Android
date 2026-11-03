@@ -26,20 +26,44 @@ object ShieldSession {
     @Volatile
     private var opened: Boolean = false
 
+    @Volatile
+    private var chatting: Boolean = false
+
     fun hold(packageName: String) {
         if (packageName.isBlank()) return
         held = packageName
         opened = false
+        chatting = false
     }
+
+    /** Talk is open. The shield stays down and this package is not blocked until [endChat]. */
+    fun holdForChat(packageName: String) {
+        if (packageName.isBlank()) return
+        held = packageName
+        opened = false
+        chatting = true
+    }
+
+    fun endChat() {
+        if (!chatting) return
+        chatting = false
+        held = null
+        opened = false
+    }
+
+    fun chatPackage(): String? = if (chatting) held else null
 
     /** Ask my brain finished and the blocked app is coming forward. Keep the shield down. */
     fun markOpened(packageName: String) {
         if (packageName.isBlank()) return
         held = packageName
         opened = true
+        chatting = false
     }
 
+    /** A chat hold survives the intervention activity finishing. */
     fun release() {
+        if (chatting) return
         held = null
         opened = false
     }
