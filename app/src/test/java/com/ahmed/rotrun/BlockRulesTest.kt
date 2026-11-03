@@ -1,8 +1,10 @@
 package com.ahmed.rotrun
 
 import com.ahmed.rotrun.data.AppList
+import com.ahmed.rotrun.data.OnboardingStep
 import com.ahmed.rotrun.data.TrackedApp
 import com.ahmed.rotrun.data.freshState
+import com.ahmed.rotrun.data.stepForward
 import com.ahmed.rotrun.logic.BlockBackup
 import com.ahmed.rotrun.logic.BlockRules
 import com.ahmed.rotrun.logic.VoiceLimits
@@ -225,6 +227,15 @@ class BlockRulesTest {
         assertEquals(300.0, VoiceLimits.cappedSeconds(null), 0.0)
         assertEquals(300.0, VoiceLimits.cappedSeconds(900.0), 0.0)
         assertEquals(90.0, VoiceLimits.cappedSeconds(90.0), 0.0)
+    }
+
+    @Test
+    fun onboardingSkipsTheFakeScreenTimeDialog() {
+        val state = freshState().copy(onboardingStep = OnboardingStep.SelectApps.raw)
+        assertTrue(OnboardingStep.ScreenTimeDialog.skipped(state))
+        assertTrue(OnboardingStep.SeeForYourself.skipped(state))
+        assertTrue(OnboardingStep.ConnectScreenTime.skipped(state))
+        assertEquals(OnboardingStep.EnableFirstRule.raw, stepForward(state).onboardingStep)
     }
 
     @Test
