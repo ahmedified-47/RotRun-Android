@@ -111,28 +111,17 @@ fun RotRunRoot(repo: RotRunRepository) {
 private fun Gate(repo: RotRunRepository) {
     val state by repo.state.collectAsState()
     var plan by remember { mutableStateOf(Products.YEARLY) }
-    var offer by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().background(rot().page).verticalScroll(rememberScrollState())) {
-        if (offer && !state.skippedOneTimeOffer) {
-            OneTimeOffer(
-                onRedeem = { repo.purchase(Products.YEARLY70) },
-                onOther = { repo.leaveOffer(); offer = false },
-                showClose = true,
-                onClose = { repo.leaveOffer(); offer = false },
-            )
-        } else {
-            GetAccessPaywall(
-                state = state,
-                showClose = !state.skippedOneTimeOffer,
-                showDiscountLink = !state.skippedOneTimeOffer,
-                onClose = { offer = true },
-                onDiscount = { offer = true },
-                onPurchase = repo::purchase,
-                onRestore = repo::restore,
-                selected = plan,
-                onSelect = { plan = it },
-            )
-        }
+        GetAccessPaywall(
+            state = state,
+            showClose = true,
+            onClose = {},
+            onPurchase = repo::purchase,
+            onRestore = repo::restore,
+            onRetry = repo::refreshBilling,
+            selected = plan,
+            onSelect = { plan = it },
+        )
     }
 }
 
@@ -149,9 +138,7 @@ private fun MainShell(repo: RotRunRepository) {
     var audio by rememberSaveable { mutableStateOf(false) }
     var talk by rememberSaveable { mutableStateOf(false) }
     var upgrade by rememberSaveable { mutableStateOf(false) }
-    var offer by rememberSaveable { mutableStateOf(false) }
     var plan by remember { mutableStateOf(Products.YEARLY) }
-    val offerNow by androidx.compose.runtime.rememberUpdatedState(offer)
     val context = LocalContext.current
     val look = Looks.byId(state.theme)
     val level = BrainHealthLevel.fromLabel(state.brainHealth)
@@ -159,7 +146,7 @@ private fun MainShell(repo: RotRunRepository) {
     val screenMinutes = if (usage.authorized) (usage.todaySeconds / 60).toInt() else null
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         repo.onForeground()
-        if (com.ahmed.rotrun.logic.PaywallGate.shows && !repo.state.value.premiumActive() && !offerNow) upgrade = true
+        if (PaywallGate.shows && !repo.state.value.premiumActive() && !PlayCatalog.purchasing.value) upgrade = true
     }
     LaunchedEffect(Unit) {
         repo.pulses.collect { pulse ->
@@ -167,6 +154,7 @@ private fun MainShell(repo: RotRunRepository) {
                 UiPulse.OpenFocusChooser -> focusSheet = true
                 UiPulse.ShowAudioSlap -> audio = true
                 UiPulse.OpenPaywall -> upgrade = true
+                UiPulse.ClosePaywall -> upgrade = false
                 UiPulse.OpenChat -> talk = true
             }
         }
@@ -220,28 +208,15 @@ private fun MainShell(repo: RotRunRepository) {
             focusShown?.let { FocusOverlay(it, repo) }
         }
         if (talk) TalkSheet(repo) { talk = false }
-        if (offer && PaywallGate.shows && !state.yearly70Dismissed) {
-            Box(Modifier.fillMaxSize().background(rot().page).statusBarsPadding().verticalScroll(rememberScrollState())) {
-                OneTimeOffer(
-                    onRedeem = { repo.purchase(Products.YEARLY70) },
-                    onOther = { repo.dismissYearly70(); offer = false },
-                    showClose = true,
-                    onClose = { repo.dismissYearly70(); offer = false },
-                )
-            }
-        } else if (upgrade && PaywallGate.shows && !state.premiumActive()) {
+        if (upgrade && PaywallGate.shows && !state.premiumActive()) {
             Box(Modifier.fillMaxSize().background(rot().page).statusBarsPadding().verticalScroll(rememberScrollState())) {
                 GetAccessPaywall(
                     state = state,
                     showClose = true,
-                    showDiscountLink = false,
-                    onClose = {
-                        upgrade = false
-                        if (!state.yearly70Dismissed && PlayCatalog.quote(Products.YEARLY70) != null) offer = true
-                    },
-                    onDiscount = {},
+                    onClose = { upgrade = false },
                     onPurchase = repo::purchase,
                     onRestore = repo::restore,
+                    onRetry = repo::refreshBilling,
                     selected = plan,
                     onSelect = { plan = it },
                 )
@@ -266,12 +241,10 @@ private fun MainShell(repo: RotRunRepository) {
                 AudioSlap(state.cameoName.ifBlank { "a friend" }) { audio = false }
             }
         }
-        val offerUp = offer && PaywallGate.shows && !state.yearly70Dismissed
-        val upgradeUp = !offerUp && upgrade && PaywallGate.shows && !state.premiumActive()
-        BackHandler(enabled = audio || offerUp || upgradeUp || talk || focusSheet || state.focus != null) {
+        val upgradeUp = upgrade && PaywallGate.shows && !state.premiumActive()
+        BackHandler(enabled = audio || upgradeUp || talk || focusSheet || state.focus != null) {
             when {
                 audio -> audio = false
-                offerUp -> offer = false
                 upgradeUp -> upgrade = false
                 talk -> talk = false
                 focusSheet -> focusSheet = false

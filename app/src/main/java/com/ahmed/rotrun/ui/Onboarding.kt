@@ -106,7 +106,11 @@ fun OnboardingScreen(repo: RotRunRepository) {
     var legal by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) {
         repo.pulses.collect { pulse ->
-            if (pulse == UiPulse.OpenPaywall) upgrade = true
+            when (pulse) {
+                UiPulse.OpenPaywall -> upgrade = true
+                UiPulse.ClosePaywall -> upgrade = false
+                else -> Unit
+            }
         }
     }
     val context = LocalContext.current
@@ -116,6 +120,7 @@ fun OnboardingScreen(repo: RotRunRepository) {
         when {
             legal != null -> legal = null
             upgrade -> upgrade = false
+            step == OnboardingStep.OneTimeOffer -> repo.leaveOffer()
             else -> repo.back()
         }
     }
@@ -158,21 +163,20 @@ fun OnboardingScreen(repo: RotRunRepository) {
             OnboardingStep.GetAccess -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
                 GetAccessPaywall(
                     state = state,
-                    showClose = !state.skippedOneTimeOffer,
-                    showDiscountLink = !state.skippedOneTimeOffer,
+                    showClose = true,
                     onClose = repo::declineAccess,
-                    onDiscount = repo::declineAccess,
                     onPurchase = repo::purchase,
                     onRestore = repo::restore,
+                    onRetry = repo::refreshBilling,
                     selected = plan,
                     onSelect = { plan = it },
+                    onboarding = true,
+                    onContinue = repo::advance,
                 )
             }
             OnboardingStep.OneTimeOffer -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
                 OneTimeOffer(
                     onRedeem = { repo.purchase(Products.YEARLY70) },
-                    onOther = repo::leaveOffer,
-                    showClose = true,
                     onClose = repo::leaveOffer,
                 )
             }
@@ -197,11 +201,10 @@ fun OnboardingScreen(repo: RotRunRepository) {
                 GetAccessPaywall(
                     state = state,
                     showClose = true,
-                    showDiscountLink = false,
                     onClose = { upgrade = false },
-                    onDiscount = { upgrade = false },
                     onPurchase = repo::purchase,
                     onRestore = repo::restore,
+                    onRetry = repo::refreshBilling,
                     selected = plan,
                     onSelect = { plan = it },
                 )
@@ -1020,12 +1023,7 @@ private fun SelectApps(state: SavedState, installed: List<TrackedApp>, repo: Rot
             selected = selected,
             onDismiss = { picking = false },
             onSave = { chosen ->
-                repo.update { current ->
-                    val lists = current.appLists.ifEmpty { listOf(AppList("list.brainmelt", "RotRun Apps")) }.map { list ->
-                        if (list.id == "list.brainmelt") list.copy(apps = chosen) else list
-                    }
-                    current.copy(appLists = lists, blockers = current.blockers.map { if (it.id == "brick") it.copy(apps = chosen) else it })
-                }
+                repo.saveRotRunApps(chosen)
                 picking = false
             },
             exceedsCap = { proposed -> repo.wouldExceedFreeCap(proposed, exceptBlocker = "brick", exceptList = "list.brainmelt") },

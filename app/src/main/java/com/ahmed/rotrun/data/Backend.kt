@@ -6,6 +6,8 @@ import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.ahmed.rotrun.BuildConfig
+import com.ahmed.rotrun.billing.PlayPurchaseUpload
+import com.ahmed.rotrun.billing.ServerEntitlement
 import com.ahmed.rotrun.logic.BlockBackup
 import com.ahmed.rotrun.logic.FreeTier
 import com.ahmed.rotrun.logic.PaywallGate
@@ -35,6 +37,7 @@ data class ChatCard(val type: String, val data: Map<String, String>)
 
 class Backend(private val app: Context, private val repo: RotRunRepository) {
     private val http = OkHttpClient.Builder().callTimeout(30, TimeUnit.SECONDS).build()
+    private val playHttp = OkHttpClient.Builder().callTimeout(20, TimeUnit.SECONDS).build()
     private val jsonType = "application/json".toMediaType()
     private val session = openSession(app)
     private var voice: VoiceCall? = null
@@ -162,9 +165,14 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
         val code = payload?.optString("error_code").orEmpty()
         val resets = payload?.optString("budget_resets_at").orEmpty()
         if (code == "consent_required") return "Rot needs your OK before chatting."
-        if (code == "daily_limit" || code == "hourly_limit") return FreeTier.serverChatDone
+        if (code == "paywall_required") {
+            repo.requestPaywall()
+            return FreeTier.limitMessage
+        }
+        if (code == "hourly_limit") return FreeTier.hourlyMessage
+        if (code == "daily_limit") return FreeTier.serverChatDone
         if (code == "monthly_limit" || code == "budget_exhausted" || code == "user_budget_exhausted") {
-            return if (resets.isNotBlank()) "You’ve used your chats with Rot for this period. Back on ${dayLabel(resets)}." else FreeTier.serverChatDone
+            return if (resets.isNotBlank()) FreeTier.periodMessage(dayLabel(resets)) else FreeTier.serverChatDone
         }
         if (response.code !in 200..299) return payload?.optString("error").takeUnless { it.isNullOrBlank() } ?: FreeTier.tryAgain
         val answer = payload?.optString("text").orEmpty()
@@ -198,6 +206,10 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
         val response = call("POST", "/functions/v1/agent-qa", JSONObject().put("type", "voice_secret").toString(), accessToken())
         val payload = response.json
         val code = payload?.optString("error_code").orEmpty()
+        if (code == "paywall_required") {
+            repo.requestPaywall()
+            return FreeTier.voiceMessage
+        }
         if (code == "voice_daily_limit" || code == "voice_monthly_limit" || code == "budget_exhausted" || response.code == 429) {
             val message = if (code == "voice_monthly_limit") {
                 "Voice limit reached, resets on ${dayLabel(payload?.optString("budget_resets_at").orEmpty())}"
@@ -813,15 +825,59 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
     private fun accessToken(): String = session.getString("access", "").orEmpty()
     private fun expiresAt(): Long = session.getLong("expires", 0L)
 
-    private fun call(method: String, path: String, body: String?, bearer: String?, prefer: String? = null): HttpResult {
+    fun syncPlayPurchases(purchases: List<PlayPurchaseUpload>): List<ServerEntitlement>? {
+        if (purchases.isEmpty() || accessToken().isBlank()) return null
+        val body = JSONArray()
+        purchases.take(8).forEach { purchase ->
+            body.put(
+                JSONObject()
+                    .put("product_id", purchase.productId)
+                    .put("purchase_token", purchase.purchaseToken)
+                    .put("kind", purchase.kind),
+            )
+        }
+        val response = call(
+            "POST",
+            "/functions/v1/sync-play-entitlements",
+            JSONObject().put("purchases", body).toString(),
+            accessToken(),
+            client = playHttp,
+        )
+        if (response.code !in 200..299) return null
+        val rows = response.json?.optJSONArray("entitlements") ?: return emptyList()
+        return buildList {
+            for (index in 0 until rows.length()) {
+                val row = rows.optJSONObject(index) ?: continue
+                val productId = row.optString("product_id")
+                if (productId.isBlank()) continue
+                val expires = row.optString("expires_at").takeIf { it.isNotBlank() && it != "null" }
+                val millis = expires?.let { runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrNull() }
+                val active = if (row.has("active")) row.optBoolean("active") else true
+                add(ServerEntitlement(productId, millis, productId == com.ahmed.rotrun.logic.Products.LIFETIME, active))
+            }
+        }
+    }
+
+    private fun call(
+        method: String,
+        path: String,
+        body: String?,
+        bearer: String?,
+        prefer: String? = null,
+        client: OkHttpClient = http,
+    ): HttpResult {
         val key = BuildConfig.SUPABASE_PUBLISHABLE_KEY
         if (key.isBlank()) return HttpResult(0, null, null, "Add SUPABASE_PUBLISHABLE_KEY to local.properties.")
-        val builder = Request.Builder().url(BuildConfig.SUPABASE_URL + path).header("apikey", key)
+        val builder = Request.Builder()
+            .url(BuildConfig.SUPABASE_URL + path)
+            .header("apikey", key)
+            .header("X-RotRun-Platform", "android")
+            .header("X-RotRun-Build", BuildConfig.VERSION_CODE.toString())
         if (!bearer.isNullOrBlank()) builder.header("Authorization", "Bearer $bearer")
         if (prefer != null) builder.header("Prefer", prefer)
         if (method == "GET") builder.get() else builder.method(method, (body ?: "{}").toRequestBody(jsonType))
         return runCatching {
-            http.newCall(builder.build()).execute().use { response ->
+            client.newCall(builder.build()).execute().use { response ->
                 val text = response.body?.string().orEmpty()
                 val obj = runCatching { JSONObject(text) }.getOrNull()
                 val array = runCatching { JSONArray(text) }.getOrNull()

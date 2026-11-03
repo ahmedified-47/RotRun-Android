@@ -116,8 +116,9 @@ fun SettingsScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunR
         "plans" -> Column(Modifier.padding(bottom = 12.dp)) {
             BackHeader("RotRun Premium") { page = "subscription" }
             GetAccessPaywall(
-                state, showClose = false, showDiscountLink = false, onClose = {}, onDiscount = {},
-                onPurchase = repo::purchase, onRestore = repo::restore, selected = plan, onSelect = { plan = it }, settingsStyle = true,
+                state, showClose = false, onClose = {},
+                onPurchase = repo::purchase, onRestore = repo::restore, onRetry = repo::refreshBilling,
+                selected = plan, onSelect = { plan = it },
             )
         }
         else -> RootSettings(
@@ -745,10 +746,14 @@ private fun PremiumManage(state: SavedState, repo: RotRunRepository, onBack: () 
     }
     BackHeader("RotRun Premium", onBack)
     Text(
-        "Buy, restore, or manage your plan. Blocking, Focus, Brick, and Ask-my-brain stay available without a subscription.",
+        if (state.premiumActive()) "Buy, restore, or manage your plan. Blocking, Focus, Brick, and Ask-my-brain stay available without a subscription."
+        else "You're not subscribed. Get Premium to start a plan, or Restore Purchases if you already bought one on this Google account.",
         color = chrome.muted,
         modifier = Modifier.padding(horizontal = 20.dp),
     )
+    if (!state.premiumActive()) {
+        Text("3 chats a day. Voice is Premium.", color = chrome.muted, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+    }
     Column(Modifier.padding(horizontal = 20.dp, vertical = 16.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(chrome.card).padding(vertical = 18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         CartoonBrain(BrainStyle.Meadow, Modifier.size(120.dp), animated = false)
         Text(if (state.premiumActive()) plan else "No plan yet", color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 22.sp, modifier = Modifier.padding(top = 8.dp))
@@ -759,7 +764,11 @@ private fun PremiumManage(state: SavedState, repo: RotRunRepository, onBack: () 
         RowLink("Change Plan", icon = Icons.Default.CardGiftcard, tint = Melt.Orange, onClick = onChangePlan)
         Hairline()
         RowLink("Manage Subscription", if (state.premiumActive()) plan else null, icon = Icons.Default.GridView, tint = chrome.blue) {
-            val uri = android.net.Uri.parse("https://play.google.com/store/account/subscriptions?package=${context.packageName}")
+            val product = state.productId
+            val uri = android.net.Uri.parse(
+                if (product.isNullOrBlank()) "https://play.google.com/store/account/subscriptions?package=${context.packageName}"
+                else "https://play.google.com/store/account/subscriptions?sku=$product&package=${context.packageName}",
+            )
             runCatching { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, uri)) }
         }
         Hairline()

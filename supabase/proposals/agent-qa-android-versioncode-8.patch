@@ -1,0 +1,32 @@
+# PROPOSAL. Do not deploy.
+# The live agent-qa function is not in this Android repo. Apply this patch in the
+# Supabase project when Android 1.0.7 (versionCode 8) is the build that should
+# use verified entitlements. Do not change older Android clients.
+#
+# No x-rotrun-platform header, or Android with versionCode below 8, keeps the
+# current caps. iOS still requires x-rotrun-build >= 117.
+# Hourly refusal copy matches the live cap of 15 chats an hour.
+
+--- a/supabase/functions/agent-qa/index.ts
++++ b/supabase/functions/agent-qa/index.ts
+@@ -40,6 +40,7 @@
+ // iOS builds before 117 keep the previous caps.
+ const FREE_TIER_MIN_BUILD = 117
++const FREE_TIER_MIN_ANDROID_VERSION_CODE = 8
+ 
+@@ -180,9 +181,10 @@
+ function clientBuild(req: Request): number | null {
+@@
+-// Builds before 117, and Android, keep the live caps. Android has no Play check yet.
++// iOS before 117, and Android before versionCode 8, keep the live caps.
+ function enforcesVerifiedEntitlement(req: Request): boolean {
+   const platform = (req.headers.get('x-rotrun-platform') ?? '').trim().toLowerCase()
+-  if (platform === 'android') return false
+   const build = clientBuild(req)
++  if (platform === 'android') return build != null && build >= FREE_TIER_MIN_ANDROID_VERSION_CODE
+   return build != null && build >= FREE_TIER_MIN_BUILD
+ }
+@@
+     case 'hourly_limit':
+-      return 'Slow down! 30 turns per hour max. Walk away for a bit.'
++      return 'Slow down! 15 turns per hour max. Walk away for a bit.'

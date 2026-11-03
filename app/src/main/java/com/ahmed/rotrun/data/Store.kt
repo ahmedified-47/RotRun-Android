@@ -38,6 +38,7 @@ sealed interface UiPulse {
     data object ShowAudioSlap : UiPulse
     data object OpenPaywall : UiPulse
     data object OpenChat : UiPulse
+    data object ClosePaywall : UiPulse
 }
 
 class RotRunRepository(context: Context) {
@@ -71,7 +72,14 @@ class RotRunRepository(context: Context) {
     val pulses: SharedFlow<UiPulse> = _pulses.asSharedFlow()
     private var host: WeakReference<Activity>? = null
     val backend = Backend(app, this)
-    private val billing = PlayBilling(app, ::applyEntitlement, ::toast)
+    private val billing = PlayBilling(
+        app,
+        accountId = { backend.userId },
+        onEntitlement = ::applyEntitlement,
+        onMessage = ::toast,
+        onPurchased = { _pulses.tryEmit(UiPulse.ClosePaywall) },
+        sync = { purchases -> backend.syncPlayPurchases(purchases) },
+    )
     private val launchFinished = AtomicBoolean(false)
     private var usageGeneration = 0
 
@@ -203,12 +211,25 @@ class RotRunRepository(context: Context) {
 
     fun applyRemoteBlocks(lists: List<AppList>, blockers: List<Blocker>) {
         if (lists.isEmpty() && blockers.isEmpty()) return
+        var trimmed = false
         update { current ->
+            val mergedLists = lists.ifEmpty { current.appLists }
+            val mergedBlockers = blockers.ifEmpty { current.blockers }
+            val ordered = mergedBlockers.flatMap { it.packageOrder() } + mergedLists.flatMap { list -> list.apps.map { it.packageName } }
+            val (kept, cut) = com.ahmed.rotrun.logic.BillingQuotes.keepingFirst(
+                emptyList(),
+                ordered,
+                current.premiumActive(),
+                PaywallGate.shows,
+            )
+            trimmed = cut
+            val allow = kept.toSet()
             current.copy(
-                appLists = lists.ifEmpty { current.appLists },
-                blockers = blockers.ifEmpty { current.blockers },
+                appLists = mergedLists.map { list -> list.copy(apps = list.apps.filter { it.packageName in allow }) },
+                blockers = mergedBlockers.map { blocker -> blocker.copy(apps = blocker.apps.filter { it.packageName in allow }) },
             )
         }
+        if (trimmed) requestPaywall()
     }
 
     fun advance() = update { stepForward(it) }
@@ -242,16 +263,19 @@ class RotRunRepository(context: Context) {
 
     fun restore() = billing.restore()
 
-    private fun applyEntitlement(productId: String?, lifetime: Boolean, active: Boolean) {
+    fun refreshBilling() = billing.start()
+
+    private fun applyEntitlement(productId: String?, lifetime: Boolean, active: Boolean, expiresAtMillis: Long?) {
         update { current ->
             if (!active) {
                 current.copy(premium = false, lifetime = false, productId = null, premiumUntil = 0L)
             } else {
+                val until = com.ahmed.rotrun.logic.BillingQuotes.premiumUntilMillis(lifetime, expiresAtMillis, current.premiumUntil)
                 val next = current.copy(
                     premium = true,
                     lifetime = lifetime,
                     productId = productId,
-                    premiumUntil = if (lifetime) Long.MAX_VALUE / 4 else System.currentTimeMillis() + 400L * 24 * 60 * 60 * 1000,
+                    premiumUntil = until,
                 )
                 if (!next.onboardingCompleted && OnboardingStep.fromRaw(next.onboardingStep).let {
                         it == OnboardingStep.GetAccess || it == OnboardingStep.OneTimeOffer || it == OnboardingStep.PurchaseComplete
@@ -263,28 +287,39 @@ class RotRunRepository(context: Context) {
                 }
             }
         }
-        if (active) toast("RotRun Premium is on.")
     }
 
     fun saveBlocker(blocker: Blocker): Boolean {
-        val proposed = blocker.packageOrder().toSet()
-        if (overFreeCap(proposed, exceptBlocker = blocker.id, exceptList = if (blocker.id == "brick") blocker.appListId else null)) {
-            toast(BlockRules.FREE_LIMIT_MESSAGE)
-            requestPaywall()
-            return false
-        }
-        update { current ->
-            val without = current.blockers.filterNot { it.id == blocker.id }
-            val lists = if (blocker.id == "brick") {
-                current.appLists.map { list ->
-                    if (list.id == blocker.appListId) list.copy(apps = blocker.apps) else list
+        val current = _state.value
+        val previous = current.blockers.firstOrNull { it.id == blocker.id }?.packageOrder().orEmpty()
+        val (kept, trimmed) = com.ahmed.rotrun.logic.BillingQuotes.keepingFirst(
+            previous,
+            blocker.packageOrder(),
+            current.premiumActive(),
+            PaywallGate.shows,
+        )
+        val allow = kept.toSet()
+        val nextBlocker = blocker.copy(
+            apps = blocker.apps.filter { it.packageName in allow },
+            modeApps = blocker.modeApps.mapValues { (_, apps) -> apps.filter { it.packageName in allow } },
+        )
+        update { saved ->
+            val without = saved.blockers.filterNot { it.id == nextBlocker.id }
+            val lists = if (nextBlocker.id == "brick") {
+                saved.appLists.map { list ->
+                    if (list.id == nextBlocker.appListId) list.copy(apps = nextBlocker.apps) else list
                 }
             } else {
-                current.appLists
+                saved.appLists
             }
-            current.copy(blockers = listOf(blocker) + without, appLists = lists)
+            saved.copy(blockers = listOf(nextBlocker) + without, appLists = lists)
         }
-        toast("Saved ${blocker.name}")
+        if (trimmed) {
+            toast(BlockRules.FREE_LIMIT_MESSAGE)
+            requestPaywall()
+        } else {
+            toast("Saved ${blocker.name}")
+        }
         return true
     }
 
@@ -296,22 +331,54 @@ class RotRunRepository(context: Context) {
         toast("Deleted $name")
     }
 
-    fun saveList(list: AppList): Boolean {
-        if (overFreeCap(list.apps.map { it.packageName }.toSet(), exceptList = list.id)) {
+    fun saveRotRunApps(apps: List<TrackedApp>) {
+        val current = _state.value
+        val previous = current.appLists.firstOrNull { it.id == "list.brainmelt" }?.apps?.map { it.packageName }.orEmpty()
+        val (kept, trimmed) = com.ahmed.rotrun.logic.BillingQuotes.keepingFirst(
+            previous,
+            apps.map { it.packageName },
+            current.premiumActive(),
+            PaywallGate.shows,
+        )
+        val allow = kept.toSet()
+        val chosen = apps.filter { it.packageName in allow }
+        update { saved ->
+            val lists = saved.appLists.ifEmpty { listOf(AppList("list.brainmelt", "RotRun Apps")) }.map { list ->
+                if (list.id == "list.brainmelt") list.copy(apps = chosen) else list
+            }
+            saved.copy(appLists = lists, blockers = saved.blockers.map { if (it.id == "brick") it.copy(apps = chosen) else it })
+        }
+        if (trimmed) {
             toast(BlockRules.FREE_LIMIT_MESSAGE)
             requestPaywall()
-            return false
         }
-        update { current ->
-            val lists = current.appLists.toMutableList()
-            val index = lists.indexOfFirst { it.id == list.id }
-            if (index >= 0) lists[index] = list else lists.add(list)
-            val blockers = current.blockers.map { blocker ->
-                if (blocker.appListId == list.id && blocker.id == "brick") blocker.copy(apps = list.apps) else blocker
+    }
+
+    fun saveList(list: AppList): Boolean {
+        val current = _state.value
+        val previous = current.appLists.firstOrNull { it.id == list.id }?.apps?.map { it.packageName }.orEmpty()
+        val (kept, trimmed) = com.ahmed.rotrun.logic.BillingQuotes.keepingFirst(
+            previous,
+            list.apps.map { it.packageName },
+            current.premiumActive(),
+            PaywallGate.shows,
+        )
+        val chosen = list.copy(apps = list.apps.filter { it.packageName in kept.toSet() })
+        update { saved ->
+            val lists = saved.appLists.toMutableList()
+            val index = lists.indexOfFirst { it.id == chosen.id }
+            if (index >= 0) lists[index] = chosen else lists.add(chosen)
+            val blockers = saved.blockers.map { blocker ->
+                if (blocker.appListId == chosen.id && blocker.id == "brick") blocker.copy(apps = chosen.apps) else blocker
             }
-            current.copy(appLists = lists, blockers = blockers)
+            saved.copy(appLists = lists, blockers = blockers)
         }
-        toast("Saved ${list.name}")
+        if (trimmed) {
+            toast(BlockRules.FREE_LIMIT_MESSAGE)
+            requestPaywall()
+        } else {
+            toast("Saved ${list.name}")
+        }
         return true
     }
 

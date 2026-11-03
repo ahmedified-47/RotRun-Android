@@ -212,7 +212,11 @@ fun AppPickerDialog(
                         "See Premium",
                         color = chrome.blue,
                         fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(top = 6.dp).clickable(onClick = onUpgrade),
+                        modifier = Modifier.padding(top = 6.dp).clickable {
+                            val kept = known.filter { it.packageName in chosen }
+                            if (kept.map { it.packageName } != selected.map { it.packageName }) onSave(kept)
+                            onUpgrade()
+                        },
                     )
                 }
             }
