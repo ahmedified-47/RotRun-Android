@@ -28,6 +28,7 @@ import com.ahmed.rotrun.data.RotRunGraph
 object AskBrainLaunch {
     const val EXTRA_OPEN_CHAT = "open_chat"
     const val EXTRA_HELD_PACKAGE = "held_package"
+    const val EXTRA_HELD_LABEL = "held_label"
 
     /** New id so a muted copy of the old rotrun.ask channel is not reused. */
     private const val CHANNEL = "rotrun.ask.forward"
@@ -40,7 +41,7 @@ object AskBrainLaunch {
     fun open(context: Context, packageName: String, label: String) {
         launching = true
         try {
-            if (packageName.isNotBlank()) ShieldSession.holdForChat(packageName)
+            if (packageName.isNotBlank()) ShieldSession.holdForChat(packageName, label)
             val brought = bringForward(context, packageName, label)
             val decision = AskLaunchPolicy.shieldAfterAttempt(startFailed = !brought)
             if (decision.dismiss) {
@@ -61,8 +62,8 @@ object AskBrainLaunch {
     }
 
     private fun bringForward(context: Context, packageName: String, label: String): Boolean {
-        val launcher = launchIntent(context, packageName)
-        val explicit = explicitIntent(context, packageName)
+        val launcher = launchIntent(context, packageName, label)
+        val explicit = explicitIntent(context, packageName, label)
         val pending = pending(context, launcher)
         notify(context, label, pending)
         val sent = runCatching { pending.send() }.isSuccess
@@ -71,20 +72,22 @@ object AskBrainLaunch {
         return sent || moved || started
     }
 
-    private fun launchIntent(context: Context, packageName: String): Intent {
+    private fun launchIntent(context: Context, packageName: String, label: String): Intent {
         val launch = context.packageManager.getLaunchIntentForPackage(context.packageName)
-        return (launch ?: explicitIntent(context, packageName)).apply {
+        return (launch ?: explicitIntent(context, packageName, label)).apply {
             addFlags(AskLaunchPolicy.BRING_FORWARD_FLAGS)
             putExtra(EXTRA_OPEN_CHAT, true)
             putExtra(EXTRA_HELD_PACKAGE, packageName)
+            putExtra(EXTRA_HELD_LABEL, label)
         }
     }
 
-    private fun explicitIntent(context: Context, packageName: String): Intent =
+    private fun explicitIntent(context: Context, packageName: String, label: String): Intent =
         Intent(context, MainActivity::class.java).apply {
             addFlags(AskLaunchPolicy.BRING_FORWARD_FLAGS)
             putExtra(EXTRA_OPEN_CHAT, true)
             putExtra(EXTRA_HELD_PACKAGE, packageName)
+            putExtra(EXTRA_HELD_LABEL, label)
         }
 
     private fun start(context: Context, intent: Intent): Boolean {

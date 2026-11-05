@@ -43,7 +43,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         if (RotRunGraph.ready()) RotRunGraph.repo.attach(this)
-        openHeldChat()
+        openHeldIntervention()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -52,19 +52,20 @@ class MainActivity : ComponentActivity() {
         handle(intent)
     }
 
-    private fun openHeldChat() {
-        if (ShieldSession.chatPackage() == null) return
+    private fun openHeldIntervention() {
+        val held = ShieldSession.chatPackage() ?: return
         AskBrainLaunch.cancel(this)
-        if (RotRunGraph.ready()) RotRunGraph.repo.requestChat()
+        if (RotRunGraph.ready()) RotRunGraph.repo.requestAskIntervention(held, ShieldSession.chatLabel())
     }
 
     private fun handle(intent: Intent?) {
         if (intent?.getBooleanExtra(AskBrainLaunch.EXTRA_OPEN_CHAT, false) == true) {
             val held = intent.getStringExtra(AskBrainLaunch.EXTRA_HELD_PACKAGE).orEmpty()
-            if (held.isNotBlank()) ShieldSession.holdForChat(held)
+            val label = intent.getStringExtra(AskBrainLaunch.EXTRA_HELD_LABEL).orEmpty()
+            if (held.isNotBlank()) ShieldSession.holdForChat(held, label.ifBlank { ShieldSession.chatLabel() })
             AskBrainLaunch.cancel(this)
             intent.removeExtra(AskBrainLaunch.EXTRA_OPEN_CHAT)
-            if (RotRunGraph.ready()) RotRunGraph.repo.requestChat()
+            openHeldIntervention()
         }
         val uri = intent?.data ?: return
         if (uri.scheme != "rotrun") return

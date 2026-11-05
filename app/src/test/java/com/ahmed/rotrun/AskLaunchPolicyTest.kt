@@ -1,6 +1,10 @@
 package com.ahmed.rotrun
 
 import android.content.Intent
+import com.ahmed.rotrun.data.AskIntervention
+import com.ahmed.rotrun.data.AskInterventionPlan
+import com.ahmed.rotrun.data.GoogleNonce
+import com.ahmed.rotrun.data.GoogleSignInPolicy
 import com.ahmed.rotrun.watch.AskLaunchPolicy
 import com.ahmed.rotrun.watch.ShieldSession
 import org.junit.Assert.assertEquals
@@ -40,5 +44,35 @@ class AskLaunchPolicyTest {
         assertNull(ShieldSession.chatPackage())
         assertFalse(ShieldSession.blocks("com.instagram.android"))
         assertTrue(AskLaunchPolicy.showShield(chatting = false))
+    }
+
+    @Test
+    fun askBrainKeepsOneInterventionUntilTheUserLeaves() {
+        assertEquals("standard", AskInterventionPlan.mode(null))
+        assertEquals("standard", AskInterventionPlan.mode(" "))
+        assertEquals("quick", AskInterventionPlan.mode("quick"))
+        val showing = AskIntervention("com.instagram.android", "Instagram", "standard")
+        assertTrue(AskInterventionPlan.alreadyShowing(showing))
+        assertFalse(AskInterventionPlan.alreadyShowing(null))
+        ShieldSession.endChat()
+        ShieldSession.holdForChat("com.instagram.android", "Instagram")
+        assertEquals("Instagram", ShieldSession.chatLabel())
+        assertFalse(AskLaunchPolicy.showShield(ShieldSession.chatPackage() != null))
+        ShieldSession.endChat()
+        assertEquals("", ShieldSession.chatLabel())
+    }
+
+    @Test
+    fun googleNonceIsLowerHexAndAMissingGrantRetriesTheAccountList() {
+        assertEquals(
+            "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+            GoogleNonce.hash("hello"),
+        )
+        assertEquals(64, GoogleNonce.hash("hello").length)
+        assertTrue(GoogleSignInPolicy.retryWithAccountList("NoCredentialException", ""))
+        assertTrue(GoogleSignInPolicy.retryWithAccountList("GetCredentialProviderConfigurationException", ""))
+        assertFalse(GoogleSignInPolicy.retryWithAccountList("GetCredentialCancellationException", "activity is cancelled by the user"))
+        assertTrue(GoogleSignInPolicy.message("NoCredentialException", "").contains("Google account"))
+        assertTrue(GoogleSignInPolicy.message("GetCredentialException", "Developer console is not set up correctly. 10:").contains("SHA-1"))
     }
 }

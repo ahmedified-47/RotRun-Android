@@ -133,6 +133,7 @@ private fun MainShell(repo: RotRunRepository) {
     val refreshing by repo.refreshing.collectAsState()
     val installed by repo.installed.collectAsState()
     val batteryAsk by repo.batteryAsk.collectAsState()
+    val ask by repo.askIntervention.collectAsState()
     var tabName by rememberSaveable { mutableStateOf(Tab.Home.name) }
     val tab = runCatching { Tab.valueOf(tabName) }.getOrDefault(Tab.Home)
     var focusSheet by rememberSaveable { mutableStateOf(false) }
@@ -249,12 +250,45 @@ private fun MainShell(repo: RotRunRepository) {
                 AudioSlap(state.cameoName.ifBlank { "a friend" }) { audio = false }
             }
         }
+        ask?.let { pending ->
+            InterventionFlow(
+                appName = pending.label,
+                startMode = pending.mode,
+                packageName = pending.packageName,
+                repo = repo,
+                onDismiss = {
+                    repo.clearAskIntervention()
+                    ShieldSession.endChat()
+                },
+                onUnlock = { minutes ->
+                    if (!repo.grantUnlock(minutes)) {
+                        repo.toast("Unlock waits until Focus ends")
+                    } else {
+                        ShieldSession.markOpened(pending.packageName)
+                        com.ahmed.rotrun.watch.BlockAccessibilityService.dismiss()
+                        com.ahmed.rotrun.watch.BlockWatchService.dismiss()
+                        context.packageManager.getLaunchIntentForPackage(pending.packageName)?.let { launch ->
+                            launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            runCatching { context.startActivity(launch) }
+                        }
+                        repo.clearAskIntervention()
+                    }
+                },
+            )
+        }
         val upgradeUp = upgrade && PaywallGate.shows && !state.premiumActive()
-        BackHandler(enabled = audio || upgradeUp || talk || focusSheet || state.focus != null) {
+        BackHandler(enabled = ask != null || audio || upgradeUp || talk || focusSheet || state.focus != null) {
             when {
+                ask != null -> {
+                    repo.clearAskIntervention()
+                    ShieldSession.endChat()
+                }
                 audio -> audio = false
                 upgradeUp -> upgrade = false
-                talk -> talk = false
+                talk -> {
+                    talk = false
+                    ShieldSession.endChat()
+                }
                 focusSheet -> focusSheet = false
                 else -> Unit
             }

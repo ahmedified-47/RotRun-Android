@@ -25,7 +25,6 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URLEncoder
-import java.security.MessageDigest
 import java.security.SecureRandom
 import java.time.ZoneId
 import java.time.ZonedDateTime
@@ -61,26 +60,18 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
             return
         }
         val nonce = randomNonce()
-        val hashed = sha256(nonce)
+        val hashed = GoogleNonce.hash(nonce)
         GoogleSignIn.start(activity, clientId, hashed) { result ->
             // Credential Manager returns on the main thread. The token exchange is a network call.
             CoroutineScope(Dispatchers.IO).launch {
                 val error = result.fold(
                     onSuccess = { idToken -> exchange(idToken, nonce) },
-                    onFailure = { signInNote(it.message) },
+                    onFailure = { GoogleSignInPolicy.message(it.javaClass.name, it.message.orEmpty()) },
                 )
                 if (activity.isDestroyed) return@launch
                 withContext(Dispatchers.Main) { onDone(error) }
             }
         }
-    }
-
-    private fun signInNote(message: String?): String {
-        val text = message.orEmpty()
-        val developer = listOf("GOOGLE_WEB_CLIENT_ID", "local.properties", "SUPABASE_PUBLISHABLE_KEY", "does not create")
-        if (developer.any { text.contains(it, ignoreCase = true) }) return "Sign-in isn’t set up yet"
-        if (text.isBlank()) return "Google sign-in didn’t finish."
-        return text
     }
 
     fun signOut() {
@@ -907,9 +898,5 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
             return buildString(32) { bytes.forEach { append(alphabet[(it.toInt() and 0xff) % alphabet.length]) } }
         }
 
-        private fun sha256(raw: String): String {
-            val digest = MessageDigest.getInstance("SHA-256").digest(raw.toByteArray())
-            return digest.joinToString("") { "%02x".format(it) }
-        }
     }
 }

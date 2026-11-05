@@ -482,6 +482,24 @@ class RotRunRepository(context: Context) {
         _pulses.tryEmit(UiPulse.OpenChat)
     }
 
+    private val _askIntervention = MutableStateFlow<AskIntervention?>(null)
+    val askIntervention: StateFlow<AskIntervention?> = _askIntervention.asStateFlow()
+
+    /** One enabled intervention style, shown until the user leaves it. A second call does not roll again. */
+    fun requestAskIntervention(packageName: String, label: String) {
+        if (packageName.isBlank()) return
+        if (AskInterventionPlan.alreadyShowing(_askIntervention.value)) return
+        _askIntervention.value = AskIntervention(
+            packageName = packageName,
+            label = label.ifBlank { "this app" },
+            mode = AskInterventionPlan.mode(pickStyle()),
+        )
+    }
+
+    fun clearAskIntervention() {
+        _askIntervention.value = null
+    }
+
     fun takeChatRequest(): Boolean {
         if (!chatPending) return false
         chatPending = false

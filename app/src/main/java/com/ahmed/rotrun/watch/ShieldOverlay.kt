@@ -29,17 +29,22 @@ object ShieldSession {
     @Volatile
     private var chatting: Boolean = false
 
+    @Volatile
+    private var heldLabel: String = ""
+
     fun hold(packageName: String) {
         if (packageName.isBlank()) return
         held = packageName
+        heldLabel = ""
         opened = false
         chatting = false
     }
 
-    /** Talk is open. The shield stays down and this package is not blocked until [endChat]. */
-    fun holdForChat(packageName: String) {
+    /** The intervention is open. The shield stays down and this package is not blocked until [endChat]. */
+    fun holdForChat(packageName: String, label: String = "") {
         if (packageName.isBlank()) return
         held = packageName
+        heldLabel = label
         opened = false
         chatting = true
     }
@@ -48,15 +53,19 @@ object ShieldSession {
         if (!chatting) return
         chatting = false
         held = null
+        heldLabel = ""
         opened = false
     }
 
     fun chatPackage(): String? = if (chatting) held else null
 
+    fun chatLabel(): String = if (chatting) heldLabel else ""
+
     /** Ask my brain finished and the blocked app is coming forward. Keep the shield down. */
     fun markOpened(packageName: String) {
         if (packageName.isBlank()) return
         held = packageName
+        heldLabel = ""
         opened = true
         chatting = false
     }
@@ -65,6 +74,7 @@ object ShieldSession {
     fun release() {
         if (chatting) return
         held = null
+        heldLabel = ""
         opened = false
     }
 
