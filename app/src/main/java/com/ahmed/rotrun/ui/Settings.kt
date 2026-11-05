@@ -48,6 +48,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -170,6 +171,9 @@ private fun RootSettings(
 ) {
     val context = LocalContext.current
     val chrome = rot()
+    val scope = rememberCoroutineScope()
+    var confirmDelete by remember { mutableStateOf(false) }
+    var deleting by remember { mutableStateOf(false) }
     Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
             Modifier.size(84.dp).clip(CircleShape).background(Brush.verticalGradient(listOf(Color(0xFF7DDE9A), Color(0xFF3CB371)))),
@@ -244,6 +248,49 @@ private fun RootSettings(
             fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(top = 14.dp).clickable { open("memory") },
         )
+        if (repo.backend.signedIn) {
+            CardGroup {
+                Text(
+                    "Delete account",
+                    color = Color(0xFFFF3B30),
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 17.sp,
+                    modifier = Modifier.fillMaxWidth().clickable(enabled = !deleting) { confirmDelete = true }.padding(horizontal = 16.dp, vertical = 14.dp),
+                )
+            }
+            if (confirmDelete) {
+                AlertDialog(
+                    onDismissRequest = { if (!deleting) confirmDelete = false },
+                    title = { Text("Delete account") },
+                    text = {
+                        Text("This permanently deletes your account, chat history, memories, stats, and leaderboard entry. Subscriptions must be cancelled in Google Play separately.")
+                    },
+                    confirmButton = {
+                        TextButton(
+                            enabled = !deleting,
+                            onClick = {
+                                deleting = true
+                                scope.launch {
+                                    val error = withContext(Dispatchers.IO) { repo.backend.deleteAccount() }
+                                    if (error != null) {
+                                        deleting = false
+                                        confirmDelete = false
+                                        repo.toast(error)
+                                    } else {
+                                        repo.backend.signOut()
+                                        confirmDelete = false
+                                        repo.update { it.copy(onboardingCompleted = false, onboardingStep = 0) }
+                                    }
+                                }
+                            },
+                        ) { Text("Delete account", color = Color(0xFFFF3B30)) }
+                    },
+                    dismissButton = {
+                        TextButton(enabled = !deleting, onClick = { confirmDelete = false }) { Text("Cancel") }
+                    },
+                )
+            }
+        }
         Text(
             "Sync Screen Time now",
             color = chrome.blue,
