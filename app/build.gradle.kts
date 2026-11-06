@@ -32,8 +32,8 @@ android {
         applicationId = "com.ahmed.rotrun"
         minSdk = 26
         targetSdk = 36
-        versionCode = 15
-        versionName = "1.0.14"
+        versionCode = 16
+        versionName = "1.0.15"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("boolean", "SHOW_PAYWALL", showPaywall.toString())
         buildConfigField("String", "SUPABASE_URL", "\"https://bhndzocphiexxcvbjisn.supabase.co\"")
@@ -42,9 +42,29 @@ android {
         buildConfigField("boolean", "PLAY_GAMES_FRIENDS", "false")
     }
 
+    val keystorePropertiesFile = rootProject.file("keystore.properties")
+    val keystoreProperties = Properties().apply {
+        if (keystorePropertiesFile.exists()) keystorePropertiesFile.inputStream().use { load(it) }
+    }
+    if (keystorePropertiesFile.exists()) {
+        signingConfigs {
+            create("release") {
+                storeFile = rootProject.file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (keystorePropertiesFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+            // Internal testing always shows the paywall. A debug flag cannot turn this off.
+            buildConfigField("boolean", "SHOW_PAYWALL", "true")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",

@@ -174,6 +174,18 @@ object BillingQuotes {
         else -> PurchaseDecision.Ignore
     }
 
+    /** A Play PURCHASED row stays Pro even when sync-play-entitlements is down or returns nothing. */
+    fun keepLocalPlayGrant(playPurchased: Boolean): Boolean = playPurchased
+
+    /** Apply a server expiry only when that same purchase is still active. Never let an empty sync clear it. */
+    fun applyServerEntitlement(playPurchased: Boolean, serverActive: Boolean): Boolean = playPurchased && serverActive
+
+    /** Subscriptions and lifetime are not consumable. Lifetime must never be consumed. */
+    fun mayConsume(productId: String): Boolean = false
+
+    /** Acknowledge every PURCHASED row within Play's 3-day window, including when the server sync failed. */
+    fun shouldAcknowledge(purchased: Boolean, alreadyAcknowledged: Boolean): Boolean = purchased && !alreadyAcknowledged
+
     fun planChange(fromProductId: String?, toProductId: String): PlanChange {
         if (fromProductId.isNullOrBlank() || fromProductId == toProductId) return PlanChange.None
         if (toProductId == Products.LIFETIME || fromProductId == Products.LIFETIME) return PlanChange.None
@@ -214,7 +226,7 @@ object BillingQuotes {
     /** SHA-256 hex. Play's obfuscated account id is 64 characters, which is this digest. */
     fun obfuscatedAccountId(userId: String): String {
         val digest = MessageDigest.getInstance("SHA-256").digest(userId.toByteArray(Charsets.UTF_8))
-        return digest.joinToString("") { "%02x".format(it) }
+        return digest.joinToString("") { "%02x".format(it.toInt() and 0xff) }
     }
 
     /** A missing server date does not invent an expiry. Lifetime has no renewal. */

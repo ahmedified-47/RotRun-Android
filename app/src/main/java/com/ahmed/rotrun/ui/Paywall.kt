@@ -152,9 +152,9 @@ fun OneTimeOffer(onRedeem: () -> Unit, onClose: () -> Unit) {
         Text(offer?.formattedPrice ?: place?.shown ?: "Price from Google Play", color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 34.sp, modifier = Modifier.padding(top = 8.dp))
         Text("/ year", color = chrome.muted, fontSize = 16.sp)
         if (offer?.introPresent == true && offer.renewalFormatted != null) {
-            Text("then ${offer.renewalFormatted}/ year", color = chrome.muted, fontSize = 14.sp, modifier = Modifier.padding(top = 4.dp))
+            Text("then ${offer.renewalFormatted}/year", color = chrome.muted, fontSize = 14.sp, modifier = Modifier.padding(top = 4.dp))
         } else if (place?.renewal != null) {
-            Text("then ${place.renewal}/ year", color = chrome.muted, fontSize = 14.sp, modifier = Modifier.padding(top = 4.dp))
+            Text("then ${place.renewal}/year", color = chrome.muted, fontSize = 14.sp, modifier = Modifier.padding(top = 4.dp))
         }
         if (purchasing) {
             CircularProgressIndicator(color = chrome.blue, modifier = Modifier.padding(top = 16.dp).size(28.dp))
@@ -194,8 +194,8 @@ private fun PlanCard(id: String, selected: Boolean, onClick: () -> Unit) {
     val period = if (quote == null && place == null) "" else Products.periodLabel(id)
     val subtitle = when {
         id == Products.LIFETIME -> "One-time purchase"
-        quote?.introPresent == true && quote.renewalFormatted != null -> "then ${quote.renewalFormatted}${Products.periodLabel(id)}"
-        place?.renewal != null -> "then ${place.renewal}${Products.periodLabel(id)}"
+        quote?.introPresent == true && quote.renewalFormatted != null -> "then ${quote.renewalFormatted}/year"
+        place?.renewal != null -> "then ${place.renewal}/year"
         id == Products.MONTHLY -> "Billed every month"
         else -> "Billed yearly"
     }

@@ -130,10 +130,33 @@ class BillingQuotesTest {
     fun accountIdIsASha256Hex() {
         val id = "11111111-2222-3333-4444-555555555555"
         val hash = BillingQuotes.obfuscatedAccountId(id)
-        assertEquals(64, hash.length)
-        assertTrue(hash.matches(Regex("[0-9a-f]{64}")))
+        assertEquals("666ff6ccaa5b3c07feaa3a95d3a4bd2c46ac9e9abdb09ca9133528d3dc1e8952", hash)
         assertEquals(hash, BillingQuotes.obfuscatedAccountId(id))
         assertFalse(hash.equals(id, ignoreCase = true))
+    }
+
+    @Test
+    fun catalogIsTheFourLiveProducts() {
+        assertEquals(
+            listOf(Products.MONTHLY, Products.YEARLY, Products.YEARLY70, Products.LIFETIME),
+            Products.all,
+        )
+        assertFalse(Products.all.any { it.contains("rotrun_premium") })
+    }
+
+    @Test
+    fun aPlayPurchaseStaysEvenWhenSyncIsDown() {
+        assertTrue(BillingQuotes.keepLocalPlayGrant(playPurchased = true))
+        assertFalse(BillingQuotes.applyServerEntitlement(playPurchased = true, serverActive = false))
+        assertTrue(BillingQuotes.applyServerEntitlement(playPurchased = true, serverActive = true))
+        assertFalse(BillingQuotes.keepLocalPlayGrant(playPurchased = false))
+        assertTrue(BillingQuotes.shouldAcknowledge(purchased = true, alreadyAcknowledged = false))
+        assertFalse(BillingQuotes.shouldAcknowledge(purchased = false, alreadyAcknowledged = false))
+        assertFalse(BillingQuotes.shouldAcknowledge(purchased = true, alreadyAcknowledged = true))
+        assertFalse(BillingQuotes.mayConsume(Products.LIFETIME))
+        assertFalse(BillingQuotes.mayConsume(Products.MONTHLY))
+        assertFalse(BillingQuotes.mayConsume(Products.YEARLY))
+        assertFalse(BillingQuotes.mayConsume(Products.YEARLY70))
     }
 
     @Test

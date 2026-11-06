@@ -84,11 +84,6 @@ class PlayBilling(
 
     fun buy(activity: Activity, planId: String) {
         if (!PaywallGate.shows) return
-        val userId = accountId()?.takeIf { it.isNotBlank() }
-        if (userId == null) {
-            onMessage(BillingQuotes.SIGN_IN_MESSAGE)
-            return
-        }
         val quote = PlayCatalog.quote(planId)
         val product = details[planId]
         if (quote == null || product == null || quote.offerToken.isBlank()) {
@@ -101,7 +96,10 @@ class PlayBilling(
             .build()
         val flow = BillingFlowParams.newBuilder()
             .setProductDetailsParamsList(listOf(productParams))
-            .setObfuscatedAccountId(BillingQuotes.obfuscatedAccountId(userId))
+        val userId = accountId()?.takeIf { it.isNotBlank() }
+        if (userId != null) {
+            flow.setObfuscatedAccountId(BillingQuotes.obfuscatedAccountId(userId))
+        }
         val from = ownedSubscriptionProduct
         val token = ownedSubscriptionToken
         when (BillingQuotes.planChange(from, planId)) {
@@ -123,10 +121,6 @@ class PlayBilling(
     }
 
     fun restore() {
-        if (accountId().isNullOrBlank()) {
-            onMessage(BillingQuotes.SIGN_IN_MESSAGE)
-            return
-        }
         if (!client.isReady) {
             start()
             onMessage("Checking Google Play…")
@@ -267,13 +261,16 @@ class PlayBilling(
             else -> null
         }
         val isLifetime = lifetime != null
-        if (active == null) {
+        if (!BillingQuotes.keepLocalPlayGrant(active != null)) {
             onEntitlement(null, false, false, null)
         } else {
             onEntitlement(productId, isLifetime, true, null)
         }
         val uploads = purchased.mapNotNull { purchase ->
             val id = purchase.products.firstOrNull { it in Products.all } ?: return@mapNotNull null
+            if (BillingQuotes.mayConsume(id)) {
+                Log.e(TAG, "refusing to consume $id")
+            }
             PlayPurchaseUpload(
                 productId = id,
                 purchaseToken = purchase.purchaseToken,
@@ -281,17 +278,25 @@ class PlayBilling(
             )
         }.take(8)
         scope.launch {
-            val rows = if (uploads.isEmpty()) null else withContext(Dispatchers.IO) { runCatching { sync(uploads) }.getOrNull() }
-            if (active != null && rows != null) {
+            val signedIn = !accountId().isNullOrBlank()
+            val rows = if (!signedIn || uploads.isEmpty()) {
+                null
+            } else {
+                withContext(Dispatchers.IO) { runCatching { sync(uploads) }.getOrNull() }
+            }
+            if (rows != null && BillingQuotes.keepLocalPlayGrant(active != null)) {
                 val row = rows.firstOrNull { it.productId == productId && it.active }
                     ?: rows.firstOrNull { it.active }
-                if (row != null) {
+                if (row != null && BillingQuotes.applyServerEntitlement(true, row.active)) {
                     onEntitlement(row.productId, row.lifetime || row.productId == Products.LIFETIME, true, row.expiresAtMillis)
-                } else {
-                    onEntitlement(null, false, false, null)
                 }
-                purchased.filter { !it.isAcknowledged }.forEach { acknowledge(it) }
             }
+            purchased.filter {
+                BillingQuotes.shouldAcknowledge(
+                    purchased = it.purchaseState == Purchase.PurchaseState.PURCHASED,
+                    alreadyAcknowledged = it.isAcknowledged,
+                )
+            }.forEach { acknowledge(it) }
             if (fromPurchase && active != null) {
                 if (isLifetime && subscription != null) onMessage(BillingQuotes.LIFETIME_CANCEL_SUB)
                 onPurchased()
