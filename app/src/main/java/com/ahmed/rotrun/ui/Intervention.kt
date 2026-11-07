@@ -100,6 +100,7 @@ fun InterventionFlow(
 
 @Composable
 private fun ColumnScope.Shield(appName: String, packageName: String, accent: Color, onAsk: () -> Unit) {
+    var opening by remember { mutableStateOf(false) }
     val copy = InterventionCopy.forPackage(packageName, appName)
     Spacer(Modifier.weight(1f))
     CartoonBrain(BrainStyle.Meadow, Modifier.size(196.dp))
@@ -108,12 +109,16 @@ private fun ColumnScope.Shield(appName: String, packageName: String, accent: Col
     if (copy.footer != null) Text(copy.footer, color = Color(0xFF9E9EA3), fontSize = 16.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 14.dp))
     Spacer(Modifier.weight(1f))
     Text(
-        "Ask my brain",
+        if (opening) "Opening…" else "Ask my brain",
         color = Color.White,
         fontWeight = FontWeight.Bold,
         fontSize = 18.sp,
         textAlign = TextAlign.Center,
-        modifier = Modifier.fillMaxWidth().clip(CircleShape).background(accent).clickable(onClick = onAsk).padding(vertical = 18.dp),
+        modifier = Modifier.fillMaxWidth().clip(CircleShape).background(accent).clickable(enabled = !opening) {
+            if (opening) return@clickable
+            opening = true
+            onAsk()
+        }.padding(vertical = 18.dp),
     )
 }
 

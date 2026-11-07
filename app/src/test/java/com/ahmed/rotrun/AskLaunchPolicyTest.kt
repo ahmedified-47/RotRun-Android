@@ -63,6 +63,22 @@ class AskLaunchPolicyTest {
     }
 
     @Test
+    fun shieldStaysUpWhenColorOsSendsItsOwnWindowEvents() {
+        assertTrue(AskLaunchPolicy.keepShownShield("com.instagram.android", "com.instagram.android", "com.ahmed.rotrun"))
+        assertTrue(AskLaunchPolicy.keepShownShield("com.instagram.android", "com.ahmed.rotrun", "com.ahmed.rotrun"))
+        assertTrue(AskLaunchPolicy.keepShownShield("com.instagram.android", "com.android.systemui", "com.ahmed.rotrun"))
+        assertTrue(AskLaunchPolicy.keepShownShield("com.instagram.android", "com.coloros.oppoguardelf", "com.ahmed.rotrun"))
+        assertTrue(AskLaunchPolicy.keepShownShield("com.instagram.android", "com.oplus.systemui", "com.ahmed.rotrun"))
+        assertFalse(AskLaunchPolicy.keepShownShield("com.instagram.android", "com.chrome", "com.ahmed.rotrun"))
+        assertFalse(AskLaunchPolicy.keepShownShield(null, "com.android.systemui", "com.ahmed.rotrun"))
+        assertFalse(AskLaunchPolicy.acceptTap(inFlight = true))
+        assertTrue(AskLaunchPolicy.acceptTap(inFlight = false))
+        assertFalse(AskLaunchPolicy.raiseShieldActivity(alreadyShowing = true, elapsedMs = 20_000))
+        assertFalse(AskLaunchPolicy.raiseShieldActivity(alreadyShowing = false, elapsedMs = 1_000))
+        assertTrue(AskLaunchPolicy.raiseShieldActivity(alreadyShowing = false, elapsedMs = 8_000))
+    }
+
+    @Test
     fun googleNonceIsLowerHexAndAMissingGrantRetriesTheAccountList() {
         assertEquals(
             "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",

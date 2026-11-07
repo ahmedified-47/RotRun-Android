@@ -135,7 +135,12 @@ object ShieldOverlay {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             ).apply { topMargin = (28 * density).toInt() }
-            setOnClickListener { onAsk() }
+            setOnClickListener {
+                if (!AskLaunchPolicy.acceptTap(AskBrainLaunch.launching)) return@setOnClickListener
+                isEnabled = false
+                text = "Opening…"
+                onAsk()
+            }
         }
         root.addView(mascot)
         root.addView(title)
@@ -145,7 +150,9 @@ object ShieldOverlay {
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
             type,
-            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED,
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT,
         ).apply {
             gravity = Gravity.TOP or Gravity.START

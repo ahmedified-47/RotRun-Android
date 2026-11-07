@@ -52,6 +52,10 @@ class BlockAccessibilityService : AccessibilityService() {
             if (ShieldSession.openedInto(packageName) && !repoReadyBlocked(packageName)) ShieldSession.release()
             return
         }
+        if (AskLaunchPolicy.keepShownShield(shownFor, packageName, this.packageName)) {
+            covering = overlay != null
+            return
+        }
         val repo = RotRunGraph.repo
         if (!repo.isBlocked(packageName, repo.safetyPackages())) {
             hide()

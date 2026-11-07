@@ -106,6 +106,7 @@ class InterventionActivity : ComponentActivity() {
             intent.putExtra(EXTRA_TOKEN, it)
         }
         if (packageName.isNotBlank()) {
+            showingPackage = packageName
             com.ahmed.rotrun.watch.ShieldSession.hold(packageName)
             com.ahmed.rotrun.watch.BlockAccessibilityService.dismiss()
             com.ahmed.rotrun.watch.BlockWatchService.dismiss()
@@ -142,6 +143,7 @@ class InterventionActivity : ComponentActivity() {
 
     override fun onDestroy() {
         val packageName = intent.getStringExtra(EXTRA_PACKAGE).orEmpty()
+        if (showingPackage == packageName) showingPackage = null
         if (!com.ahmed.rotrun.watch.ShieldSession.openedInto(packageName)) {
             com.ahmed.rotrun.watch.ShieldSession.release()
         }
@@ -160,5 +162,8 @@ class InterventionActivity : ComponentActivity() {
         const val EXTRA_PACKAGE = "package"
         const val EXTRA_MODE = "mode"
         const val EXTRA_TOKEN = "token"
+
+        @Volatile
+        var showingPackage: String? = null
     }
 }

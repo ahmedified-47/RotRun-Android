@@ -112,7 +112,7 @@ class BlockWatchService : Service() {
             hideOverlay()
             return
         }
-        if (BlockAccessibilityService.connected && BlockAccessibilityService.covering) {
+        if (BlockAccessibilityService.connected) {
             hideOverlay()
             return
         }
@@ -151,7 +151,8 @@ class BlockWatchService : Service() {
             }
             return
         }
-        if (now - (shownAt[packageName] ?: 0L) < 8_000) return
+        val elapsed = now - (shownAt[packageName] ?: 0L)
+        if (!AskLaunchPolicy.raiseShieldActivity(InterventionActivity.showingPackage == packageName, elapsed)) return
         shownAt[packageName] = now
         val copy = InterventionCopy.forPackage(packageName, label)
         val open = Intent(this, InterventionActivity::class.java).apply {

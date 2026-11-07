@@ -12,10 +12,39 @@ object AskLaunchPolicy {
         Intent.FLAG_ACTIVITY_NEW_TASK or
             Intent.FLAG_ACTIVITY_CLEAR_TOP or
             Intent.FLAG_ACTIVITY_SINGLE_TOP or
-            Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+            Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
+            Intent.FLAG_ACTIVITY_NO_ANIMATION
 
     /** While this is true the overlay stays, so the start still has a visible window. */
     fun leaveOverlayUp(launching: Boolean): Boolean = launching
+
+    /**
+     * A shield that is already up for a blocked app must stay that one view.
+     * ColorOS sends window events for itself, System UI, and RotRun while the overlay is showing.
+     * Rebuilding on those events is the flicker, and it eats the Ask my brain tap.
+     */
+    fun keepShownShield(shownFor: String?, eventPackage: String, ownPackage: String): Boolean {
+        if (shownFor.isNullOrBlank()) return false
+        if (eventPackage.isBlank() || eventPackage == shownFor || eventPackage == ownPackage) return true
+        return transientWindow(eventPackage)
+    }
+
+    fun transientWindow(packageName: String): Boolean {
+        val name = packageName.lowercase()
+        return name == "android" ||
+            name.startsWith("com.android.systemui") ||
+            name.startsWith("com.coloros.") ||
+            name.startsWith("com.oplus.") ||
+            name.startsWith("com.oppo.") ||
+            name.startsWith("com.heytap.")
+    }
+
+    /** The first tap runs. Another tap while that launch is in flight does nothing. */
+    fun acceptTap(inFlight: Boolean): Boolean = !inFlight
+
+    /** The fallback activity is raised once per open, not on every watch tick. */
+    fun raiseShieldActivity(alreadyShowing: Boolean, elapsedMs: Long): Boolean =
+        !alreadyShowing && elapsedMs >= 8_000
 
     /** Talk is open. Watchers must not paint the shield over the blocked app. */
     fun showShield(chatting: Boolean): Boolean = !chatting

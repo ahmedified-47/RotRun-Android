@@ -39,6 +39,8 @@ object AskBrainLaunch {
         private set
 
     fun open(context: Context, packageName: String, label: String) {
+        if (!AskLaunchPolicy.acceptTap(launching)) return
+        if (packageName.isNotBlank() && ShieldSession.chatPackage() == packageName) return
         launching = true
         try {
             if (packageName.isNotBlank()) ShieldSession.holdForChat(packageName, label)
@@ -62,14 +64,11 @@ object AskBrainLaunch {
     }
 
     private fun bringForward(context: Context, packageName: String, label: String): Boolean {
-        val launcher = launchIntent(context, packageName, label)
         val explicit = explicitIntent(context, packageName, label)
-        val pending = pending(context, launcher)
-        notify(context, label, pending)
-        val sent = runCatching { pending.send() }.isSuccess
-        val moved = bringExistingTaskForward(context)
-        val started = start(context, launcher) || start(context, explicit)
-        return sent || moved || started
+        notify(context, label, pending(context, explicit))
+        val started = start(context, explicit)
+        val moved = if (started) false else bringExistingTaskForward(context)
+        return started || moved
     }
 
     private fun launchIntent(context: Context, packageName: String, label: String): Intent {
