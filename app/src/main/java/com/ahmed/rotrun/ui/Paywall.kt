@@ -1,8 +1,12 @@
 package com.ahmed.rotrun.ui
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.EaseInOut
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -267,9 +271,10 @@ private fun FeatureRow(symbol: String, tint: Color, title: String, body: String,
 }
 
 @Composable
-fun PrimaryButton(title: String, enabled: Boolean = true, light: Boolean = false, textColor: Color? = null, fadeDisabled: Boolean = false, onClick: () -> Unit) {
+fun PrimaryButton(title: String, enabled: Boolean = true, light: Boolean = false, textColor: Color? = null, fadeDisabled: Boolean = false, loading: Boolean = false, onClick: () -> Unit) {
     val chrome = rot()
-    val faded = !enabled && fadeDisabled
+    val active = enabled && !loading
+    val faded = !active && fadeDisabled && !loading
     val alpha by animateFloatAsState(if (faded) 0.45f else 1f, tween(220, easing = EaseInOut), label = "continue")
     val fill = when {
         !enabled && !fadeDisabled -> chrome.pill
@@ -289,14 +294,20 @@ fun PrimaryButton(title: String, enabled: Boolean = true, light: Boolean = false
             .graphicsLayer { this.alpha = alpha }
             .clip(CircleShape)
             .background(fill)
-            .clickable(enabled = enabled, onClick = onClick)
+            .clickable(enabled = active, onClick = onClick)
             .padding(vertical = 16.dp),
         contentAlignment = Alignment.Center,
     ) {
-        if (title.isEmpty()) {
-            androidx.compose.material3.CircularProgressIndicator(color = label, modifier = Modifier.size(18.dp))
-        } else {
-            Text(title, color = label, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+        AnimatedContent(
+            targetState = loading || title.isEmpty(),
+            transitionSpec = { fadeIn(tween(220, easing = EaseInOut)) togetherWith fadeOut(tween(220, easing = EaseInOut)) },
+            label = "continue-spinner",
+        ) { busy ->
+            if (busy) {
+                androidx.compose.material3.CircularProgressIndicator(color = label, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+            } else {
+                Text(title, color = label, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+            }
         }
     }
 }

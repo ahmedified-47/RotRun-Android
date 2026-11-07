@@ -23,6 +23,8 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.ui.Alignment
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -48,6 +50,19 @@ fun reduceMotion(): Boolean {
     val animator = Settings.Global.getFloat(resolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
     val transition = Settings.Global.getFloat(resolver, Settings.Global.TRANSITION_ANIMATION_SCALE, 1f)
     return animator == 0f || transition == 0f
+}
+
+/** Cover enters from the trailing edge. Back sends it out to the trailing edge. The screen underneath does not move. */
+fun coverEnter(reduce: Boolean) = if (reduce) {
+    fadeIn(tween(10, easing = EaseOut))
+} else {
+    slideInHorizontally(tween(280, easing = EaseInOut)) { it } + fadeIn(tween(280, easing = EaseInOut))
+}
+
+fun coverExit(reduce: Boolean) = if (reduce) {
+    fadeOut(tween(10, easing = EaseOut))
+} else {
+    slideOutHorizontally(tween(280, easing = EaseInOut)) { it } + fadeOut(tween(280, easing = EaseInOut))
 }
 
 /** New screen from the trailing edge. Back comes from the leading edge. Reduce Motion fades in 0.01s. */
@@ -81,7 +96,7 @@ fun Appear(delaySec: Float, modifier: Modifier = Modifier, content: @Composable 
     val spec: AnimationSpec<Float> = if (reduce) tween(0) else tween(480, easing = EaseOut)
     val alpha by animateFloatAsState(if (shown) 1f else 0f, spec, label = "appear")
     val rise by animateFloatAsState(if (shown) 0f else 14f, spec, label = "rise")
-    Box(modifier.graphicsLayer { this.alpha = alpha; translationY = rise * density }) { content() }
+    Column(modifier.graphicsLayer { this.alpha = alpha; translationY = rise * density }, horizontalAlignment = Alignment.CenterHorizontally) { content() }
 }
 
 /** GamePressButtonStyle: scale 0.97, +3pt, spring 0.16 bounce 0.25. */
@@ -137,6 +152,20 @@ fun easeWidth(target: Float, durationMs: Int, reduce: Boolean): Float {
     val spec: AnimationSpec<Float> = if (reduce) tween(0) else tween(durationMs, easing = EaseInOut)
     val value by animateFloatAsState(target, spec, label = "width")
     return value
+}
+
+/** Opacity plus a rise, once. Reduce Motion snaps. */
+@Composable
+fun RiseIn(durationMs: Int, distancePt: Float = 12f, content: @Composable () -> Unit) {
+    val reduce = reduceMotion()
+    val anim = remember { Animatable(if (reduce) 1f else 0f) }
+    LaunchedEffect(durationMs) {
+        if (!reduce) anim.animateTo(1f, tween(durationMs, easing = EaseOut))
+    }
+    Box(Modifier.graphicsLayer {
+        alpha = anim.value
+        translationY = (1f - anim.value) * distancePt * density
+    }) { content() }
 }
 
 /** Hold-to-ascend display: follow the finger linearly, ease back to 0 on release. */

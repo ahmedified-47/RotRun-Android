@@ -250,7 +250,7 @@ private fun MainShell(repo: RotRunRepository) {
                 dismissButton = { TextButton(onClick = repo::dismissBatteryAsk) { Text("Not now") } },
             )
         }
-        if (audio) {
+        AnimatedVisibility(visible = audio, modifier = Modifier.fillMaxSize(), enter = coverEnter(reduceMotion()), exit = coverExit(reduceMotion())) {
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.55f)), contentAlignment = Alignment.Center) {
                 AudioSlap(state.cameoName.ifBlank { "a friend" }) { audio = false }
             }

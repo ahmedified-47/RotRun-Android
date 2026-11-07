@@ -233,12 +233,9 @@ private fun LeaderboardBody(state: SavedState, screenMinutes: Int?, repo: RotRun
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { reload() }
     val chrome = rot()
     val reduce = reduceMotion()
-    val trophy = remember { androidx.compose.animation.core.Animatable(if (reduce) 1f else 0.7f) }
+    val trophy = remember { androidx.compose.animation.core.Animatable(if (reduce) 1f else 0.72f) }
     LaunchedEffect(Unit) {
-        if (!reduce) {
-            trophy.animateTo(1.12f, swiftSpring(0.28f, 0.35f))
-            trophy.animateTo(1f, swiftSpring(0.22f, 0f))
-        }
+        if (!reduce) trophy.animateTo(1f, swiftSpring(0.45f, 0.35f))
     }
     Appear(0f) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center, modifier = Modifier.fillMaxWidth()) {
