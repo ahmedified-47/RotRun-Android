@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -49,6 +50,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -102,14 +104,10 @@ fun TalkSheet(repo: RotRunRepository, onClose: () -> Unit) {
     var calling by remember { mutableStateOf(false) }
     var callStatus by remember { mutableStateOf("Listening") }
     var transcript by remember { mutableStateOf("") }
+    var focusTick by remember { mutableIntStateOf(0) }
     var micDenied by remember { mutableStateOf(false) }
     var seeded by remember { mutableStateOf(false) }
-    val pulse by rememberInfiniteTransition(label = "listen").animateFloat(
-        initialValue = 1f,
-        targetValue = if (calling) 1.16f else 1f,
-        animationSpec = infiniteRepeatable(tween(750)),
-        label = "pulse",
-    )
+    val pulse = rememberPulse(1.16f, 750, calling)
     val dark = rot().dark
     val page = if (dark) Color.Black else Color(0xFFF2F2F7)
     val card = if (dark) Color(0xFF1C1C1E) else Color.White
@@ -252,8 +250,14 @@ fun TalkSheet(repo: RotRunRepository, onClose: () -> Unit) {
             else -> {
                 BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                     val scroll = rememberScrollState()
-                    LaunchedEffect(turns.size, error, transcript, cards.size, busy) {
-                        scroll.animateScrollTo(scroll.maxValue)
+                    var scrolled by remember { mutableStateOf(false) }
+                    LaunchedEffect(turns.size, error, transcript, cards.size, busy, focusTick) {
+                        if (!scrolled) {
+                            scrolled = true
+                            scroll.scrollTo(scroll.maxValue)
+                        } else {
+                            scroll.animateScrollTo(scroll.maxValue, androidx.compose.animation.core.tween(250, easing = androidx.compose.animation.core.EaseOut))
+                        }
                     }
                     Column(
                         Modifier.fillMaxWidth().heightIn(min = maxHeight).verticalScroll(scroll).padding(horizontal = 16.dp).padding(top = 12.dp, bottom = 8.dp),
@@ -321,7 +325,7 @@ fun TalkSheet(repo: RotRunRepository, onClose: () -> Unit) {
                         })
                     }
                 }
-                InputBar(draft, { draft = it }, !busy && draft.isNotBlank(), ink, card, tertiary, page) {
+                InputBar(draft, { draft = it }, !busy && draft.isNotBlank(), ink, card, tertiary, page, onFocus = { focusTick += 1 }) {
                     val message = draft.trim()
                     if (message.isEmpty() || busy) return@InputBar
                     if (PaywallGate.shows && !repo.state.value.premiumActive() && !canStillChat(repo)) {
@@ -561,14 +565,14 @@ private fun CardActions(primary: Pair<String, String>, dismiss: Pair<String, Str
 }
 
 @Composable
-private fun InputBar(value: String, onValue: (String) -> Unit, canSend: Boolean, ink: Color, card: Color, tertiary: Color, page: Color, onSend: () -> Unit) {
+private fun InputBar(value: String, onValue: (String) -> Unit, canSend: Boolean, ink: Color, card: Color, tertiary: Color, page: Color, onFocus: () -> Unit = {}, onSend: () -> Unit) {
     Row(Modifier.fillMaxWidth().background(page).padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         BasicTextField(
             value = value,
             onValueChange = onValue,
             textStyle = TextStyle(color = ink, fontFamily = Nunito, fontSize = 16.sp),
             cursorBrush = SolidColor(ActionBlue),
-            modifier = Modifier.weight(1f).clip(CircleShape).background(card).padding(horizontal = 14.dp, vertical = 10.dp),
+            modifier = Modifier.weight(1f).clip(CircleShape).background(card).padding(horizontal = 14.dp, vertical = 10.dp).onFocusChanged { if (it.isFocused) onFocus() },
             decorationBox = { inner ->
                 if (value.isEmpty()) Text("Message Rot", color = tertiary, fontFamily = Nunito, fontSize = 16.sp)
                 inner()

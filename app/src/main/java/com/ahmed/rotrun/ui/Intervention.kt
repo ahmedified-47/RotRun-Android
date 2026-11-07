@@ -13,6 +13,8 @@ import android.os.VibratorManager
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -45,6 +47,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.text.font.FontWeight
@@ -76,13 +79,8 @@ fun InterventionFlow(
     val friend = state.cameoName.takeIf { state.cameoToday() }
     val shieldCopy = InterventionCopy.forPackage(packageName, name)
     val shield = if (mode == "shield") shieldColors(shieldCopy.id) else null
-    if (BrainCallPolicy.isCall(mode)) {
-        BrainCall(
-            friend = friend,
-            onDecline = { mode = BrainCallPolicy.afterDecline() },
-            onUnlock = onUnlock,
-        )
-    } else if (mode == "shield") {
+    val reduce = reduceMotion()
+    if (mode == "shield") {
         val context = LocalContext.current
         Column(
             Modifier.fillMaxSize().background(shield?.second ?: Color(0xFF3D1A28)).padding(horizontal = 28.dp, vertical = 20.dp),
@@ -99,9 +97,16 @@ fun InterventionFlow(
                 onCall = { mode = BrainCallPolicy.MODE },
             )
         }
-    } else if (mode == "standard") {
-        Standard(name, friend, state.cameoKind, onDismiss, onUnlock)
     } else {
+        androidx.compose.animation.AnimatedVisibility(
+            visible = true,
+            enter = if (reduce) androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(10, easing = androidx.compose.animation.core.EaseOut)) else androidx.compose.animation.slideInHorizontally(androidx.compose.animation.core.tween(280, easing = androidx.compose.animation.core.EaseInOut)) { it } + androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(280, easing = androidx.compose.animation.core.EaseInOut)),
+        ) {
+        if (BrainCallPolicy.isCall(mode)) {
+            BrainCall(friend = friend, onDecline = { mode = BrainCallPolicy.afterDecline() }, onUnlock = onUnlock)
+        } else if (mode == "standard") {
+            Standard(name, friend, state.cameoKind, onDismiss, onUnlock)
+        } else {
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF8FDBFA), Color(0xFF66C785), Color(0xFF338C57))))) {
             Column(
                 Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 20.dp),
@@ -114,6 +119,8 @@ fun InterventionFlow(
                     else -> Quick(name, friend, onDismiss, onUnlock)
                 }
             }
+        }
+        }
         }
     }
 }
@@ -244,7 +251,24 @@ private fun Standard(appName: String, friend: String?, kind: String, onDismiss: 
 
 @Composable
 private fun ChatBubble(text: String, brain: Boolean, blue: Color) {
-    Row(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+    val scale = remember { androidx.compose.animation.core.Animatable(0.86f) }
+    val alpha = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(text) {
+        val bounce = if (brain) 0.18f else 0.12f
+        val duration = if (brain) 0.36f else 0.32f
+        scale.animateTo(1f, swiftSpring(duration, bounce))
+    }
+    LaunchedEffect(text) {
+        val bounce = if (brain) 0.18f else 0.12f
+        val duration = if (brain) 0.36f else 0.32f
+        alpha.animateTo(1f, swiftSpring(duration, bounce))
+    }
+    Row(Modifier.fillMaxWidth().padding(top = 8.dp).graphicsLayer {
+        scaleX = scale.value
+        scaleY = scale.value
+        this.alpha = alpha.value
+        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(if (brain) 0f else 1f, 1f)
+    }) {
         if (!brain) Spacer(Modifier.weight(1f))
         Text(
             text,
@@ -269,7 +293,7 @@ private fun ReplyPill(label: String, blue: Color, onClick: () -> Unit) {
 @Composable
 private fun Quick(appName: String, friend: String?, onDismiss: () -> Unit, onUnlock: (Int) -> Unit) {
     var step by remember { mutableIntStateOf(1) }
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+    Appear(0f) { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text("QUICK CHECK", color = Color(0xFF1A5230), fontWeight = FontWeight.Black, fontSize = 12.sp, letterSpacing = 1.1.sp, modifier = Modifier.clip(CircleShape).background(Color.White.copy(alpha = 0.92f)).padding(horizontal = 12.dp, vertical = 6.dp))
             Text(appName, color = Color.White, fontWeight = FontWeight.Black, fontSize = 15.sp, modifier = Modifier.padding(top = 6.dp))
@@ -283,30 +307,75 @@ private fun Quick(appName: String, friend: String?, onDismiss: () -> Unit, onUnl
                 Text("$pip", color = if (filled) Color(0xFF1A5230) else Color.White, fontWeight = FontWeight.Black, fontSize = 13.sp)
             }
         }
-    }
+    } }
     Spacer(Modifier.height(20.dp))
-    Bubble(if (step == 1) {
-        if (friend != null) "Would $friend believe this is important?" else "Hey. Do you really need this right now?"
-    } else {
-        "Okay, you can scroll some more, just remember it hurts me."
-    })
-    CartoonBrain(if (step == 1) BrainStyle.Watch else BrainStyle.Pleading, Modifier.size(180.dp))
+    androidx.compose.animation.AnimatedContent(
+        step,
+        transitionSpec = {
+            androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(550, easing = androidx.compose.animation.core.EaseInOut)) togetherWith
+                androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(550, easing = androidx.compose.animation.core.EaseInOut))
+        },
+        label = "quick-body",
+    ) { current ->
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Appear(0.06f) {
+                Bubble(if (current == 1) {
+                    if (friend != null) "Would $friend believe this is important?" else "Hey. Do you really need this right now?"
+                } else {
+                    "Okay, you can scroll some more, just remember it hurts me."
+                })
+            }
+            Appear(0.10f) { CartoonBrain(if (current == 1) BrainStyle.Watch else BrainStyle.Pleading, Modifier.size(180.dp)) }
+        }
+    }
     Spacer(Modifier.height(12.dp))
-    if (step == 1) {
-        Pill("Nah, you're right") { onDismiss() }
-        Text("Yes, I really do", color = Color.White, fontWeight = FontWeight.Black, fontSize = 16.sp, modifier = Modifier.padding(vertical = 8.dp).clickable { step = 2 })
-    } else {
-        DurationTiles(onUnlock)
-        Text("Nah, never mind", color = Color.White, fontWeight = FontWeight.Black, fontSize = 16.sp, modifier = Modifier.padding(vertical = 8.dp).clickable(onClick = onDismiss))
+    androidx.compose.animation.AnimatedContent(
+        step,
+        transitionSpec = {
+            val up = targetState > initialState
+            val fade = swiftSpring<Float>(0.45f, 0.12f)
+            val move = swiftSpring<androidx.compose.ui.unit.IntOffset>(0.45f, 0.12f)
+            (androidx.compose.animation.slideInVertically(move) { it / 6 } + androidx.compose.animation.fadeIn(fade)) togetherWith
+                (androidx.compose.animation.slideOutVertically(move) { if (up) -it / 8 else it / 8 } + androidx.compose.animation.fadeOut(fade))
+        },
+        label = "quick-controls",
+    ) { current ->
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            if (current == 1) {
+                Pill("Nah, you're right") { onDismiss() }
+                Text("Yes, I really do", color = Color.White, fontWeight = FontWeight.Black, fontSize = 16.sp, modifier = Modifier.padding(vertical = 8.dp).clickable { step = 2 })
+            } else {
+                DurationTiles(onUnlock)
+                Text("Nah, never mind", color = Color.White, fontWeight = FontWeight.Black, fontSize = 16.sp, modifier = Modifier.padding(vertical = 8.dp).clickable(onClick = onDismiss))
+            }
+        }
     }
 }
 
 @Composable
 private fun Breathing(friend: String?, kind: String, onDismiss: () -> Unit, onUnlock: (Int) -> Unit) {
+    val context = LocalContext.current
     var phase by remember { mutableIntStateOf(0) }
     var left by remember { mutableIntStateOf(4) }
     val labels = listOf("Breathe in.", "Hold.", "Breathe out.")
     val lengths = listOf(4, 2, 4)
+    val breath = remember { androidx.compose.animation.core.Animatable(1f) }
+    LaunchedEffect(phase) {
+        if (phase > 2) return@LaunchedEffect
+        val vibrator = vibrator(context)
+        when (phase) {
+            0 -> pulseHaptic(vibrator, (0.72f * 255).toInt(), 4000)
+            1 -> runCatching { vibrator?.vibrate(VibrationEffect.createOneShot(40, 255)) }
+            2 -> pulseHaptic(vibrator, (0.55f * 255).toInt(), 4000)
+        }
+    }
+    LaunchedEffect(phase) {
+        if (phase > 2) return@LaunchedEffect
+        when (phase) {
+            0 -> breath.animateTo(1.18f, androidx.compose.animation.core.tween(4000, easing = androidx.compose.animation.core.EaseInOut))
+            2 -> breath.animateTo(1f, androidx.compose.animation.core.tween(4000, easing = androidx.compose.animation.core.EaseInOut))
+        }
+    }
     LaunchedEffect(phase) {
         if (phase > 2) return@LaunchedEffect
         var remaining = lengths[phase]
@@ -317,10 +386,14 @@ private fun Breathing(friend: String?, kind: String, onDismiss: () -> Unit, onUn
         }
         phase += 1
     }
-    CartoonBrain(BrainStyle.Spa, Modifier.size(140.dp))
+    CartoonBrain(BrainStyle.Spa, Modifier.size(140.dp).graphicsLayer { scaleX = breath.value; scaleY = breath.value })
     if (phase <= 2) {
-        Text(labels[phase], fontSize = 28.sp, fontWeight = FontWeight.Bold)
-        Text("$left ${if (left == 1) "second" else "seconds"}", color = Melt.Muted)
+        androidx.compose.animation.AnimatedContent(
+            labels[phase],
+            transitionSpec = { androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(350)) togetherWith androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(350)) },
+            label = "phase",
+        ) { Text(it, fontSize = 28.sp, fontWeight = FontWeight.Bold) }
+        SnappyText("$left") { Text("$it ${if (it == "1") "second" else "seconds"}", color = Melt.Muted) }
         if (friend != null) Text(InterventionCopy.roast(kind, friend), textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp))
     } else {
         var ask by remember { mutableStateOf(true) }
@@ -354,22 +427,28 @@ private fun BrainCall(friend: String?, onDecline: () -> Unit, onUnlock: (Int) ->
             Text("MIRROR MODE", color = Color.White, fontWeight = FontWeight.Black)
             Spacer(Modifier.weight(1f))
             if (!accepted) {
-                Text(friend ?: "Your Brain", color = Color.White, fontSize = 40.sp, fontWeight = FontWeight.Black, textAlign = TextAlign.Center)
-                Text("Wants a mirror match", color = Color.White, fontSize = 18.sp, modifier = Modifier.padding(top = 8.dp))
+                val ring = rememberPulse(1.08f, 1150, true)
+                Appear(0f) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Box(Modifier.size(120.dp).graphicsLayer { scaleX = ring; scaleY = ring }.border(3.dp, Color.White.copy(alpha = 0.85f), CircleShape))
+                        Text(friend ?: "Your Brain", color = Color.White, fontSize = 40.sp, fontWeight = FontWeight.Black, textAlign = TextAlign.Center)
+                    }
+                }
+                Appear(0.08f) { Text("Wants a mirror match", color = Color.White, fontSize = 18.sp, modifier = Modifier.padding(top = 8.dp)) }
                 if (!granted) {
-                    Text("Camera access is off — the match still works.", color = Color.White.copy(alpha = 0.85f), textAlign = TextAlign.Center, modifier = Modifier.padding(top = 16.dp))
-                    Text("Allow camera", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp).clickable { ask.launch(Manifest.permission.CAMERA) })
+                    Appear(0.16f) { Text("Camera access is off — the match still works.", color = Color.White.copy(alpha = 0.85f), textAlign = TextAlign.Center, modifier = Modifier.padding(top = 16.dp)) }
+                    Appear(0.22f) { Text("Allow camera", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp).clickable { ask.launch(Manifest.permission.CAMERA) }) }
                 }
             } else {
                 Text("YOU", color = Color.White, fontWeight = FontWeight.Black)
                 if (step == 1) {
-                    Bubble("You really wanna keep scrolling?")
-                    Pill("Nah, you're right") { onDecline() }
-                    Pill("Yes, I really do") { step = 2 }
+                    Appear(0f) { Bubble("You really wanna keep scrolling?") }
+                    Appear(0.08f) { Pill("Nah, you're right") { onDecline() } }
+                    Appear(0.16f) { Pill("Yes, I really do") { step = 2 } }
                 } else {
-                    Bubble("How long do you need?")
-                    DurationTiles(onUnlock)
-                    Pill("Actually, never mind") { onDecline() }
+                    Appear(0f) { Bubble("How long do you need?") }
+                    DurationTiles(onUnlock, delays = listOf(0f, 0.05f, 0.10f))
+                    Appear(0.16f) { Pill("Actually, never mind") { onDecline() } }
                 }
             }
             Spacer(Modifier.weight(1f))
@@ -413,6 +492,14 @@ private fun ringtone(context: Context): Ringtone? = runCatching {
     RingtoneManager.getRingtone(context, uri)
 }.getOrNull()
 
+private suspend fun pulseHaptic(vibrator: Vibrator?, amplitude: Int, totalMs: Int) {
+    val ticks = totalMs / 500
+    repeat(ticks) {
+        runCatching { vibrator?.vibrate(VibrationEffect.createOneShot(80, amplitude.coerceIn(1, 255))) }
+        delay(500)
+    }
+}
+
 private fun vibrator(context: Context): Vibrator? = if (Build.VERSION.SDK_INT >= 31) {
     context.getSystemService(VibratorManager::class.java)?.defaultVibrator
 } else {
@@ -449,28 +536,34 @@ private fun MirrorPreview(modifier: Modifier) {
 @Composable
 private fun Cameo(appName: String, friend: String, kind: String, onDismiss: () -> Unit, onUnlock: (Int) -> Unit) {
     var howLong by remember { mutableStateOf(false) }
-    Text("Note from $friend", fontWeight = FontWeight.Bold, fontSize = 22.sp)
-    Text(InterventionCopy.roast(kind.ifBlank { "note" }, friend), textAlign = TextAlign.Center, modifier = Modifier.padding(vertical = 8.dp))
-    Text("Opening $appName anyway?")
+    val stepSpring = swiftSpring<Float>(0.4f, 0.1f)
+    val reveal by androidx.compose.animation.core.animateFloatAsState(if (howLong) 1f else 0f, stepSpring, label = "cameo")
+    Appear(0f) { Text("Note from $friend", fontWeight = FontWeight.Bold, fontSize = 22.sp) }
+    Appear(0.06f) { Text(InterventionCopy.roast(kind.ifBlank { "note" }, friend), textAlign = TextAlign.Center, modifier = Modifier.padding(vertical = 8.dp)) }
+    Appear(0.10f) { Text("Opening $appName anyway?") }
     if (!howLong) {
-        Pill("Walk away") { onDismiss() }
-        Pill("Continue") { howLong = true }
+        Appear(0.20f) { Pill("Walk away") { onDismiss() } }
+        Appear(0.26f) { Pill("Continue") { howLong = true } }
     } else {
-        DurationTiles(onUnlock)
+        Box(Modifier.graphicsLayer { alpha = reveal }) { DurationTiles(onUnlock) }
         Pill("Nah, never mind") { onDismiss() }
     }
 }
 
 @Composable
-private fun DurationTiles(onUnlock: (Int) -> Unit) {
+private fun DurationTiles(onUnlock: (Int) -> Unit, delays: List<Float> = emptyList()) {
     data class Tile(val minutes: Int, val label: String)
-    listOf(Tile(10, "Quick peek"), Tile(20, "A chapter"), Tile(30, "Long scroll")).forEach { tile ->
-        Column(
-            Modifier.padding(vertical = 4.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color.White).clickable { onUnlock(tile.minutes) }.padding(12.dp),
-        ) {
-            Text("${tile.minutes}", fontWeight = FontWeight.Black, fontSize = 22.sp)
-            Text("minutes · ${tile.label}", color = Melt.Muted)
+    listOf(Tile(10, "Quick peek"), Tile(20, "A chapter"), Tile(30, "Long scroll")).forEachIndexed { index, tile ->
+        val body = @Composable {
+            Column(
+                Modifier.padding(vertical = 4.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color.White).clickable { onUnlock(tile.minutes) }.padding(12.dp),
+            ) {
+                Text("${tile.minutes}", fontWeight = FontWeight.Black, fontSize = 22.sp)
+                Text("minutes · ${tile.label}", color = Melt.Muted)
+            }
         }
+        val delaySec = delays.getOrNull(index)
+        if (delaySec == null) body() else Appear(delaySec) { body() }
     }
 }
 
@@ -491,12 +584,13 @@ private fun Bubble(text: String) {
 
 @Composable
 private fun Pill(label: String, onClick: () -> Unit) {
-    Box(Modifier.padding(vertical = 4.dp).fillMaxWidth()) {
+    val press = remember { MutableInteractionSource() }
+    Box(Modifier.padding(vertical = 4.dp).fillMaxWidth().chunkyPress(press)) {
         Box(Modifier.matchParentSize().offset(y = 5.dp).clip(CircleShape).background(Color(0xFF0F3D9E)))
         Text(
             label,
             fontWeight = FontWeight.Black,
-            modifier = Modifier.fillMaxWidth().clip(CircleShape).background(Melt.Action).clickable(onClick = onClick).padding(vertical = 14.dp),
+            modifier = Modifier.fillMaxWidth().clip(CircleShape).background(Melt.Action).clickable(interactionSource = press, indication = null, onClick = onClick).padding(vertical = 14.dp),
             color = Color.White,
             textAlign = TextAlign.Center,
         )

@@ -81,7 +81,7 @@ fun RotRunRoot(repo: RotRunRepository) {
     val toast by repo.toast.collectAsState()
     LaunchedEffect(toast) {
         if (toast != null) {
-            delay(2400)
+            delay(2200)
             repo.clearToast()
         }
     }
@@ -102,11 +102,13 @@ fun RotRunRoot(repo: RotRunRepository) {
         }
         if (state.bailoutFrom.isNotBlank()) {
             LaunchedEffect(state.bailoutFrom) { delay(4000); repo.clearBailout() }
+            Appear(0f, Modifier.align(Alignment.TopCenter).padding(top = 96.dp)) {
             Text(
                 "${state.bailoutFrom} bailed you out. You owe them a coffee.",
                 color = Color.White,
-                modifier = Modifier.align(Alignment.TopCenter).padding(top = 96.dp).clip(CircleShape).background(Melt.House).padding(horizontal = 14.dp, vertical = 8.dp),
+                modifier = Modifier.clip(CircleShape).background(Melt.House).padding(horizontal = 14.dp, vertical = 8.dp),
             )
+            }
         }
     }
 }
@@ -210,10 +212,10 @@ private fun MainShell(repo: RotRunRepository) {
         LaunchedEffect(state.focus?.startedAt) {
             if (state.focus != null) focusShown = state.focus
         }
-        AnimatedVisibility(visible = state.focus != null && !focusSheet, modifier = Modifier.fillMaxSize(), enter = fadeIn(tween(250)), exit = fadeOut(tween(250))) {
+        AnimatedVisibility(visible = state.focus != null && !focusSheet, modifier = Modifier.fillMaxSize(), enter = focusFadeIn(), exit = focusFadeOut()) {
             focusShown?.let { FocusOverlay(it, repo) }
         }
-        AnimatedVisibility(visible = focusSheet, modifier = Modifier.fillMaxSize(), enter = fadeIn(tween(250)), exit = fadeOut(tween(250))) {
+        AnimatedVisibility(visible = focusSheet, modifier = Modifier.fillMaxSize(), enter = focusFadeIn(), exit = focusFadeOut()) {
             FocusChooser(onClose = { focusSheet = false }, repo = repo)
         }
         if (talk) TalkSheet(repo) {

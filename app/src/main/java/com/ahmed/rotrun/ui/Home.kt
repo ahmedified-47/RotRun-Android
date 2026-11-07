@@ -81,7 +81,7 @@ fun HomeScreen(state: SavedState, usage: UsageSnapshot, refreshing: Boolean, onR
             Column(Modifier.fillMaxWidth()) {
                 HomeHeader(state.streak.coerceAtLeast(1), refreshing, scenic, on, onRefresh, onTalk, Modifier.zIndex(1f))
                 Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
-                    CartoonBrain(style, Modifier.size(brainSize), animated = false)
+                    CartoonBrain(style, Modifier.size(brainSize), animated = !short)
                 }
             }
         }
@@ -112,7 +112,7 @@ fun HomeScreen(state: SavedState, usage: UsageSnapshot, refreshing: Boolean, onR
                     .background(if (scenic) Color.Black.copy(alpha = 0.22f) else chrome.line),
                 contentAlignment = Alignment.CenterStart,
             ) {
-                val fraction = ((health ?: 0) / 100f).coerceIn(0f, 1f)
+                val fraction = easeWidth(((health ?: 0) / 100f).coerceIn(0f, 1f), 550, reduceMotion())
                 if (health != null && fraction <= 0f) {
                     Box(Modifier.padding(start = 2.dp).size(12.dp).clip(CircleShape).background(if (scenic) Color.White else Melt.Action))
                 } else {

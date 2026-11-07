@@ -171,7 +171,7 @@ fun FocusOverlay(session: FocusSession, repo: RotRunRepository) {
         while (true) {
             now = System.currentTimeMillis()
             repo.maybeExpireFocus()
-            delay(500)
+            delay(1000)
         }
     }
     val elapsed = ((now - session.startedAt) / 1000).coerceAtLeast(0)

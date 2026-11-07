@@ -1,5 +1,8 @@
 package com.ahmed.rotrun.ui
 
+import androidx.compose.animation.core.EaseInOut
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -24,6 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -70,14 +74,25 @@ fun GetAccessPaywall(
             }
         }
         CartoonBrain(BrainStyle.Meadow, Modifier.size(if (onboarding) 96.dp else 120.dp), animated = false)
-        Text("RotRun Premium", color = chrome.ink, fontSize = 32.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp))
-        Text(
-            if (onboarding) "Free includes 3 chats a day. Voice is Premium. Prices come from Google Play."
-            else "Free includes 3 chats with Rot a day. Voice is Premium. Prices come from Google Play.",
-            color = chrome.muted,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(top = 8.dp, start = 12.dp, end = 12.dp),
-        )
+        val titleCopy = @Composable {
+            Text("RotRun Premium", color = chrome.ink, fontSize = 32.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp))
+        }
+        val subtitle = @Composable {
+            Text(
+                if (onboarding) "Free includes 3 chats a day. Voice is Premium. Prices come from Google Play."
+                else "Free includes 3 chats with Rot a day. Voice is Premium. Prices come from Google Play.",
+                color = chrome.muted,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 8.dp, start = 12.dp, end = 12.dp),
+            )
+        }
+        if (onboarding) {
+            Appear(0f) { titleCopy() }
+            Appear(0.08f) { subtitle() }
+        } else {
+            titleCopy()
+            subtitle()
+        }
         Spacer(Modifier.height(12.dp))
         if (catalog == CatalogStatus.Unavailable) {
             Text("Subscriptions unavailable", color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 18.sp)
@@ -120,7 +135,10 @@ fun GetAccessPaywall(
             Text("Terms of Use", color = chrome.blue, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.clickable { legal = "terms" })
             Text("Privacy Policy", color = chrome.blue, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.clickable { legal = "privacy" })
         }
-        Text(BillingQuotes.LEGAL_FOOTER, color = chrome.muted, fontSize = 12.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = if (onboarding) 8.dp else 16.dp))
+        val footer = @Composable {
+            Text(BillingQuotes.LEGAL_FOOTER, color = chrome.muted, fontSize = 12.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = if (onboarding) 8.dp else 16.dp))
+        }
+        if (onboarding) Appear(0.14f) { footer() } else footer()
         Spacer(Modifier.height(12.dp))
     }
 }
@@ -249,15 +267,17 @@ private fun FeatureRow(symbol: String, tint: Color, title: String, body: String,
 }
 
 @Composable
-fun PrimaryButton(title: String, enabled: Boolean = true, light: Boolean = false, textColor: Color? = null, onClick: () -> Unit) {
+fun PrimaryButton(title: String, enabled: Boolean = true, light: Boolean = false, textColor: Color? = null, fadeDisabled: Boolean = false, onClick: () -> Unit) {
     val chrome = rot()
+    val faded = !enabled && fadeDisabled
+    val alpha by animateFloatAsState(if (faded) 0.45f else 1f, tween(220, easing = EaseInOut), label = "continue")
     val fill = when {
-        !enabled -> chrome.pill
+        !enabled && !fadeDisabled -> chrome.pill
         light -> Color.White
         else -> chrome.blue
     }
     val label = when {
-        !enabled -> chrome.muted
+        !enabled && !fadeDisabled -> chrome.muted
         textColor != null -> textColor
         light -> Melt.Ink
         else -> Color.White
@@ -266,22 +286,29 @@ fun PrimaryButton(title: String, enabled: Boolean = true, light: Boolean = false
         Modifier
             .fillMaxWidth()
             .padding(top = 8.dp)
+            .graphicsLayer { this.alpha = alpha }
             .clip(CircleShape)
             .background(fill)
             .clickable(enabled = enabled, onClick = onClick)
             .padding(vertical = 16.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(title, color = label, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+        if (title.isEmpty()) {
+            androidx.compose.material3.CircularProgressIndicator(color = label, modifier = Modifier.size(18.dp))
+        } else {
+            Text(title, color = label, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+        }
     }
 }
 
 @Composable
-fun ChoiceRow(label: String, selected: Boolean, emoji: String? = null, onClick: () -> Unit) {
+fun ChoiceRow(label: String, selected: Boolean, emoji: String? = null, scaleSelected: Boolean = true, onClick: () -> Unit) {
+    val scale by animateFloatAsState(if (selected && scaleSelected) 1.015f else 1f, tween(200, easing = EaseInOut), label = "choice")
     Row(
         Modifier
             .fillMaxWidth()
             .padding(vertical = 5.dp)
+            .graphicsLayer { scaleX = scale; scaleY = scale }
             .clip(RoundedCornerShape(16.dp))
             .background(if (selected) Melt.Action.copy(alpha = 0.16f) else Color(0xFFE9E9EB))
             .border(if (selected) 1.5.dp else 0.dp, if (selected) Melt.Action else Color.Transparent, RoundedCornerShape(16.dp))

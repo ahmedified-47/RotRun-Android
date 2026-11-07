@@ -7,11 +7,13 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -38,6 +40,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -229,26 +232,35 @@ private fun LeaderboardBody(state: SavedState, screenMinutes: Int?, repo: RotRun
     LaunchedEffect(xp, repo.backend.signedIn, day, state.askBrainCount, state.ransomDebit) { reload() }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { reload() }
     val chrome = rot()
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center, modifier = Modifier.fillMaxWidth()) {
-        Icon(Icons.Default.EmojiEvents, contentDescription = null, tint = Melt.Orange, modifier = Modifier.size(28.dp))
-        Text(" Leaderboard", color = chrome.ink, fontFamily = Nunito, fontSize = 28.sp, fontWeight = FontWeight.Black)
+    val reduce = reduceMotion()
+    val trophy = remember { androidx.compose.animation.core.Animatable(if (reduce) 1f else 0.7f) }
+    LaunchedEffect(Unit) {
+        if (!reduce) {
+            trophy.animateTo(1.12f, swiftSpring(0.28f, 0.35f))
+            trophy.animateTo(1f, swiftSpring(0.22f, 0f))
+        }
     }
-    Text("See how your Daily XP stacks up.", color = chrome.muted, fontFamily = Nunito, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
-    Row(Modifier.padding(vertical = 8.dp).fillMaxWidth().clip(CircleShape).background(chrome.inset).padding(4.dp)) {
-        Toggle("Daily XP", !friends, Modifier.weight(1f)) { friends = false }
-        Toggle("Friends", friends, Modifier.weight(1f)) { friends = true }
+    Appear(0f) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center, modifier = Modifier.fillMaxWidth()) {
+            Icon(Icons.Default.EmojiEvents, contentDescription = null, tint = Melt.Orange, modifier = Modifier.size(28.dp).graphicsLayer { scaleX = trophy.value; scaleY = trophy.value })
+            Text(" Leaderboard", color = chrome.ink, fontFamily = Nunito, fontSize = 28.sp, fontWeight = FontWeight.Black)
+        }
     }
+    Appear(0.06f) { Text("See how your Daily XP stacks up.", color = chrome.muted, fontFamily = Nunito, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) }
+    Appear(0.10f) { ScopeToggle(friends, reduce) { friends = it } }
     PullToRefreshBox(isRefreshing = refreshing, onRefresh = { repo.refreshUsage(); reload() }) {
         Column(Modifier.fillMaxWidth()) {
             when {
-                friends -> FriendsSoon()
-                !repo.backend.signedIn || board.signedOut -> SignInBoard(context, repo) { reload() }
-                xp == null -> UsageBoard()
-                board.rows.isEmpty() && board.pinned == null -> EmptyBoard()
+                friends -> Appear(0f) { FriendsSoon() }
+                !repo.backend.signedIn || board.signedOut -> Appear(0f) { SignInBoard(context, repo) { reload() } }
+                xp == null -> Appear(0.08f) { UsageBoard() }
+                board.rows.isEmpty() && board.pinned == null -> Appear(0.12f) { EmptyBoard() }
                 else -> {
-                    if (board.rows.size >= 3) Podium(board.rows.take(3))
+                    if (board.rows.size >= 3) {
+                        Appear(0.04f) { Podium(board.rows.take(3)) }
+                    }
                     val list = if (board.rows.size >= 3) board.rows.drop(3) else board.rows
-                    list.forEach { BoardRow(it) }
+                    list.forEachIndexed { index, row -> Appear(0.12f + minOf(index, 7) * 0.05f) { BoardRow(row) } }
                     board.pinned?.let { PinnedYou(it) }
                 }
             }
@@ -331,7 +343,10 @@ private fun BoardRow(row: RankedXp) {
         PlayerAvatar(row.name, row.avatarUrl, 36.dp)
         Column(Modifier.weight(1f).padding(start = 10.dp)) {
             Text(row.name, color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(Scoring.rank(row.xp).title, color = chrome.muted, fontSize = 12.sp)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                PixelBrain(Scoring.rank(row.xp).title, Modifier.size(18.dp))
+                Text(Scoring.rank(row.xp).title, color = chrome.muted, fontSize = 12.sp, modifier = Modifier.padding(start = 4.dp))
+            }
         }
         ScoreCapsule(row.xp, row.you)
     }
@@ -366,6 +381,24 @@ private fun ScoreCapsule(score: Int, you: Boolean) {
 }
 
 @Composable
+private fun ScopeToggle(friends: Boolean, reduce: Boolean, onPick: (Boolean) -> Unit) {
+    val slide by androidx.compose.animation.core.animateFloatAsState(
+        if (friends) 1f else 0f,
+        if (reduce) androidx.compose.animation.core.tween(120, easing = androidx.compose.animation.core.EaseOut) else swiftSpring(0.32f, 0f),
+        label = "scope",
+    )
+    BoxWithConstraints(Modifier.padding(vertical = 8.dp).fillMaxWidth().clip(CircleShape).background(rot().inset).padding(4.dp)) {
+        Box(
+            Modifier.fillMaxWidth(0.5f).offset(x = maxWidth * 0.5f * slide).height(36.dp).clip(CircleShape).background(rot().blue),
+        )
+        Row(Modifier.fillMaxWidth()) {
+            Toggle("Daily XP", !friends, Modifier.weight(1f)) { onPick(false) }
+            Toggle("Friends", friends, Modifier.weight(1f)) { onPick(true) }
+        }
+    }
+}
+
+@Composable
 private fun Toggle(label: String, on: Boolean, modifier: Modifier = Modifier, click: () -> Unit) {
     Text(
         label,
@@ -373,7 +406,7 @@ private fun Toggle(label: String, on: Boolean, modifier: Modifier = Modifier, cl
         fontWeight = FontWeight.SemiBold,
         fontSize = 14.sp,
         textAlign = TextAlign.Center,
-        modifier = modifier.clip(CircleShape).background(if (on) rot().blue else Color.Transparent).clickable(onClick = click).padding(vertical = 9.dp),
+        modifier = modifier.clickable(onClick = click).padding(vertical = 9.dp),
     )
 }
 
