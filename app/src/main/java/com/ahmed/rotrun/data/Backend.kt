@@ -21,6 +21,9 @@ import com.ahmed.rotrun.logic.VoiceSession
 import com.ahmed.rotrun.logic.ScreenTimeSync
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -39,6 +42,10 @@ import java.util.concurrent.TimeUnit
 
 data class ChatCard(val type: String, val data: Map<String, String>)
 
+data class ProfileDraft(val fullName: String, val avatarUrl: String?)
+
+data class ProfileResult(val saved: Boolean, val message: String?)
+
 class Backend(private val app: Context, private val repo: RotRunRepository) {
     private val http = OkHttpClient.Builder().callTimeout(30, TimeUnit.SECONDS).build()
     private val playHttp = OkHttpClient.Builder().callTimeout(20, TimeUnit.SECONDS).build()
@@ -49,6 +56,12 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
     private var pendingCards: List<ChatCard> = emptyList()
     val signedIn: Boolean get() = accessToken().isNotBlank()
     val userId: String? get() = session.getString("user_id", null)
+    private val _needsProfile = MutableStateFlow(false)
+    val needsProfile: StateFlow<Boolean> = _needsProfile.asStateFlow()
+
+    init {
+        syncProfileGate()
+    }
 
     fun restore() {
         val token = accessToken()
@@ -83,6 +96,53 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
         voice?.stop()
         session.edit().clear().apply()
         app.getSharedPreferences("rotrun", Context.MODE_PRIVATE).edit().remove("chat.turns").apply()
+        syncProfileGate()
+    }
+
+    fun signInLater(): Boolean = flags().getBoolean(PROFILE_LATER, false)
+
+    fun markSignInLater() {
+        flags().edit().putBoolean(PROFILE_LATER, true).apply()
+    }
+
+    fun profileDraft(): ProfileDraft = ProfileDraft(
+        fullName = session.getString("full_name", null)?.trim().orEmpty(),
+        avatarUrl = storedAvatar(),
+    )
+
+    fun saveProfile(fullName: String, jpeg: ByteArray?): ProfileResult {
+        val name = DailyBoard.savedFullName(fullName) ?: return ProfileResult(false, "Enter your name.")
+        val id = userId ?: return ProfileResult(false, "Sign in first.")
+        if (accessToken().isBlank()) return ProfileResult(false, "Sign in first.")
+        var warning: String? = null
+        var avatar = storedAvatar()
+        if (jpeg != null) {
+            val uploaded = uploadAvatar(id, jpeg)
+            if (uploaded.error != null) warning = uploaded.error
+            else avatar = uploaded.url
+        }
+        val data = JSONObject().put("full_name", name)
+        if (!avatar.isNullOrBlank()) data.put("avatar_url", avatar)
+        val meta = call("PUT", "/auth/v1/user", JSONObject().put("data", data).toString(), accessToken())
+        if (meta.code !in 200..299) return ProfileResult(false, failText(meta, "Couldn’t save your profile."))
+        val shown = DailyBoard.displayName(name)
+        session.edit()
+            .putString("full_name", name)
+            .putString("display_name", shown)
+            .putString("avatar_url", avatar.orEmpty())
+            .apply()
+        flags().edit().putString(PROFILE_DONE, id).remove(XP_FINGER).remove(BOARD_CACHE).apply()
+        val row = JSONObject()
+            .put("display_name", shown)
+            .put("avatar_url", if (avatar.isNullOrBlank()) JSONObject.NULL else avatar)
+            .put("updated_at", ZonedDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME))
+        val patched = call("PATCH", "/rest/v1/daily_xp?user_id=eq.$id", row.toString(), accessToken(), "return=minimal")
+        if (patched.code !in 200..299) {
+            val detail = failText(patched, "Couldn’t update the leaderboard row.")
+            warning = listOfNotNull(warning, detail).joinToString(" ")
+        }
+        syncProfileGate()
+        return ProfileResult(true, warning)
     }
 
     fun deleteAccount(): String? {
@@ -348,11 +408,12 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
         val id = userId ?: return
         ensureProfile()
         val name = storedDisplayName()
+        val avatar = storedAvatar()
         val day = Scoring.dayKey()
-        val finger = DailyBoard.fingerprint(id, day, xp.coerceAtLeast(0), name)
+        val finger = DailyBoard.fingerprint(id, day, xp.coerceAtLeast(0), name, avatar)
         val prefs = flags()
         if (DailyBoard.shouldSkip(prefs.getString(XP_FINGER, null), prefs.getString(XP_PENDING, null), finger)) return
-        val body = xpBody(id, day, xp.coerceAtLeast(0), name)
+        val body = xpBody(id, day, xp.coerceAtLeast(0), name, avatar)
         val code = postDaily(body.toString())
         if (code in 200..299) {
             prefs.edit().putString(XP_FINGER, finger).remove(XP_PENDING).apply()
@@ -559,22 +620,89 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
         }
     }
 
-    private fun storedDisplayName(): String =
-        DailyBoard.displayName(session.getString("display_name", null))
+    private fun storedDisplayName(): String {
+        val full = session.getString("full_name", null)
+        val raw = if (!full.isNullOrBlank()) full else session.getString("display_name", null)
+        return DailyBoard.displayName(raw)
+    }
+
+    private fun storedAvatar(): String? = session.getString("avatar_url", null)?.takeIf { it.startsWith("http") }
 
     private fun googleName(user: JSONObject?): String? {
         val meta = user?.optJSONObject("user_metadata") ?: return null
         return meta.optString("full_name").ifBlank { meta.optString("name") }.ifBlank { null }
     }
 
+    private fun googleAvatar(user: JSONObject?): String? {
+        val meta = user?.optJSONObject("user_metadata") ?: return null
+        return meta.optString("avatar_url").ifBlank { meta.optString("picture") }.takeIf { it.startsWith("http") }
+    }
+
+    private fun rememberIdentity(user: JSONObject?) {
+        if (flags().getString(PROFILE_DONE, null) == userId) return
+        val name = googleName(user)
+        val avatar = googleAvatar(user)
+        val edit = session.edit()
+        if (session.getString("full_name", null).isNullOrBlank() && !name.isNullOrBlank()) {
+            edit.putString("full_name", name.trim())
+            edit.putString("display_name", DailyBoard.displayName(name))
+        }
+        if (storedAvatar() == null && !avatar.isNullOrBlank()) edit.putString("avatar_url", avatar)
+        edit.apply()
+    }
+
+    private fun syncProfileGate() {
+        val id = userId
+        _needsProfile.value = signedIn && !id.isNullOrBlank() && flags().getString(PROFILE_DONE, null) != id
+    }
+
+    private fun uploadAvatar(id: String, jpeg: ByteArray): Upload {
+        val key = BuildConfig.SUPABASE_PUBLISHABLE_KEY
+        if (key.isBlank()) return Upload(null, "Add SUPABASE_PUBLISHABLE_KEY to local.properties.")
+        val request = Request.Builder()
+            .url(BuildConfig.SUPABASE_URL + "/storage/v1/object/avatars/$id.jpg")
+            .header("apikey", key)
+            .header("Authorization", "Bearer ${accessToken()}")
+            .header("x-upsert", "true")
+            .header("Content-Type", "image/jpeg")
+            .post(jpeg.toRequestBody("image/jpeg".toMediaType()))
+            .build()
+        val result = runCatching {
+            http.newCall(request).execute().use { response ->
+                val text = response.body?.string().orEmpty()
+                if (response.code in 200..299) {
+                    val stamp = System.currentTimeMillis()
+                    Upload("${BuildConfig.SUPABASE_URL}/storage/v1/object/public/avatars/$id.jpg?v=$stamp", null)
+                } else {
+                    val json = runCatching { JSONObject(text) }.getOrNull()
+                    val message = json?.optString("message")?.ifBlank { null }
+                        ?: json?.optString("error")?.ifBlank { null }
+                        ?: text.ifBlank { "Couldn’t upload the photo (${response.code})" }
+                    Upload(null, message)
+                }
+            }
+        }.getOrElse { Upload(null, it.message ?: "Couldn’t upload the photo.") }
+        return result
+    }
+
+    private fun failText(response: HttpResult, fallback: String): String {
+        val json = response.json
+        return json?.optString("message")?.ifBlank { null }
+            ?: json?.optString("error_description")?.ifBlank { null }
+            ?: json?.optString("msg")?.ifBlank { null }
+            ?: response.error
+            ?: fallback
+    }
+
     private fun flags() = app.getSharedPreferences("rotrun.flags", Context.MODE_PRIVATE)
 
-    private fun xpBody(id: String, day: String, xp: Int, name: String): JSONObject =
+    private fun xpBody(id: String, day: String, xp: Int, name: String, avatar: String?): JSONObject =
         JSONObject()
             .put("user_id", id)
             .put("day", day)
             .put("xp", xp)
             .put("display_name", name)
+            .put("avatar_url", if (avatar.isNullOrBlank()) JSONObject.NULL else avatar)
             .put("updated_at", ZonedDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME))
 
     private fun postDaily(body: String): Int {
@@ -601,7 +729,7 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
     private fun fetchBoard(day: String): HttpResult =
         call(
             "GET",
-            "/rest/v1/daily_xp?day=eq.$day&select=user_id,display_name,xp&order=xp.desc,updated_at.asc&limit=50",
+            "/rest/v1/daily_xp?day=eq.$day&select=user_id,display_name,xp,avatar_url&order=xp.desc,updated_at.asc&limit=50",
             null,
             accessToken(),
         )
@@ -617,7 +745,7 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
         )
         val higher = DailyBoard.countFromContentRange(response.contentRange) ?: return null
         val rank = DailyBoard.outsideRank(higher, yourXp) ?: return null
-        return RankedXp(id, storedDisplayName(), yourXp, rank, true)
+        return RankedXp(id, storedDisplayName(), yourXp, rank, true, storedAvatar())
     }
 
     private fun parseBoard(array: JSONArray): List<XpRow> = buildList {
@@ -625,7 +753,8 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
             val row = array.optJSONObject(index) ?: continue
             val id = row.optString("user_id")
             if (id.isBlank()) continue
-            add(XpRow(id, DailyBoard.displayName(row.optString("display_name")), row.optInt("xp")))
+            val avatar = row.optString("avatar_url").takeIf { it.startsWith("http") }
+            add(XpRow(id, DailyBoard.displayName(row.optString("display_name")), row.optInt("xp"), avatar))
         }
     }
 
@@ -650,8 +779,9 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
             .putLong("expires", System.currentTimeMillis() + payload.optLong("expires_in") * 1000)
             .putString("user_id", user?.optString("id"))
             .putString("email", user?.optString("email"))
-            .putString("display_name", DailyBoard.displayName(googleName(user)))
             .apply()
+        rememberIdentity(user)
+        syncProfileGate()
         val profile = JSONObject().put("user_id", user?.optString("id")).put("timezone", ZoneId.systemDefault().id)
         call(
             "POST",
@@ -679,7 +809,8 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
             .putLong("expires", System.currentTimeMillis() + payload.optLong("expires_in") * 1000)
             .putString("user_id", user?.optString("id") ?: userId)
             .apply()
-        googleName(user)?.let { session.edit().putString("display_name", DailyBoard.displayName(it)).apply() }
+        rememberIdentity(user)
+        syncProfileGate()
     }
 
     private fun ensureProfile() {
@@ -1021,6 +1152,8 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
         }.getOrElse { HttpResult(0, null, null, it.message, null) }
     }
 
+    private data class Upload(val url: String?, val error: String?)
+
     private data class HttpResult(
         val code: Int,
         val json: JSONObject?,
@@ -1045,6 +1178,8 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
         private const val XP_PENDING = "xp.pending"
         private const val BOARD_CACHE = "board.cache"
         private const val BOARD_DAY = "board.day"
+        private const val PROFILE_DONE = "profile.done"
+        private const val PROFILE_LATER = "profile.later"
 
         private fun randomNonce(): String {
             val alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._"

@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -34,6 +35,7 @@ import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Help
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.QuestionMark
 import androidx.compose.material.icons.filled.Refresh
@@ -106,6 +108,7 @@ fun SettingsScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunR
         "contact" -> ContactPage { page = "support" }
         "widget" -> WidgetPage { page = "root" }
         "memory" -> MemoryPage(repo) { page = "root" }
+        "profile" -> ProfilePage(repo) { page = "root" }
         "subscription" -> PremiumManage(state, repo, onBack = { page = "support" }, onChangePlan = { page = "plans" })
         "plans" -> Column(Modifier.padding(bottom = 12.dp)) {
             BackHeader("RotRun Premium") { page = "subscription" }
@@ -180,6 +183,9 @@ private fun RootSettings(
             contentAlignment = Alignment.Center,
         ) { CartoonBrain(BrainStyle.Meadow, Modifier.size(72.dp), animated = false) }
         Text("Settings", color = chrome.ink, fontSize = 34.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 8.dp))
+        CardGroup {
+            RowLink("Profile", icon = Icons.Default.Person, tint = chrome.blue) { open("profile") }
+        }
         if (!access.usage) {
             CardGroup {
                 Column(Modifier.fillMaxWidth().clickable(onClick = onUsage).padding(16.dp)) {
@@ -622,6 +628,17 @@ private fun WidgetPage(onBack: () -> Unit) {
                     Text(body, color = rot().muted, fontSize = 13.sp)
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ProfilePage(repo: RotRunRepository, onBack: () -> Unit) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+        BackHeader("Profile", onBack)
+        Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+            Text("This name and photo show on Daily XP. A photo is optional.", color = rot().muted, modifier = Modifier.padding(bottom = 16.dp))
+            ProfileEditor(repo, blocking = false)
         }
     }
 }

@@ -307,7 +307,7 @@ private fun Podium(top: List<RankedXp>) {
 @Composable
 private fun PodiumPlace(row: RankedXp, bar: androidx.compose.ui.unit.Dp, medal: Color) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(96.dp)) {
-        InitialAvatar(row.name)
+        PlayerAvatar(row.name, row.avatarUrl, 48.dp)
         Text(row.name, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, color = rot().ink)
         Text("${row.xp} XP", fontSize = 11.sp, color = rot().muted)
         Text("#${row.rank}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = rot().ink)
@@ -328,7 +328,7 @@ private fun BoardRow(row: RankedXp) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text("#${row.rank}", fontWeight = FontWeight.Black, color = rankColor, modifier = Modifier.width(36.dp))
-        InitialAvatar(row.name)
+        PlayerAvatar(row.name, row.avatarUrl, 36.dp)
         Column(Modifier.weight(1f).padding(start = 10.dp)) {
             Text(row.name, color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(Scoring.rank(row.xp).title, color = chrome.muted, fontSize = 12.sp)
@@ -344,6 +344,7 @@ private fun PinnedYou(row: RankedXp) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text("#${row.rank}", color = Color.White, fontWeight = FontWeight.Black)
+        Box(Modifier.padding(start = 10.dp)) { PlayerAvatar(row.name, row.avatarUrl, 36.dp) }
         Text(row.name, color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 10.dp).weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
         Text("${row.xp} XP", color = Color.White, fontWeight = FontWeight.Bold)
     }

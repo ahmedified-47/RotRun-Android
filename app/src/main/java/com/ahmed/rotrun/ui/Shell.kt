@@ -86,10 +86,13 @@ fun RotRunRoot(repo: RotRunRepository) {
         }
     }
     Box(Modifier.fillMaxSize()) {
+        val needsProfile by repo.backend.needsProfile.collectAsState()
+        val ask by repo.askIntervention.collectAsState()
         when {
             !state.onboardingCompleted -> OnboardingScreen(repo)
             else -> MainShell(repo)
         }
+        if (needsProfile && ask == null) ProfileSetup(repo)
         if (toast != null) {
             Text(
                 toast.orEmpty(),

@@ -106,9 +106,30 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 @Composable
+private fun AccountSignup(repo: RotRunRepository, onLater: () -> Unit) {
+    val context = LocalContext.current
+    Column(Modifier.fillMaxSize().background(rot().page).statusBarsPadding().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Spacer(Modifier.weight(1f))
+        Text("Sign in with Google", color = rot().ink, fontFamily = Nunito, fontWeight = FontWeight.Bold, fontSize = 28.sp, textAlign = TextAlign.Center)
+        Text("Then add the name and photo that show on Daily XP.", color = rot().muted, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp, bottom = 24.dp))
+        PrimaryButton("Sign in with Google") {
+            val activity = context as? android.app.Activity ?: return@PrimaryButton
+            repo.backend.signIn(activity) { message -> message?.let { repo.toast(it) } }
+        }
+        Text("Not now", color = rot().muted, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(vertical = 16.dp).clickable(onClick = onLater))
+        Spacer(Modifier.weight(1f))
+    }
+}
+
+@Composable
 fun OnboardingScreen(repo: RotRunRepository) {
     val state by repo.state.collectAsState()
     val installed by repo.installed.collectAsState()
+    var signInLater by remember { mutableStateOf(repo.backend.signInLater()) }
+    if (!repo.backend.signedIn && !signInLater) {
+        AccountSignup(repo) { repo.backend.markSignInLater(); signInLater = true }
+        return
+    }
     val step = OnboardingStep.fromRaw(state.onboardingStep)
     var plan by remember { mutableStateOf(Products.YEARLY) }
     var upgrade by remember { mutableStateOf(false) }

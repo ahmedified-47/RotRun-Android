@@ -1,8 +1,8 @@
 package com.ahmed.rotrun.logic
 
-data class XpRow(val userId: String, val name: String, val xp: Int)
+data class XpRow(val userId: String, val name: String, val xp: Int, val avatarUrl: String? = null)
 
-data class RankedXp(val userId: String, val name: String, val xp: Int, val rank: Int, val you: Boolean)
+data class RankedXp(val userId: String, val name: String, val xp: Int, val rank: Int, val you: Boolean, val avatarUrl: String? = null)
 
 data class BoardSnapshot(
     val rows: List<RankedXp> = emptyList(),
@@ -30,10 +30,25 @@ object DailyBoard {
             val initial = parts.last().first { it.isLetter() }.uppercaseChar()
             "${parts.first()} $initial."
         }
-        return formatted.take(40).trim().ifBlank { fallbackName }
+        val shown = formatted.take(40).trim().ifBlank { fallbackName }
+        if (shown.equals("You", ignoreCase = true)) return fallbackName
+        return shown
     }
 
-    fun fingerprint(userId: String, day: String, xp: Int, name: String): String = "$userId|$day|$xp|$name"
+    /** Name stored in auth metadata. Emails, URLs, and the placeholder You are rejected. */
+    fun savedFullName(raw: String?): String? {
+        var text = raw.orEmpty().trim()
+        text = text.replace(Regex("(?i)https?://\\S+"), " ")
+        text = text.replace(Regex("(?i)\\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}\\b"), " ")
+        text = text.replace(Regex("\\s+"), " ").trim()
+        if (text.length !in 1..40) return null
+        if (text.equals("You", ignoreCase = true)) return null
+        if (displayName(text) == fallbackName) return null
+        return text
+    }
+
+    fun fingerprint(userId: String, day: String, xp: Int, name: String, avatarUrl: String? = null): String =
+        "$userId|$day|$xp|$name|${avatarUrl.orEmpty()}"
 
     fun shouldUpload(authorized: Boolean, hasReading: Boolean): Boolean = authorized && hasReading
 
@@ -45,7 +60,7 @@ object DailyBoard {
         return rows.mapNotNull { row ->
             val id = row.userId.trim()
             if (id.isEmpty() || !seen.add(id)) null
-            else row.copy(userId = id, name = row.name.ifBlank { fallbackName }, xp = row.xp.coerceAtLeast(0))
+            else row.copy(userId = id, name = row.name.ifBlank { fallbackName }, xp = row.xp.coerceAtLeast(0), avatarUrl = row.avatarUrl?.takeIf { it.startsWith("http") })
         }
     }
 
@@ -58,7 +73,7 @@ object DailyBoard {
             val rank = if (row.xp == lastXp) lastRank else index + 1
             lastXp = row.xp
             lastRank = rank
-            RankedXp(row.userId, row.name, row.xp, rank, youId.isNotBlank() && row.userId == youId)
+            RankedXp(row.userId, row.name, row.xp, rank, youId.isNotBlank() && row.userId == youId, row.avatarUrl)
         }
     }
 
