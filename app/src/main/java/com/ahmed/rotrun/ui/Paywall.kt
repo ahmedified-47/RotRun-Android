@@ -250,18 +250,29 @@ private fun FeatureRow(symbol: String, tint: Color, title: String, body: String,
 
 @Composable
 fun PrimaryButton(title: String, enabled: Boolean = true, light: Boolean = false, textColor: Color? = null, onClick: () -> Unit) {
-    val fill = if (light) Color.White else rot().blue
+    val chrome = rot()
+    val fill = when {
+        !enabled -> chrome.pill
+        light -> Color.White
+        else -> chrome.blue
+    }
+    val label = when {
+        !enabled -> chrome.muted
+        textColor != null -> textColor
+        light -> Melt.Ink
+        else -> Color.White
+    }
     Box(
         Modifier
             .fillMaxWidth()
             .padding(top = 8.dp)
             .clip(CircleShape)
-            .background(fill.copy(alpha = if (enabled) 1f else 0.45f))
+            .background(fill)
             .clickable(enabled = enabled, onClick = onClick)
             .padding(vertical = 16.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(title, color = textColor ?: if (light) Melt.Ink else Color.White, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+        Text(title, color = label, fontWeight = FontWeight.Bold, fontSize = 17.sp)
     }
 }
 

@@ -466,45 +466,36 @@ private fun BlockerEditor(
                 }
                 SheetLabel("BLOCKED APPS")
                 Text("Used for ${modeLabel(draft.mode)}. Each mode keeps its own list.", color = chrome.muted, fontSize = 13.sp, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
-                Row(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(chrome.inset).clickable { picking = true }.padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(listName, color = chrome.ink, fontWeight = FontWeight.Bold)
-                        Text(
-                            if (draft.apps.isEmpty()) "No apps yet" else "${draft.apps.size} apps",
-                            color = chrome.muted,
-                            fontSize = 13.sp,
-                        )
-                    }
-                    Text("›", color = chrome.muted, fontWeight = FontWeight.Bold, fontSize = 20.sp)
-                }
+                BlockedAppsRow(draft.apps) { picking = true }
                 SheetLabel("ACTIVE DAYS")
-                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(chrome.inset).padding(4.dp)) {
-                    listOf("Weekdays" to (1..5).toList(), "Weekends" to listOf(0, 6), "All" to (0..6).toList()).forEach { (label, days) ->
-                        val on = draft.days == days
-                        Text(
-                            label,
-                            color = if (on) Color.White else chrome.muted,
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 13.sp,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.weight(1f).clip(RoundedCornerShape(10.dp)).background(if (on) chrome.blue else Color.Transparent).clickable { draft = draft.copy(days = days) }.padding(vertical = 10.dp),
-                        )
+                Column(
+                    Modifier.padding(bottom = 16.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(chrome.field).padding(14.dp),
+                ) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        listOf("Su", "Mo", "Tu", "We", "Th", "Fr", "Sa").forEachIndexed { index, label ->
+                            val on = index in draft.days
+                            Box(
+                                Modifier.size(36.dp).clip(CircleShape).background(if (on) chrome.blue else chrome.pill).clickable {
+                                    val days = if (on) draft.days - index else (draft.days + index).sorted()
+                                    draft = draft.copy(days = days)
+                                },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(label, color = if (on) Color.White else chrome.ink, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                        }
                     }
-                }
-                Row(Modifier.padding(top = 12.dp, bottom = 16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    listOf("Su", "Mo", "Tu", "We", "Th", "Fr", "Sa").forEachIndexed { index, label ->
-                        val on = index in draft.days
-                        Box(
-                            Modifier.size(40.dp).clip(CircleShape).background(if (on) chrome.blue else chrome.inset).clickable {
-                                val days = if (on) draft.days - index else (draft.days + index).sorted()
-                                draft = draft.copy(days = days)
-                            },
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(label, color = if (on) Color.White else chrome.ink, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Row(Modifier.padding(top = 14.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf("Weekdays" to (1..5).toList(), "Weekends" to listOf(0, 6), "Every day" to (0..6).toList()).forEachIndexed { index, (label, days) ->
+                            if (index > 0) Text("·", color = chrome.muted, fontWeight = FontWeight.Bold)
+                            val on = draft.days == days
+                            Text(
+                                label,
+                                color = if (on) chrome.blue else chrome.ink,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 15.sp,
+                                modifier = Modifier.clickable { draft = draft.copy(days = days) },
+                            )
                         }
                     }
                 }
@@ -627,6 +618,37 @@ private fun presetLook(title: String): Pair<Color, BrainStyle> = when (title) {
     "Evening Wind Down" -> Color(0xFFE0D6F5) to BrainStyle.Reading
     "Mindful Morning" -> Color(0xFFEDE0C7) to BrainStyle.Mug
     else -> Color(0xFFE0D6F0) to BrainStyle.Newspaper
+}
+
+@Composable
+private fun BlockedAppsRow(apps: List<TrackedApp>, onClick: () -> Unit) {
+    val chrome = rot()
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(chrome.field).clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (apps.isEmpty()) {
+            Text("Choose apps", color = chrome.muted, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+        } else {
+            val shown = apps.take(4)
+            Box(Modifier.width((28 + (shown.size - 1) * 16).dp).height(28.dp)) {
+                shown.forEachIndexed { index, app ->
+                    AppGlyph(
+                        app.packageName,
+                        Modifier.padding(start = (index * 16).dp).size(28.dp).border(2.dp, chrome.field, RoundedCornerShape(8.dp)),
+                    )
+                }
+            }
+            Text(
+                "${apps.size} apps",
+                color = chrome.ink,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 16.sp,
+                modifier = Modifier.padding(start = 12.dp).weight(1f),
+            )
+            Text("›", color = chrome.muted, fontWeight = FontWeight.Bold, fontSize = 22.sp)
+        }
+    }
 }
 
 @Composable

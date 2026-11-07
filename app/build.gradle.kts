@@ -32,8 +32,8 @@ android {
         applicationId = "com.ahmed.rotrun"
         minSdk = 26
         targetSdk = 36
-        versionCode = 23
-        versionName = "1.0.22"
+        versionCode = 24
+        versionName = "1.0.23"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("boolean", "SHOW_PAYWALL", showPaywall.toString())
         buildConfigField("String", "SUPABASE_URL", "\"https://bhndzocphiexxcvbjisn.supabase.co\"")
