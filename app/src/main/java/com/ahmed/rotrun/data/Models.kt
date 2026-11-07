@@ -53,7 +53,7 @@ enum class OnboardingStep(val raw: Int) {
     fun progress(): Float = if (this == GetAccess) 0.82f else raw / 39f
 
     fun skipped(state: SavedState): Boolean = when (this) {
-        SeeForYourself, ConnectScreenTime, ScreenTimeDialog, LimitedOffer, ChoosePlan -> true
+        SeeForYourself, ConnectScreenTime, LimitedOffer, ChoosePlan -> true
         PurchaseComplete -> !state.premiumActive()
         GetAccess -> !PaywallGate.shows || state.premiumActive() || PlayCatalog.status.value == CatalogStatus.Unavailable
         OneTimeOffer -> !BillingQuotes.yearly70Visible(

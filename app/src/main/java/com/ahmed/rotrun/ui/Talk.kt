@@ -377,10 +377,7 @@ private fun send(
 
 private fun beginCall(repo: RotRunRepository, onLive: () -> Unit, onFail: (String) -> Unit, onUpdate: (String, String) -> Unit) {
     kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
-        val error = repo.backend.startVoice(
-            "You are Rot, the RotRun brain. Keep it short, roasting, and never medical or fitness.",
-            onUpdate,
-        )
+        val error = repo.backend.startVoice(onUpdate)
         withContext(Dispatchers.Main) {
             if (error == null) onLive() else onFail(error)
         }

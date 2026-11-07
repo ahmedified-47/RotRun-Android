@@ -59,7 +59,7 @@ fun GetAccessPaywall(
     LegalDialog(legal) { legal = null }
     val shown = selected.takeIf { it == Products.YEARLY || it == Products.MONTHLY || it == Products.LIFETIME } ?: Products.YEARLY
     Column(Modifier.fillMaxWidth().background(chrome.page).padding(horizontal = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().padding(top = if (onboarding) 4.dp else 12.dp), verticalAlignment = Alignment.CenterVertically) {
             if (onboarding) {
                 Text("Restore Purchases", color = chrome.blue, fontWeight = FontWeight.SemiBold, modifier = Modifier.clickable(onClick = onRestore))
                 Spacer(Modifier.weight(1f))
@@ -69,7 +69,7 @@ fun GetAccessPaywall(
                 Spacer(Modifier.weight(1f))
             }
         }
-        CartoonBrain(BrainStyle.Meadow, Modifier.size(120.dp), animated = false)
+        CartoonBrain(BrainStyle.Meadow, Modifier.size(if (onboarding) 96.dp else 120.dp), animated = false)
         Text("RotRun Premium", color = chrome.ink, fontSize = 32.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp))
         Text(
             if (onboarding) "Free includes 3 chats a day. Voice is Premium. Prices come from Google Play."
@@ -120,7 +120,7 @@ fun GetAccessPaywall(
             Text("Terms of Use", color = chrome.blue, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.clickable { legal = "terms" })
             Text("Privacy Policy", color = chrome.blue, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.clickable { legal = "privacy" })
         }
-        Text(BillingQuotes.LEGAL_FOOTER, color = chrome.muted, fontSize = 12.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 16.dp))
+        Text(BillingQuotes.LEGAL_FOOTER, color = chrome.muted, fontSize = 12.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = if (onboarding) 8.dp else 16.dp))
         Spacer(Modifier.height(12.dp))
     }
 }
@@ -275,7 +275,7 @@ fun ChoiceRow(label: String, selected: Boolean, emoji: String? = null, onClick: 
             .background(if (selected) Melt.Action.copy(alpha = 0.16f) else Color(0xFFE9E9EB))
             .border(if (selected) 1.5.dp else 0.dp, if (selected) Melt.Action else Color.Transparent, RoundedCornerShape(16.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .padding(horizontal = 16.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (emoji != null) {

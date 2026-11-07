@@ -232,12 +232,12 @@ class BlockRulesTest {
     }
 
     @Test
-    fun onboardingSkipsTheFakeScreenTimeDialog() {
+    fun onboardingAsksForUsageAccess() {
         val state = freshState().copy(onboardingStep = OnboardingStep.SelectApps.raw)
-        assertTrue(OnboardingStep.ScreenTimeDialog.skipped(state))
+        assertFalse(OnboardingStep.ScreenTimeDialog.skipped(state))
         assertTrue(OnboardingStep.SeeForYourself.skipped(state))
         assertTrue(OnboardingStep.ConnectScreenTime.skipped(state))
-        assertEquals(OnboardingStep.EnableFirstRule.raw, stepForward(state).onboardingStep)
+        assertEquals(OnboardingStep.ScreenTimeDialog.raw, stepForward(state).onboardingStep)
     }
 
     @Test

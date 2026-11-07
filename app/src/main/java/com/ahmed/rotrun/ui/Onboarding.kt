@@ -4,6 +4,13 @@ import android.Manifest
 import android.content.Intent
 import android.os.Build
 import android.provider.Settings
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -72,6 +79,7 @@ import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -80,6 +88,7 @@ import androidx.compose.ui.zIndex
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.ahmed.rotrun.data.AppList
+import com.ahmed.rotrun.data.DeviceAccessReader
 import com.ahmed.rotrun.data.UsageReader
 import com.ahmed.rotrun.data.OnboardingStep
 import com.ahmed.rotrun.data.RotRunRepository
@@ -130,6 +139,19 @@ fun OnboardingScreen(repo: RotRunRepository) {
     LegalDialog(legal) { legal = null }
     Box(Modifier.fillMaxSize().statusBarsPadding()) {
         OnboardingBackdrop(step)
+        val reduceMotion = Settings.Global.getFloat(context.contentResolver, Settings.Global.TRANSITION_ANIMATION_SCALE, 1f) == 0f
+        val density = LocalDensity.current
+        val enterOffset = with(density) { 12.dp.roundToPx() }
+        val exitOffset = with(density) { 8.dp.roundToPx() }
+        AnimatedContent(
+            targetState = step,
+            transitionSpec = {
+                val ms = if (reduceMotion) 120 else 280
+                (fadeIn(tween(ms)) + slideInVertically(tween(ms)) { enterOffset }) togetherWith
+                    (fadeOut(tween(ms)) + slideOutVertically(tween(ms)) { -exitOffset })
+            },
+            label = "signup",
+        ) { step ->
         when (step) {
             OnboardingStep.Persona -> Choices(step, "Which best describes you?", state.persona, personaOptions, false, repo)
             OnboardingStep.ScreenTimeAffect -> Choices(step, "How does screen time affect you the most?", state.screenTimeAffect, affectOptions, true, repo)
@@ -194,6 +216,7 @@ fun OnboardingScreen(repo: RotRunRepository) {
             OnboardingStep.LimitedOffer, OnboardingStep.ChoosePlan -> {
                 LaunchedEffect(step) { repo.advance() }
             }
+        }
         }
         val plansAlreadyShowing = step == OnboardingStep.GetAccess || step == OnboardingStep.OneTimeOffer
         if (upgrade && PaywallGate.shows && !state.premiumActive() && !plansAlreadyShowing) {
@@ -265,7 +288,7 @@ private fun Sunburst(fill: Color, ray: Float) {
 private fun ScreenFrame(footer: @Composable () -> Unit, content: @Composable () -> Unit) {
     Column(Modifier.fillMaxSize()) {
         Column(
-            Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+            Modifier.weight(1f).fillMaxWidth().offset(y = (-16).dp).verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) { content() }
         Column(Modifier.padding(horizontal = 20.dp).navigationBarsPadding().padding(bottom = 8.dp)) { footer() }
@@ -305,7 +328,7 @@ private fun Choices(
 ) {
     ScreenFrame(footer = { PrimaryButton("Continue", enabled = selected != null) { repo.advance() } }) {
         if (chrome) Chrome(step, showBack, repo) else Spacer(Modifier.height(24.dp))
-        Text(title, fontSize = 26.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp))
+        Text(title, fontSize = 26.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp))
         if (subtitle != null) {
             Text(subtitle, color = Melt.Muted, textAlign = TextAlign.Center, fontSize = 16.sp, modifier = Modifier.fillMaxWidth().padding(horizontal = 28.dp))
         }
@@ -343,7 +366,7 @@ private fun Story(
 ) {
     ScreenFrame(footer = { PrimaryButton(button) { repo.advance() } }) {
         Chrome(step, true, repo, mascot = false)
-        Spacer(Modifier.height(28.dp))
+        Spacer(Modifier.height(12.dp))
         CartoonBrain(mascot, Modifier.size(brainSize.dp))
         if (ground) {
             Box(Modifier.offset(y = (-6).dp).size(width = 180.dp, height = 22.dp).clip(RoundedCornerShape(50)).background(Color(0xFFE5E5EA)))
@@ -774,7 +797,7 @@ private fun Carousel(step: OnboardingStep, onLegal: (String) -> Unit, repo: RotR
 @Composable
 private fun PhoneMock(step: OnboardingStep) {
     Column(
-        Modifier.padding(top = 12.dp).width(230.dp).height(360.dp).clip(RoundedCornerShape(36.dp)).background(Color.Black).padding(8.dp),
+        Modifier.padding(top = 4.dp).width(230.dp).height(336.dp).clip(RoundedCornerShape(36.dp)).background(Color.Black).padding(8.dp),
     ) {
         Column(
             Modifier.fillMaxSize().clip(RoundedCornerShape(28.dp)).background(
@@ -889,7 +912,7 @@ private fun peakWindow(name: String): String = when (name) {
 @Composable
 private fun ConnectEdu(repo: RotRunRepository) {
     ScreenFrame(footer = { PrimaryButton("Continue") { repo.advance() } }) {
-        Spacer(Modifier.height(48.dp))
+        Spacer(Modifier.height(28.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 Modifier.zIndex(1f).size(110.dp).offset(x = 12.dp).clip(RoundedCornerShape(28.dp)).background(Melt.Sky),
@@ -1045,13 +1068,16 @@ private fun ScreenDialog(repo: RotRunRepository, onAllow: () -> Unit) {
         if (UsageReader.hasAccess(context)) repo.advance()
         else repo.toast("Usage access is still off. Allow it, or tap Don't Allow and connect later from Home or Settings.")
     }
+    LaunchedEffect(Unit) {
+        if (UsageReader.hasAccess(context)) repo.advance()
+    }
     ScreenFrame(footer = {
         PrimaryButton("Continue") {
             asked = true
             onAllow()
         }
     }) {
-        Text("Connect RotRun to Screen Time", fontSize = 24.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 20.dp))
+        Text("Connect RotRun to Screen Time", fontSize = 24.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp))
         Text("Your data is completely private and never leaves your device.", color = Melt.Muted, textAlign = TextAlign.Center, fontSize = 15.sp, modifier = Modifier.fillMaxWidth().padding(horizontal = 28.dp))
         Column(
             Modifier.padding(horizontal = 28.dp, vertical = 16.dp).clip(RoundedCornerShape(16.dp)).background(Color.White).padding(18.dp),
@@ -1081,7 +1107,7 @@ private fun ScreenDialog(repo: RotRunRepository, onAllow: () -> Unit) {
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 28.dp),
         )
-        CartoonBrain(BrainStyle.Meadow, Modifier.size(120.dp))
+        CartoonBrain(BrainStyle.Meadow, Modifier.size(96.dp))
     }
 }
 
@@ -1089,10 +1115,38 @@ private fun ScreenDialog(repo: RotRunRepository, onAllow: () -> Unit) {
 private fun EnableRule(repo: RotRunRepository) {
     val context = LocalContext.current
     var ask by remember { mutableStateOf(false) }
-    ScreenFrame(footer = { PrimaryButton("Activate Rule") { ask = true } }) {
-        Text("Enable Your First Rule", fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 24.dp))
+    var waiting by remember { mutableStateOf(false) }
+    var overlayAsked by remember { mutableStateOf(false) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        if (!waiting) return@LifecycleEventEffect
+        val current = DeviceAccessReader.read(context)
+        if (!current.accessibility) return@LifecycleEventEffect
+        if (!current.overlay && !overlayAsked) {
+            overlayAsked = true
+            DeviceAccessReader.open(context, DeviceAccessReader.overlayIntent(context))
+            return@LifecycleEventEffect
+        }
+        if (current.overlay) {
+            waiting = false
+            repo.advance()
+        }
+    }
+    ScreenFrame(footer = {
+        PrimaryButton("Activate Rule") {
+            val current = DeviceAccessReader.read(context)
+            when {
+                current.accessibility && current.overlay -> repo.advance()
+                !current.accessibility -> ask = true
+                else -> {
+                    waiting = true
+                    DeviceAccessReader.open(context, DeviceAccessReader.overlayIntent(context))
+                }
+            }
+        }
+    }) {
+        Text("Enable Your First Rule", fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
         Text("Block your RotRun apps every day!", color = Melt.Muted, fontSize = 16.sp)
-        CartoonBrain(BrainStyle.Mug, Modifier.size(140.dp))
+        CartoonBrain(BrainStyle.Mug, Modifier.size(120.dp))
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 20.dp).clip(RoundedCornerShape(26.dp)).background(Color.White).padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -1106,6 +1160,13 @@ private fun EnableRule(repo: RotRunRepository) {
             }
             Text("Active", color = Color(0xFF34C759), fontWeight = FontWeight.Bold)
         }
+        Text(
+            "RotRun asks for Accessibility, then display over other apps, so the shield can show.",
+            color = Melt.Muted,
+            fontSize = 14.sp,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 8.dp),
+        )
     }
     if (ask) {
         AlertDialog(
@@ -1115,12 +1176,19 @@ private fun EnableRule(repo: RotRunRepository) {
             confirmButton = {
                 TextButton(onClick = {
                     ask = false
-                    runCatching { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
-                    repo.advance()
+                    waiting = true
+                    DeviceAccessReader.open(context, DeviceAccessReader.accessibilityIntent())
                 }) { Text("Open settings") }
             },
             dismissButton = {
-                TextButton(onClick = { ask = false; repo.advance() }) { Text("Not now") }
+                TextButton(onClick = {
+                    ask = false
+                    if (DeviceAccessReader.read(context).overlay) repo.advance()
+                    else {
+                        waiting = true
+                        DeviceAccessReader.open(context, DeviceAccessReader.overlayIntent(context))
+                    }
+                }) { Text("Not now") }
             },
         )
     }

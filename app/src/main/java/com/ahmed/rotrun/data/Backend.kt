@@ -13,6 +13,7 @@ import com.ahmed.rotrun.logic.FreeTier
 import com.ahmed.rotrun.logic.PaywallGate
 import com.ahmed.rotrun.logic.Scoring
 import com.ahmed.rotrun.logic.VoiceLimits
+import com.ahmed.rotrun.logic.VoiceSession
 import com.ahmed.rotrun.logic.ScreenTimeSync
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -181,7 +182,7 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
         return answer
     }
 
-    fun startVoice(instructions: String, onUpdate: (String, String) -> Unit = { _, _ -> }): String? {
+    fun startVoice(onUpdate: (String, String) -> Unit = { _, _ -> }): String? {
         val state = repo.state.value
         if (!state.premiumActive()) {
             if (PaywallGate.shows) repo.requestPaywall()
@@ -211,12 +212,34 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
             return message
         }
         val token = payload?.optString("token").orEmpty()
-        if (response.code !in 200..299 || token.isBlank()) return payload?.optString("error").takeUnless { it.isNullOrBlank() } ?: "Rot couldn’t start voice just now."
+        if (response.code !in 200..299 || token.isBlank()) {
+            return VoiceSession.serverMessage(
+                payload?.optString("error") ?: response.error,
+                payload?.optString("message"),
+                "Rot couldn’t start voice just now.",
+            )
+        }
+        val agentId = payload?.optString("agent_id").orEmpty()
+        val personality = if (agentId.isBlank()) payload?.optString("personality").orEmpty() else ""
+        val usage = repo.usage.value
+        val screen = if (usage.authorized) Scoring.formatDuration(usage.todaySeconds) else ""
+        val pickups = if (usage.authorized) usage.pickups.toString() else ""
+        val offenders = if (usage.authorized) {
+            usage.offenders.filter { it.seconds >= 60 }.joinToString { "${it.label} ${Scoring.formatDuration(it.seconds)}" }
+        } else {
+            ""
+        }
+        val instructions = VoiceSession.instructions(
+            agentId,
+            personality,
+            VoiceSession.liveReading(usage.authorized, screen, pickups, offenders),
+        )
         val main = android.os.Handler(android.os.Looper.getMainLooper())
         fun emit(kind: String, value: String) {
             main.post { onUpdate(kind, value) }
         }
         val call = VoiceCall(
+            context = app,
             onStatus = { status ->
                 emit("status", status)
                 if (status != "Listening" && status != "Talking" && status != FreeTier.voiceWrapUp) repo.toast(status)
@@ -228,16 +251,17 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
             onTranscript = { emit("transcript", it) },
         )
         voice = call
-        noteVoiceStart()
         val serverMax = payload?.optDouble("voice_token_seconds")?.takeIf { !it.isNaN() && it > 0 }
             ?: payload?.optDouble("max_session_seconds")?.takeIf { !it.isNaN() && it > 0 }
         val max = VoiceLimits.cappedSeconds(serverMax)
         call.start(
             token = token,
             model = payload?.optString("model").takeUnless { it.isNullOrBlank() } ?: "grok-voice-latest",
+            agentId = agentId,
             voice = payload?.optString("voice").takeUnless { it.isNullOrBlank() } ?: "eve",
             instructions = instructions,
             maxSeconds = max,
+            onConnected = { noteVoiceStart() },
         )
         return null
     }
