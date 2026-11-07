@@ -222,6 +222,8 @@ private fun RootSettings(
             Hairline()
             RowLink("App Icon", icon = Icons.Default.GridView, tint = Color(0xFF5E5CE6)) { open("icon") }
         }
+        Text("Subscription", color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 20.sp, modifier = Modifier.padding(top = 8.dp).fillMaxWidth())
+        SubscriptionSection(state, repo, onChangePlan = { open("plans") })
         CardGroup {
             RowLink("Support & Feedback", icon = Icons.Default.QuestionMark, tint = Color(0xFFFF375F)) { open("support") }
             Hairline()
@@ -671,36 +673,37 @@ private fun BoxButton(title: String, onClick: () -> Unit) {
 
 @Composable
 private fun PremiumManage(state: SavedState, repo: RotRunRepository, onBack: () -> Unit, onChangePlan: () -> Unit) {
+    BackHeader("RotRun Premium", onBack)
+    Column(Modifier.padding(horizontal = 16.dp)) {
+        SubscriptionSection(state, repo, onChangePlan)
+    }
+}
+
+@Composable
+private fun SubscriptionSection(state: SavedState, repo: RotRunRepository, onChangePlan: () -> Unit) {
     val context = LocalContext.current
     val chrome = rot()
-    val plan = Products.planName(state.productId)
-    val renews = if (state.premiumActive() && !state.lifetime && state.premiumUntil > System.currentTimeMillis()) {
-        "Renews ${java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(java.util.Date(state.premiumUntil))}"
-    } else if (state.lifetime) {
-        "Does not renew"
-    } else {
-        "Prices come from Google Play"
+    val plan = if (state.premiumActive() && !state.productId.isNullOrBlank()) Products.planName(state.productId) else "No plan yet"
+    val renews = when {
+        state.lifetime && state.premiumActive() -> "Does not renew"
+        state.premiumActive() && state.premiumUntil > System.currentTimeMillis() ->
+            "Renews ${java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(java.util.Date(state.premiumUntil))}"
+        else -> "Prices come from Google Play"
     }
-    BackHeader("RotRun Premium", onBack)
     Text(
-        if (state.premiumActive()) "Buy, restore, or manage your plan. Blocking, Focus, Brick, and Ask-my-brain stay available without a subscription."
+        if (state.premiumActive()) "Buy, restore, or manage your plan. RotRun stays open while your subscription is active."
         else "You're not subscribed. Get Premium to start a plan, or Restore Purchases if you already bought one on this Google account.",
         color = chrome.muted,
-        modifier = Modifier.padding(horizontal = 20.dp),
+        modifier = Modifier.padding(horizontal = 4.dp),
     )
-    if (!state.premiumActive()) {
-        Text("3 chats a day. Voice is Premium.", color = chrome.muted, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
-    }
-    Column(Modifier.padding(horizontal = 20.dp, vertical = 16.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(chrome.card).padding(vertical = 18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        CartoonBrain(BrainStyle.Meadow, Modifier.size(120.dp), animated = false)
-        Text(if (state.premiumActive()) plan else "No plan yet", color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 22.sp, modifier = Modifier.padding(top = 8.dp))
+    Column(Modifier.padding(vertical = 12.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(chrome.card).padding(vertical = 18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(plan, color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 22.sp)
         Text(renews, color = chrome.muted, modifier = Modifier.padding(top = 4.dp))
     }
-    Column(Modifier.padding(horizontal = 16.dp)) {
     CardGroup {
-        RowLink("Change Plan", icon = Icons.Default.CardGiftcard, tint = Melt.Orange, onClick = onChangePlan)
+        RowLink(if (state.premiumActive()) "Change Plan" else "Get Premium", icon = Icons.Default.CardGiftcard, tint = Melt.Orange, onClick = onChangePlan)
         Hairline()
-        RowLink("Manage Subscription", if (state.premiumActive()) plan else null, icon = Icons.Default.GridView, tint = chrome.blue) {
+        RowLink("Manage Subscription", plan, icon = Icons.Default.GridView, tint = chrome.blue) {
             val product = state.productId
             val uri = android.net.Uri.parse(
                 if (product.isNullOrBlank()) "https://play.google.com/store/account/subscriptions?package=${context.packageName}"
@@ -710,7 +713,6 @@ private fun PremiumManage(state: SavedState, repo: RotRunRepository, onBack: () 
         }
         Hairline()
         RowLink("Restore Purchases", icon = Icons.Default.Refresh, tint = chrome.blue, onClick = repo::restore)
-    }
     }
 }
 
