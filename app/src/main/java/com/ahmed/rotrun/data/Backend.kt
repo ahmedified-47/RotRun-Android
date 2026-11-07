@@ -8,6 +8,10 @@ import androidx.security.crypto.MasterKey
 import com.ahmed.rotrun.BuildConfig
 import com.ahmed.rotrun.billing.PlayPurchaseUpload
 import com.ahmed.rotrun.billing.ServerEntitlement
+import com.ahmed.rotrun.logic.BoardSnapshot
+import com.ahmed.rotrun.logic.DailyBoard
+import com.ahmed.rotrun.logic.RankedXp
+import com.ahmed.rotrun.logic.XpRow
 import com.ahmed.rotrun.logic.BlockBackup
 import com.ahmed.rotrun.logic.FreeTier
 import com.ahmed.rotrun.logic.PaywallGate
@@ -337,14 +341,53 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
         return if (response.code in 200..299) null else response.error ?: "Couldn’t forget memories."
     }
 
-    fun syncXp(xp: Int, name: String) {
+    fun publishXp(xp: Int, hasReading: Boolean) {
+        if (!signedIn) return
+        flushPendingXp()
+        if (!DailyBoard.shouldUpload(authorized = true, hasReading = hasReading)) return
         val id = userId ?: return
-        val body = JSONObject()
-            .put("user_id", id)
-            .put("day", Scoring.dayKey())
-            .put("xp", xp)
-            .put("display_name", name.ifBlank { "You" })
-        call("POST", "/rest/v1/daily_xp?on_conflict=user_id,day", body.toString(), accessToken(), "resolution=merge-duplicates,return=minimal")
+        ensureProfile()
+        val name = storedDisplayName()
+        val day = Scoring.dayKey()
+        val finger = DailyBoard.fingerprint(id, day, xp.coerceAtLeast(0), name)
+        val prefs = flags()
+        if (DailyBoard.shouldSkip(prefs.getString(XP_FINGER, null), prefs.getString(XP_PENDING, null), finger)) return
+        val body = xpBody(id, day, xp.coerceAtLeast(0), name)
+        val code = postDaily(body.toString())
+        if (code in 200..299) {
+            prefs.edit().putString(XP_FINGER, finger).remove(XP_PENDING).apply()
+        } else {
+            prefs.edit().putString(XP_PENDING, body.toString()).apply()
+        }
+    }
+
+    fun loadDailyBoard(yourXp: Int?): BoardSnapshot {
+        if (!signedIn) return BoardSnapshot(signedOut = true)
+        if (expiresAt() < System.currentTimeMillis() + 60_000) refresh()
+        if (!signedIn) return BoardSnapshot(signedOut = true)
+        flushPendingXp()
+        val day = Scoring.dayKey()
+        var response = fetchBoard(day)
+        if (response.code == 401) {
+            refresh()
+            if (!signedIn) return BoardSnapshot(signedOut = true)
+            response = fetchBoard(day)
+        }
+        if (response.code == 401 || !signedIn) return BoardSnapshot(signedOut = true)
+        if (response.code !in 200..299 || response.array == null) {
+            val cached = cachedBoard(day)
+            val offline = response.code == 0
+            return BoardSnapshot(
+                rows = cached,
+                offline = offline || cached.isNotEmpty(),
+                message = if (offline) "Offline" else response.error ?: "Couldn’t load the leaderboard.",
+            )
+        }
+        val rows = parseBoard(response.array)
+        flags().edit().putString(BOARD_CACHE, response.array.toString()).putString(BOARD_DAY, day).apply()
+        val ranked = DailyBoard.withRanks(rows, userId.orEmpty())
+        val pinned = if (ranked.none { it.you } && yourXp != null) pinnedYou(day, yourXp) else null
+        return BoardSnapshot(rows = ranked, pinned = pinned)
     }
 
     fun syncAccount(state: SavedState, allowPull: Boolean) {
@@ -516,17 +559,82 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
         }
     }
 
-    fun leaderboard(): List<Pair<String, Int>> {
-        if (!signedIn) return emptyList()
-        val day = Scoring.dayKey()
-        val response = call("GET", "/rest/v1/daily_xp?day=eq.$day&select=display_name,xp&order=xp.desc&limit=50", null, accessToken())
-        val array = response.array ?: return emptyList()
-        return buildList {
-            for (index in 0 until array.length()) {
-                val row = array.optJSONObject(index) ?: continue
-                add(row.optString("display_name", "Someone") to row.optInt("xp"))
-            }
+    private fun storedDisplayName(): String =
+        DailyBoard.displayName(session.getString("display_name", null))
+
+    private fun googleName(user: JSONObject?): String? {
+        val meta = user?.optJSONObject("user_metadata") ?: return null
+        return meta.optString("full_name").ifBlank { meta.optString("name") }.ifBlank { null }
+    }
+
+    private fun flags() = app.getSharedPreferences("rotrun.flags", Context.MODE_PRIVATE)
+
+    private fun xpBody(id: String, day: String, xp: Int, name: String): JSONObject =
+        JSONObject()
+            .put("user_id", id)
+            .put("day", day)
+            .put("xp", xp)
+            .put("display_name", name)
+            .put("updated_at", ZonedDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME))
+
+    private fun postDaily(body: String): Int {
+        val path = "/rest/v1/daily_xp?on_conflict=user_id,day"
+        val prefer = "resolution=merge-duplicates,return=minimal"
+        var response = call("POST", path, body, accessToken(), prefer)
+        if (response.code == 401) {
+            refresh()
+            if (!signedIn) return 401
+            response = call("POST", path, body, accessToken(), prefer)
         }
+        return response.code
+    }
+
+    private fun flushPendingXp() {
+        val prefs = flags()
+        val pending = prefs.getString(XP_PENDING, null) ?: return
+        if (!signedIn) return
+        ensureProfile()
+        val code = postDaily(pending)
+        if (code in 200..299) prefs.edit().remove(XP_PENDING).apply()
+    }
+
+    private fun fetchBoard(day: String): HttpResult =
+        call(
+            "GET",
+            "/rest/v1/daily_xp?day=eq.$day&select=user_id,display_name,xp&order=xp.desc,updated_at.asc&limit=50",
+            null,
+            accessToken(),
+        )
+
+    private fun pinnedYou(day: String, yourXp: Int): RankedXp? {
+        val id = userId ?: return null
+        val response = call(
+            "HEAD",
+            "/rest/v1/daily_xp?day=eq.$day&xp=gt.$yourXp&select=user_id",
+            null,
+            accessToken(),
+            "count=exact",
+        )
+        val higher = DailyBoard.countFromContentRange(response.contentRange) ?: return null
+        val rank = DailyBoard.outsideRank(higher, yourXp) ?: return null
+        return RankedXp(id, storedDisplayName(), yourXp, rank, true)
+    }
+
+    private fun parseBoard(array: JSONArray): List<XpRow> = buildList {
+        for (index in 0 until array.length()) {
+            val row = array.optJSONObject(index) ?: continue
+            val id = row.optString("user_id")
+            if (id.isBlank()) continue
+            add(XpRow(id, DailyBoard.displayName(row.optString("display_name")), row.optInt("xp")))
+        }
+    }
+
+    private fun cachedBoard(day: String): List<RankedXp> {
+        val prefs = flags()
+        if (prefs.getString(BOARD_DAY, null) != day) return emptyList()
+        val raw = prefs.getString(BOARD_CACHE, null) ?: return emptyList()
+        val array = runCatching { JSONArray(raw) }.getOrNull() ?: return emptyList()
+        return DailyBoard.withRanks(parseBoard(array), userId.orEmpty())
     }
 
     private fun exchange(idToken: String, nonce: String): String? {
@@ -542,6 +650,7 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
             .putLong("expires", System.currentTimeMillis() + payload.optLong("expires_in") * 1000)
             .putString("user_id", user?.optString("id"))
             .putString("email", user?.optString("email"))
+            .putString("display_name", DailyBoard.displayName(googleName(user)))
             .apply()
         val profile = JSONObject().put("user_id", user?.optString("id")).put("timezone", ZoneId.systemDefault().id)
         call(
@@ -570,6 +679,7 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
             .putLong("expires", System.currentTimeMillis() + payload.optLong("expires_in") * 1000)
             .putString("user_id", user?.optString("id") ?: userId)
             .apply()
+        googleName(user)?.let { session.edit().putString("display_name", DailyBoard.displayName(it)).apply() }
     }
 
     private fun ensureProfile() {
@@ -890,18 +1000,34 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
             .header("X-RotRun-Build", BuildConfig.VERSION_CODE.toString())
         if (!bearer.isNullOrBlank()) builder.header("Authorization", "Bearer $bearer")
         if (prefer != null) builder.header("Prefer", prefer)
-        if (method == "GET") builder.get() else builder.method(method, (body ?: "{}").toRequestBody(jsonType))
+        when (method) {
+            "GET" -> builder.get()
+            "HEAD" -> builder.head()
+            else -> builder.method(method, (body ?: "{}").toRequestBody(jsonType))
+        }
         return runCatching {
             client.newCall(builder.build()).execute().use { response ->
                 val text = response.body?.string().orEmpty()
                 val obj = runCatching { JSONObject(text) }.getOrNull()
                 val array = runCatching { JSONArray(text) }.getOrNull()
-                HttpResult(response.code, obj, array, obj?.optString("error")?.ifBlank { obj.optString("msg") })
+                HttpResult(
+                    response.code,
+                    obj,
+                    array,
+                    obj?.optString("error")?.ifBlank { obj.optString("msg") },
+                    response.header("Content-Range"),
+                )
             }
-        }.getOrElse { HttpResult(0, null, null, it.message) }
+        }.getOrElse { HttpResult(0, null, null, it.message, null) }
     }
 
-    private data class HttpResult(val code: Int, val json: JSONObject?, val array: JSONArray?, val error: String?)
+    private data class HttpResult(
+        val code: Int,
+        val json: JSONObject?,
+        val array: JSONArray?,
+        val error: String?,
+        val contentRange: String? = null,
+    )
 
     companion object {
         private fun openSession(context: Context): SharedPreferences {
@@ -914,6 +1040,11 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
             )
         }
+
+        private const val XP_FINGER = "xp.finger"
+        private const val XP_PENDING = "xp.pending"
+        private const val BOARD_CACHE = "board.cache"
+        private const val BOARD_DAY = "board.day"
 
         private fun randomNonce(): String {
             val alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._"

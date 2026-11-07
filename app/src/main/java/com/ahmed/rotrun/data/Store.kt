@@ -173,12 +173,21 @@ class RotRunRepository(context: Context) {
             withContext(Dispatchers.IO) {
                 backend.syncScreenTime(shown)
                 backend.syncStreak(_state.value)
-                if (shown.authorized) {
-                    val xp = Scoring.dailyXp((shown.todaySeconds / 60).toInt(), _state.value.goalHours * 60, _state.value.askBrainCount, _state.value.ransomDebit)
-                    backend.syncXp(xp, "You")
-                }
+                publishCurrentXp(shown.authorized)
             }
         }
+    }
+
+    private fun publishCurrentXp(hasReading: Boolean) {
+        if (!hasReading) return
+        val usage = _usage.value
+        val xp = Scoring.dailyXp(
+            (usage.todaySeconds / 60).toInt(),
+            _state.value.goalHours * 60,
+            _state.value.askBrainCount,
+            _state.value.ransomDebit,
+        )
+        scope.launch(Dispatchers.IO) { backend.publishXp(xp, hasReading = true) }
     }
 
     fun loadInstalled() {
@@ -421,7 +430,10 @@ class RotRunRepository(context: Context) {
                 current.copy(askBrainCount = current.askBrainCount + 1, lastAskToken = token)
             }
         }
-        if (charged) toast("−20 XP · caught rotting")
+        if (charged) {
+            toast("−20 XP · caught rotting")
+            publishCurrentXp(_usage.value.authorized)
+        }
     }
 
     fun grantUnlock(minutes: Int): Boolean {
@@ -434,6 +446,7 @@ class RotRunRepository(context: Context) {
     fun payRansom() {
         update { it.copy(ransomDebit = it.ransomDebit + 100) }
         toast("−100 XP · ransom paid")
+        publishCurrentXp(_usage.value.authorized)
     }
 
     fun noteBailout(from: String) {

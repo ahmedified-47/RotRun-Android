@@ -1,5 +1,6 @@
 package com.ahmed.rotrun.ui
 
+import android.app.Activity
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -13,6 +14,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import com.ahmed.rotrun.logic.BoardSnapshot
+import com.ahmed.rotrun.logic.RankedXp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.DateRange
@@ -36,13 +46,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.ahmed.rotrun.BuildConfig
 import com.ahmed.rotrun.R
 import com.ahmed.rotrun.data.RotRunRepository
 import com.ahmed.rotrun.data.SavedState
 import com.ahmed.rotrun.logic.InterventionCopy
 import com.ahmed.rotrun.logic.Scoring
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -200,92 +211,157 @@ private fun Leaderboard(state: SavedState, screenMinutes: Int?, repo: RotRunRepo
 @Composable
 private fun LeaderboardBody(state: SavedState, screenMinutes: Int?, repo: RotRunRepository) {
     var friends by remember { mutableStateOf(false) }
+    val context = LocalContext.current
     val xp = screenMinutes?.let { Scoring.dailyXp(it, state.goalHours * 60, state.askBrainCount, state.ransomDebit) }
-    var rows by remember { mutableStateOf<List<Pair<String, Int>>>(emptyList()) }
-    LaunchedEffect(xp, repo.backend.signedIn) {
-        val score = xp ?: return@LaunchedEffect
-        rows = withContext(Dispatchers.IO) {
-            repo.backend.syncXp(score, "You")
-            repo.backend.leaderboard()
+    var board by remember { mutableStateOf(BoardSnapshot()) }
+    var refreshing by remember { mutableStateOf(false) }
+    val day = Scoring.dayKey()
+    fun reload() {
+        refreshing = true
+        CoroutineScope(Dispatchers.IO).launch {
+            val snapshot = repo.backend.loadDailyBoard(xp)
+            withContext(Dispatchers.Main) {
+                board = snapshot
+                refreshing = false
+            }
         }
     }
-    val board = if (xp == null) emptyList() else dailyBoard(rows, xp)
+    LaunchedEffect(xp, repo.backend.signedIn, day, state.askBrainCount, state.ransomDebit) { reload() }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { reload() }
     val chrome = rot()
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center, modifier = Modifier.fillMaxWidth()) {
         Icon(Icons.Default.EmojiEvents, contentDescription = null, tint = Melt.Orange, modifier = Modifier.size(28.dp))
-        Text(" Leaderboard", color = chrome.ink, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+        Text(" Leaderboard", color = chrome.ink, fontFamily = Nunito, fontSize = 28.sp, fontWeight = FontWeight.Black)
     }
-    Text("See how your Daily XP stacks up.", color = chrome.muted, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
+    Text("See how your Daily XP stacks up.", color = chrome.muted, fontFamily = Nunito, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
     Row(Modifier.padding(vertical = 8.dp).fillMaxWidth().clip(CircleShape).background(chrome.inset).padding(4.dp)) {
         Toggle("Daily XP", !friends, Modifier.weight(1f)) { friends = false }
         Toggle("Friends", friends, Modifier.weight(1f)) { friends = true }
     }
-    if (xp == null && !friends) {
-        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(chrome.card).padding(16.dp)) {
-            Text("Daily XP", color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-            Text("Connect usage access to score Daily XP. A blank day is not a perfect score.", color = chrome.muted, modifier = Modifier.padding(top = 4.dp))
-        }
-    } else if (friends) {
-        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(chrome.card).padding(16.dp)) {
-            Text("Friends", color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-            Text(
-                if (BuildConfig.PLAY_GAMES_FRIENDS) "Play Games friends show up on this tab."
-                else "Friends is off in this build. Daily XP stays on the RotRun board.",
-                color = chrome.muted,
-                modifier = Modifier.padding(top = 4.dp),
-            )
-        }
-    } else {
-        board.forEachIndexed { index, (name, score) ->
-            val title = Scoring.rank(score).title
-            val you = name.equals("You", ignoreCase = true)
-            Row(
-                Modifier.padding(vertical = 4.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(chrome.card).border(if (you) 2.dp else 0.dp, if (you) Melt.Orange else Color.Transparent, RoundedCornerShape(22.dp)).padding(horizontal = 14.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("#${index + 1}", fontWeight = FontWeight.Black, color = Melt.Orange)
-                CartoonBrain(BrainStyle.Meadow, Modifier.padding(horizontal = 10.dp).size(40.dp), animated = false)
-                Column(Modifier.weight(1f)) {
-                    Text(name, color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 17.sp)
-                    Text(
-                        title,
-                        color = if (you) Color.White else chrome.muted,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.padding(top = 2.dp).clip(RoundedCornerShape(8.dp)).background(if (you) chrome.blue else Color.Transparent).padding(horizontal = if (you) 8.dp else 0.dp, vertical = if (you) 2.dp else 0.dp),
-                    )
-                }
-                if (you) {
-                    Box(Modifier.size(36.dp).clip(CircleShape).background(Melt.Orange), contentAlignment = Alignment.Center) {
-                        Text(
-                            "$score",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = if (score > 999) 11.sp else 13.sp,
-                            maxLines = 1,
-                        )
-                    }
-                } else {
-                    Text("$score XP", color = chrome.muted, fontWeight = FontWeight.SemiBold)
+    PullToRefreshBox(isRefreshing = refreshing, onRefresh = { repo.refreshUsage(); reload() }) {
+        Column(Modifier.fillMaxWidth()) {
+            when {
+                friends -> FriendsSoon()
+                !repo.backend.signedIn || board.signedOut -> SignInBoard(context, repo) { reload() }
+                xp == null -> UsageBoard()
+                board.rows.isEmpty() && board.pinned == null -> EmptyBoard()
+                else -> {
+                    if (board.rows.size >= 3) Podium(board.rows.take(3))
+                    val list = if (board.rows.size >= 3) board.rows.drop(3) else board.rows
+                    list.forEach { BoardRow(it) }
+                    board.pinned?.let { PinnedYou(it) }
                 }
             }
+            board.message?.let {
+                Text(it, color = chrome.muted, fontSize = 13.sp, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), textAlign = TextAlign.Center)
+            }
         }
-        Spacer(Modifier.height(28.dp))
     }
 }
 
-private fun dailyBoard(rows: List<Pair<String, Int>>, xp: Int): List<Pair<String, Int>> {
-    val source = if (rows.isEmpty()) listOf("You" to xp) else rows
-    val seen = mutableSetOf<String>()
-    val board = mutableListOf<Pair<String, Int>>()
-    source.forEach { (name, score) ->
-        val label = name.ifBlank { "Someone" }
-        val key = label.trim().lowercase()
-        if (!seen.add(key)) return@forEach
-        board.add(label to score)
+@Composable
+private fun FriendsSoon() {
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(rot().card).padding(16.dp)) {
+        Text("Friends", color = rot().ink, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+        Text("Friends coming soon. Daily XP is ranked across all RotRun users.", color = rot().muted, modifier = Modifier.padding(top = 4.dp))
     }
-    if ("you" !in seen) board.add("You" to xp)
-    return board
+}
+
+@Composable
+private fun UsageBoard() {
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(rot().card).padding(16.dp)) {
+        Text("Daily XP", color = rot().ink, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+        Text("Connect usage access to score Daily XP. A blank day is not a perfect score.", color = rot().muted, modifier = Modifier.padding(top = 4.dp))
+    }
+}
+
+@Composable
+private fun SignInBoard(context: android.content.Context, repo: RotRunRepository, onDone: () -> Unit) {
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(rot().card).padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text("Sign in to see the leaderboard", color = rot().ink, fontWeight = FontWeight.Bold, fontSize = 18.sp, textAlign = TextAlign.Center)
+        TextButton(onClick = {
+            val activity = context as? Activity ?: return@TextButton
+            repo.backend.signIn(activity) { onDone() }
+        }) { Text("Sign in with Google") }
+    }
+}
+
+@Composable
+private fun EmptyBoard() {
+    Column(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        CartoonBrain(BrainStyle.Meadow, Modifier.size(96.dp), animated = false)
+        Text("No rankings yet", color = rot().ink, fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.padding(top = 8.dp))
+        Text("Play a bit, then pull to refresh your Daily XP rank.", color = rot().muted, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp, start = 24.dp, end = 24.dp))
+    }
+}
+
+@Composable
+private fun Podium(top: List<RankedXp>) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.SpaceEvenly) {
+        PodiumPlace(top[1], 88.dp, Color(0xFFB8C2D1))
+        PodiumPlace(top[0], 118.dp, Color(0xFFFFC747))
+        PodiumPlace(top[2], 72.dp, Color(0xFFE68C52))
+    }
+}
+
+@Composable
+private fun PodiumPlace(row: RankedXp, bar: androidx.compose.ui.unit.Dp, medal: Color) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(96.dp)) {
+        InitialAvatar(row.name)
+        Text(row.name, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, color = rot().ink)
+        Text("${row.xp} XP", fontSize = 11.sp, color = rot().muted)
+        Text("#${row.rank}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = rot().ink)
+        Box(Modifier.padding(top = 4.dp).width(64.dp).height(bar).clip(RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp)).background(medal))
+    }
+}
+
+@Composable
+private fun BoardRow(row: RankedXp) {
+    val chrome = rot()
+    val rankColor = when (row.rank) {
+        1 -> Color(0xFFFFC747)
+        2 -> chrome.muted
+        else -> Color(0xFFC7C7CC)
+    }
+    Row(
+        Modifier.padding(vertical = 4.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(chrome.card).border(if (row.you) 2.dp else 0.dp, if (row.you) Color(0xFFFF8C2E) else Color.Transparent, RoundedCornerShape(22.dp)).padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("#${row.rank}", fontWeight = FontWeight.Black, color = rankColor, modifier = Modifier.width(36.dp))
+        InitialAvatar(row.name)
+        Column(Modifier.weight(1f).padding(start = 10.dp)) {
+            Text(row.name, color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(Scoring.rank(row.xp).title, color = chrome.muted, fontSize = 12.sp)
+        }
+        ScoreCapsule(row.xp, row.you)
+    }
+}
+
+@Composable
+private fun PinnedYou(row: RankedXp) {
+    Row(
+        Modifier.padding(top = 8.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Color(0xFFFF8C2E)).padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("#${row.rank}", color = Color.White, fontWeight = FontWeight.Black)
+        Text(row.name, color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 10.dp).weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text("${row.xp} XP", color = Color.White, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun InitialAvatar(name: String) {
+    val letter = name.firstOrNull { it.isLetter() }?.uppercaseChar()?.toString() ?: "R"
+    Box(Modifier.size(36.dp).clip(CircleShape).background(rot().inset), contentAlignment = Alignment.Center) {
+        Text(letter, fontWeight = FontWeight.Bold, color = rot().ink)
+    }
+}
+
+@Composable
+private fun ScoreCapsule(score: Int, you: Boolean) {
+    Box(Modifier.clip(RoundedCornerShape(12.dp)).background(if (you) Color(0xFFFF8C2E) else rot().inset).padding(horizontal = 10.dp, vertical = 6.dp)) {
+        Text("$score", color = if (you) Color.White else rot().muted, fontWeight = FontWeight.Bold, fontSize = if (score > 999) 11.sp else 13.sp, maxLines = 1)
+    }
 }
 
 @Composable
