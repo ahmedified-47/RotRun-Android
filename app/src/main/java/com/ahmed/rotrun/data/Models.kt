@@ -88,6 +88,7 @@ data class Blocker(
     val days: List<Int> = (0..6).toList(),
     val apps: List<TrackedApp> = emptyList(),
     val modeApps: Map<String, List<TrackedApp>> = emptyMap(),
+    val symbol: String = "phone",
 ) {
     /** Active apps first, then apps stashed on the other modes. */
     fun packageOrder(): List<String> =

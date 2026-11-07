@@ -22,7 +22,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bedtime
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PhoneAndroid
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
@@ -349,7 +352,7 @@ private fun BlockerCard(blocker: Blocker, listName: String, active: Boolean, onC
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(44.dp).clip(CircleShape).background(if (active) Color(0xFFD6E4FF) else chrome.inset), contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.PhoneAndroid, contentDescription = null, tint = if (active) Color(0xFF5B6CFF) else chrome.muted)
+                Icon(blockSymbol(blocker.symbol), contentDescription = null, tint = if (active) Color(0xFF5B6CFF) else chrome.muted)
             }
             Column(Modifier.padding(start = 12.dp).weight(1f)) {
                 Text(blocker.name, color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 18.sp)
@@ -388,25 +391,44 @@ private fun BlockerEditor(
 ) {
     var draft by remember(initial.id) { mutableStateOf(initial) }
     var picking by remember { mutableStateOf(false) }
+    var choosingIcon by remember { mutableStateOf(false) }
+    val changed = draft != initial
     val chrome = rot()
     BottomSheet(onDismiss = onDismiss) {
         Column(Modifier.fillMaxSize()) {
-            Text(
-                "Edit Block",
-                color = chrome.ink,
-                fontWeight = FontWeight.Bold,
-                fontSize = 20.sp,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp),
-            )
+            Box(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
+                Text(
+                    "Cancel",
+                    color = chrome.blue,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 17.sp,
+                    modifier = Modifier.align(Alignment.CenterStart).clickable(onClick = onDismiss).padding(horizontal = 12.dp, vertical = 8.dp),
+                )
+                Text(
+                    "Edit Block",
+                    color = chrome.ink,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.align(Alignment.Center).padding(horizontal = 72.dp),
+                )
+            }
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
                 SheetLabel("NAME")
-                BasicTextField(
-                    value = draft.name,
-                    onValueChange = { draft = draft.copy(name = it) },
-                    textStyle = TextStyle(color = chrome.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold),
-                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(chrome.inset).padding(16.dp),
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier.size(48.dp).clip(CircleShape).background(Color(0xFFD6E4FF)).clickable { choosingIcon = true },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(blockSymbol(draft.symbol), contentDescription = "Block icon", tint = Color(0xFF5B6CFF), modifier = Modifier.size(24.dp))
+                    }
+                    BasicTextField(
+                        value = draft.name,
+                        onValueChange = { draft = draft.copy(name = it) },
+                        textStyle = TextStyle(color = chrome.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold),
+                        modifier = Modifier.padding(start = 12.dp).weight(1f).clip(RoundedCornerShape(14.dp)).background(chrome.inset).padding(16.dp),
+                    )
+                }
                 SheetLabel("MODE")
                 Row(
                     Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(chrome.inset).padding(4.dp),
@@ -488,7 +510,9 @@ private fun BlockerEditor(
                 }
             }
             Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 12.dp)) {
-                PrimaryButton("Save Changes") { onSave(draft.copy(modeApps = draft.modeApps + (draft.mode to draft.apps))) }
+                PrimaryButton("Save Changes", enabled = changed) {
+                    onSave(draft.copy(modeApps = draft.modeApps + (draft.mode to draft.apps)))
+                }
                 Text(
                     if (draft.mode == "schedule") "Delete Schedule" else "Delete Block",
                     color = chrome.danger,
@@ -498,6 +522,29 @@ private fun BlockerEditor(
                 )
             }
         }
+    }
+    if (choosingIcon) {
+        AlertDialog(
+            onDismissRequest = { choosingIcon = false },
+            title = { Text("Block icon") },
+            text = {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    blockSymbols.forEach { (id, icon) ->
+                        val on = draft.symbol == id
+                        Box(
+                            Modifier.size(48.dp).clip(CircleShape).background(if (on) chrome.blue else chrome.inset).clickable {
+                                draft = draft.copy(symbol = id)
+                                choosingIcon = false
+                            },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(icon, contentDescription = id, tint = if (on) Color.White else chrome.ink)
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { choosingIcon = false }) { Text("Done") } },
+        )
     }
     if (picking) {
         AppPickerDialog(
@@ -593,6 +640,15 @@ private fun SheetLabel(text: String) {
         modifier = Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 8.dp),
     )
 }
+
+private val blockSymbols = listOf(
+    "phone" to Icons.Default.PhoneAndroid,
+    "bed" to Icons.Default.Bedtime,
+    "star" to Icons.Default.Star,
+    "lock" to Icons.Default.Lock,
+)
+
+private fun blockSymbol(id: String) = blockSymbols.firstOrNull { it.first == id }?.second ?: Icons.Default.PhoneAndroid
 
 private fun modeLabel(mode: String) = when (mode) {
     "schedule" -> "Schedule"

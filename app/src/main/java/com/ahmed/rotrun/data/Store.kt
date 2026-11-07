@@ -881,6 +881,7 @@ private fun encodeBlocker(blocker: Blocker) = JSONObject()
     .put("endHour", blocker.endHour)
     .put("limitMinutes", blocker.limitMinutes)
     .put("days", JSONArray(blocker.days))
+    .put("symbol", blocker.symbol)
     .put("apps", JSONArray().apply { blocker.apps.forEach { put(encodeApp(it)) } })
     .put("modeApps", JSONObject().apply {
         blocker.modeApps.forEach { (mode, apps) ->
@@ -937,6 +938,7 @@ private fun JSONArray?.toBlockers(): List<Blocker> {
                     endHour = item.optInt("endHour", 17),
                     limitMinutes = item.optInt("limitMinutes", 30),
                     days = days,
+                    symbol = item.optString("symbol", "phone").ifBlank { "phone" },
                     apps = item.optJSONArray("apps").toApps(),
                     modeApps = item.optJSONObject("modeApps").toModeApps(),
                 ),
