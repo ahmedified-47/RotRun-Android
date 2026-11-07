@@ -3,6 +3,7 @@ package com.ahmed.rotrun
 import android.app.Application
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -14,6 +15,8 @@ import com.ahmed.rotrun.data.RotRunRepository
 import com.ahmed.rotrun.ui.InterventionFlow
 import com.ahmed.rotrun.ui.RotRunRoot
 import com.ahmed.rotrun.ui.RotRunTheme
+import com.ahmed.rotrun.watch.AskBrainLaunch
+import com.ahmed.rotrun.watch.ShieldSession
 
 class RotRunApplication : Application() {
     override fun onCreate() {
@@ -27,6 +30,10 @@ class RotRunApplication : Application() {
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (Build.VERSION.SDK_INT >= 27) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+        }
         enableEdgeToEdge()
         if (RotRunGraph.ready()) RotRunGraph.repo.attach(this)
         handle(intent)
@@ -36,6 +43,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         if (RotRunGraph.ready()) RotRunGraph.repo.attach(this)
+        openHeldIntervention()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -44,7 +52,21 @@ class MainActivity : ComponentActivity() {
         handle(intent)
     }
 
+    private fun openHeldIntervention() {
+        val held = ShieldSession.chatPackage() ?: return
+        AskBrainLaunch.cancel(this)
+        if (RotRunGraph.ready()) RotRunGraph.repo.requestAskIntervention(held, ShieldSession.chatLabel())
+    }
+
     private fun handle(intent: Intent?) {
+        if (intent?.getBooleanExtra(AskBrainLaunch.EXTRA_OPEN_CHAT, false) == true) {
+            val held = intent.getStringExtra(AskBrainLaunch.EXTRA_HELD_PACKAGE).orEmpty()
+            val label = intent.getStringExtra(AskBrainLaunch.EXTRA_HELD_LABEL).orEmpty()
+            if (held.isNotBlank()) ShieldSession.holdForChat(held, label.ifBlank { ShieldSession.chatLabel() })
+            AskBrainLaunch.cancel(this)
+            intent.removeExtra(AskBrainLaunch.EXTRA_OPEN_CHAT)
+            openHeldIntervention()
+        }
         val uri = intent?.data ?: return
         if (uri.scheme != "rotrun") return
         val repo = RotRunGraph.repo
@@ -84,6 +106,7 @@ class InterventionActivity : ComponentActivity() {
             intent.putExtra(EXTRA_TOKEN, it)
         }
         if (packageName.isNotBlank()) {
+            showingPackage = packageName
             com.ahmed.rotrun.watch.ShieldSession.hold(packageName)
             com.ahmed.rotrun.watch.BlockAccessibilityService.dismiss()
             com.ahmed.rotrun.watch.BlockWatchService.dismiss()
@@ -120,6 +143,7 @@ class InterventionActivity : ComponentActivity() {
 
     override fun onDestroy() {
         val packageName = intent.getStringExtra(EXTRA_PACKAGE).orEmpty()
+        if (showingPackage == packageName) showingPackage = null
         if (!com.ahmed.rotrun.watch.ShieldSession.openedInto(packageName)) {
             com.ahmed.rotrun.watch.ShieldSession.release()
         }
@@ -138,5 +162,8 @@ class InterventionActivity : ComponentActivity() {
         const val EXTRA_PACKAGE = "package"
         const val EXTRA_MODE = "mode"
         const val EXTRA_TOKEN = "token"
+
+        @Volatile
+        var showingPackage: String? = null
     }
 }

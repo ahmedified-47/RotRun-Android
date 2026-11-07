@@ -3,6 +3,7 @@ package com.ahmed.rotrun.watch
 import android.content.Context
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.util.Log
 import android.view.Gravity
 import android.view.View
@@ -25,21 +26,55 @@ object ShieldSession {
     @Volatile
     private var opened: Boolean = false
 
+    @Volatile
+    private var chatting: Boolean = false
+
+    @Volatile
+    private var heldLabel: String = ""
+
     fun hold(packageName: String) {
         if (packageName.isBlank()) return
         held = packageName
+        heldLabel = ""
+        opened = false
+        chatting = false
+    }
+
+    /** The intervention is open. The shield stays down and this package is not blocked until [endChat]. */
+    fun holdForChat(packageName: String, label: String = "") {
+        if (packageName.isBlank()) return
+        held = packageName
+        heldLabel = label
+        opened = false
+        chatting = true
+    }
+
+    fun endChat() {
+        if (!chatting) return
+        chatting = false
+        held = null
+        heldLabel = ""
         opened = false
     }
+
+    fun chatPackage(): String? = if (chatting) held else null
+
+    fun chatLabel(): String = if (chatting) heldLabel else ""
 
     /** Ask my brain finished and the blocked app is coming forward. Keep the shield down. */
     fun markOpened(packageName: String) {
         if (packageName.isBlank()) return
         held = packageName
+        heldLabel = ""
         opened = true
+        chatting = false
     }
 
+    /** A chat hold survives the intervention activity finishing. */
     fun release() {
+        if (chatting) return
         held = null
+        heldLabel = ""
         opened = false
     }
 
@@ -56,6 +91,7 @@ object ShieldOverlay {
         packageName: String,
         label: String,
         onAsk: () -> Unit,
+        onCall: () -> Unit,
     ): View? {
         val copy = InterventionCopy.forPackage(packageName, label)
         val density = context.resources.displayMetrics.density
@@ -100,19 +136,54 @@ object ShieldOverlay {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             ).apply { topMargin = (28 * density).toInt() }
-            setOnClickListener { onAsk() }
+            setOnClickListener {
+                if (!AskLaunchPolicy.acceptTap(AskBrainLaunch.launching)) return@setOnClickListener
+                isEnabled = false
+                text = "Opening…"
+                onAsk()
+            }
+        }
+        val call = TextView(context).apply {
+            text = "FaceTime"
+            setTextColor(android.graphics.Color.WHITE)
+            textSize = 18f
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply {
+                cornerRadius = 28 * density
+                setColor(0xFF34C759.toInt())
+            }
+            val padH = (18 * density).toInt()
+            setPadding(padH, padH, padH, padH)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = (12 * density).toInt() }
+            setOnClickListener {
+                if (!AskLaunchPolicy.acceptTap(AskBrainLaunch.launching)) return@setOnClickListener
+                isEnabled = false
+                text = "Calling…"
+                onCall()
+            }
         }
         root.addView(mascot)
         root.addView(title)
         root.addView(body)
         root.addView(button)
+        root.addView(call)
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
             type,
-            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT,
-        )
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            if (Build.VERSION.SDK_INT >= 28) {
+                layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+        }
         val manager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
         return runCatching {
             manager.addView(root, params)

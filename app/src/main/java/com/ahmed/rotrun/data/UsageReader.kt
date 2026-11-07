@@ -6,6 +6,7 @@ import android.app.usage.UsageStatsManager
 import android.app.usage.UsageStats
 import android.content.Context
 import android.content.Intent
+import android.content.pm.LauncherApps
 import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
 import android.os.Build
@@ -146,14 +147,22 @@ object UsageReader {
      */
     fun installedApps(context: Context): List<TrackedApp> {
         val hidden = safetyPackages(context)
-        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-        return resolve(context, intent)
-            .mapNotNull { info ->
-                val packageName = info.activityInfo?.packageName ?: return@mapNotNull null
-                if (packageName in hidden) return@mapNotNull null
-                val label = info.loadLabel(context.packageManager).toString().ifBlank { return@mapNotNull null }
+        val fromLauncher = runCatching {
+            val launcher = context.getSystemService(LauncherApps::class.java)
+            launcher.getActivityList(null, Process.myUserHandle()).map { activity ->
+                val packageName = activity.componentName.packageName
+                val label = activity.label?.toString()?.ifBlank { null } ?: label(context, packageName)
                 TrackedApp(packageName, label)
             }
+        }.getOrDefault(emptyList())
+        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val fromQuery = resolve(context, intent).mapNotNull { info ->
+            val packageName = info.activityInfo?.packageName ?: return@mapNotNull null
+            val label = info.loadLabel(context.packageManager).toString().ifBlank { label(context, packageName) }
+            TrackedApp(packageName, label)
+        }
+        return (fromLauncher + fromQuery)
+            .filter { it.packageName !in hidden && it.label.isNotBlank() }
             .distinctBy { it.packageName }
             .sortedBy { it.label.lowercase() }
     }
@@ -385,6 +394,42 @@ private fun eventMarks(manager: UsageStatsManager, start: Long, end: Long): List
         marks += ForegroundMark(name, event.timeStamp, resumed)
     }
     return marks
+}
+
+/**
+ * Home figures to draw after a refresh.
+ * A missing, failed, or all-zero read keeps the last measured numbers so the screen
+ * does not flash empty. A positive new figure replaces that field.
+ */
+internal fun mergeHomeUsage(current: UsageSnapshot, next: UsageSnapshot): UsageSnapshot {
+    if (!next.authorized) return if (current.authorized) current else next
+    if (!current.authorized) return next
+    val today = next.todaySeconds.takeIf { it > 0L } ?: current.todaySeconds
+    val drain = next.drainSeconds.takeIf { it > 0L } ?: current.drainSeconds
+    val pickups = next.pickups.takeIf { it > 0 } ?: current.pickups
+    val avg = next.avgSeconds.takeIf { it > 0L } ?: current.avgSeconds
+    val offenders = next.offenders.filter { it.seconds > 0L }.ifEmpty { current.offenders }
+    val week = when {
+        next.week.any { it.seconds > 0L } -> next.week
+        current.week.any { it.seconds > 0L } -> current.week
+        else -> next.week
+    }
+    val hourlyToday = if (next.hourlyToday.any { it > 0f }) next.hourlyToday else current.hourlyToday
+    val hourlyAvg = if (next.hourlyAvg.any { it > 0f }) next.hourlyAvg else current.hourlyAvg
+    return next.copy(
+        authorized = true,
+        todaySeconds = today,
+        drainSeconds = drain,
+        pickups = pickups,
+        avgSeconds = avg,
+        diffPercent = Scoring.diffPercent(today, avg),
+        belowAverage = today <= avg,
+        aheadOfPace = Scoring.aheadOfPace(today, avg),
+        offenders = offenders,
+        hourlyToday = hourlyToday,
+        hourlyAvg = hourlyAvg,
+        week = week,
+    )
 }
 
 /** Today's rows only, summed when the platform splits the day into more than one record. */

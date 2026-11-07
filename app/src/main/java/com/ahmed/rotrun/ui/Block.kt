@@ -22,8 +22,17 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bedtime
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PhoneAndroid
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import com.ahmed.rotrun.R
+import com.ahmed.rotrun.data.DeviceAccessReader
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -43,10 +52,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ahmed.rotrun.data.AppList
 import com.ahmed.rotrun.data.Blocker
+import com.ahmed.rotrun.data.DeviceAccess
 import com.ahmed.rotrun.data.RotRunRepository
 import com.ahmed.rotrun.data.SavedState
 import com.ahmed.rotrun.data.TrackedApp
-import com.ahmed.rotrun.logic.BlockRules
 import com.ahmed.rotrun.logic.Presets
 import com.ahmed.rotrun.logic.Scoring
 
@@ -56,8 +65,15 @@ fun BlockScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunRepo
     var editingList by remember { mutableStateOf<AppList?>(null) }
     var listsOpen by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf<Blocker?>(null) }
+    var confirmList by remember { mutableStateOf<AppList?>(null) }
     val chrome = rot()
+    val context = LocalContext.current
+    val access by repo.access.collectAsState()
+    var disclose by remember { mutableStateOf(false) }
     val brick = state.blockers.firstOrNull { it.id == "brick" }
+    LaunchedEffect(editing?.id, editingList?.id) {
+        if (editing != null || editingList != null) repo.loadInstalled()
+    }
     val scheduled = state.blockers.filter { it.id != "brick" }
     Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
@@ -72,6 +88,15 @@ fun BlockScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunRepo
                 }.padding(horizontal = 14.dp, vertical = 9.dp),
             )
         }
+        BlockingAccess(access, onUsage = {
+            DeviceAccessReader.open(context, DeviceAccessReader.usageIntent(context))
+        }, onAccessibility = { disclose = true }, onNotifications = {
+            DeviceAccessReader.open(context, DeviceAccessReader.notificationIntent(context))
+        }, onOverlay = {
+            DeviceAccessReader.open(context, DeviceAccessReader.overlayIntent(context))
+        }, onBattery = {
+            DeviceAccessReader.open(context, DeviceAccessReader.batteryIntent(context))
+        })
         SectionLabel("Blocking Now", chrome.muted)
         if (brick != null) {
             BlockerCard(brick, listName(state, brick), active = true, onClick = { editing = brick }, onList = { listsOpen = true })
@@ -139,6 +164,13 @@ fun BlockScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunRepo
                         textAlign = TextAlign.Center,
                         modifier = Modifier.padding(top = 10.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(chrome.pill).clickable { editingList = list }.padding(vertical = 10.dp),
                     )
+                    Text(
+                        "Delete",
+                        color = chrome.danger,
+                        fontWeight = FontWeight.SemiBold,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(top = 8.dp).fillMaxWidth().listDeleteBar().clickable { confirmList = list },
+                    )
                 }
             }
             Text(
@@ -152,6 +184,20 @@ fun BlockScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunRepo
                 }.padding(vertical = 12.dp),
             )
         }
+    }
+    if (disclose) {
+        AlertDialog(
+            onDismissRequest = { disclose = false },
+            title = { Text("Accessibility") },
+            text = { Text(stringResource(R.string.accessibility_disclosure)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    disclose = false
+                    DeviceAccessReader.open(context, DeviceAccessReader.accessibilityIntent())
+                }) { Text("Open settings") }
+            },
+            dismissButton = { TextButton(onClick = { disclose = false }) { Text("Not now") } },
+        )
     }
     if (listsOpen) {
         BottomSheet(onDismiss = { listsOpen = false }) {
@@ -172,6 +218,16 @@ fun BlockScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunRepo
                                 listsOpen = false
                                 editingList = list
                             }.padding(vertical = 10.dp),
+                        )
+                        Text(
+                            "Delete",
+                            color = chrome.danger,
+                            fontWeight = FontWeight.SemiBold,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(top = 8.dp).fillMaxWidth().listDeleteBar().clickable {
+                                listsOpen = false
+                                confirmList = list
+                            },
                         )
                     }
                 }
@@ -201,8 +257,6 @@ fun BlockScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunRepo
                 saved
             },
             onDelete = { confirmDelete = it },
-            exceedsCap = { proposed, exceptBlocker, exceptList -> repo.wouldExceedFreeCap(proposed, exceptBlocker, exceptList) },
-            onUpgrade = { repo.toast(BlockRules.FREE_LIMIT_MESSAGE); repo.requestPaywall() },
         )
     }
     editingList?.let { list ->
@@ -210,8 +264,6 @@ fun BlockScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunRepo
             list,
             installed,
             onDismiss = { editingList = null },
-            exceedsCap = { proposed -> repo.wouldExceedFreeCap(proposed, exceptList = list.id) },
-            onUpgrade = { repo.toast(BlockRules.FREE_LIMIT_MESSAGE); repo.requestPaywall() },
         ) { list ->
             val saved = repo.saveList(list)
             if (saved) editingList = null
@@ -228,10 +280,63 @@ fun BlockScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunRepo
             dismissButton = { TextButton(onClick = { confirmDelete = null }) { Text("Cancel") } },
         )
     }
+    confirmList?.let { list ->
+        AlertDialog(
+            onDismissRequest = { confirmList = null },
+            title = { Text("Delete ${list.name}?") },
+            text = { Text("This removes the list and stops blocking its apps.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    repo.deleteList(list.id)
+                    if (editingList?.id == list.id) editingList = null
+                    confirmList = null
+                }) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { confirmList = null }) { Text("Cancel") } },
+        )
+    }
 }
 
 private fun listName(state: SavedState, blocker: Blocker): String =
     state.appLists.firstOrNull { it.id == blocker.appListId }?.name ?: "RotRun Apps"
+
+@Composable
+private fun BlockingAccess(
+    access: DeviceAccess,
+    onUsage: () -> Unit,
+    onAccessibility: () -> Unit,
+    onNotifications: () -> Unit,
+    onOverlay: () -> Unit,
+    onBattery: () -> Unit,
+) {
+    val chrome = rot()
+    Column(Modifier.padding(top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(chrome.card)) {
+        AccessRow("Usage Access", "Which app is open, today’s time, and daily limits.", access.usage, onUsage)
+        Box(Modifier.padding(start = 16.dp).fillMaxWidth().height(1.dp).background(chrome.line))
+        AccessRow("Accessibility", "Shows the Rot shield over apps you chose. RotRun does not read what you type.", access.accessibility, onAccessibility)
+        Box(Modifier.padding(start = 16.dp).fillMaxWidth().height(1.dp).background(chrome.line))
+        AccessRow("Notifications", "The shield can still open if the overlay is off.", access.notifications, onNotifications)
+        Box(Modifier.padding(start = 16.dp).fillMaxWidth().height(1.dp).background(chrome.line))
+        AccessRow("Display over other apps", "Fallback shield when Accessibility is off.", access.overlay, onOverlay)
+        Box(Modifier.padding(start = 16.dp).fillMaxWidth().height(1.dp).background(chrome.line))
+        AccessRow("Battery", "Keep blocking after a restart and when RotRun is swiped away.", access.batteryUnrestricted, onBattery)
+    }
+}
+
+@Composable
+private fun AccessRow(title: String, detail: String, granted: Boolean, onClick: () -> Unit) {
+    val chrome = rot()
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f).padding(end = 8.dp)) {
+            Text(title, color = chrome.ink, fontWeight = FontWeight.SemiBold)
+            Text(detail, color = chrome.muted, fontSize = 12.sp)
+        }
+        Text(if (granted) "On" else "Off", color = if (granted) chrome.green else chrome.danger, fontWeight = FontWeight.Bold)
+    }
+}
 
 @Composable
 private fun BlockerCard(blocker: Blocker, listName: String, active: Boolean, onClick: () -> Unit, onList: () -> Unit) {
@@ -247,7 +352,7 @@ private fun BlockerCard(blocker: Blocker, listName: String, active: Boolean, onC
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(44.dp).clip(CircleShape).background(if (active) Color(0xFFD6E4FF) else chrome.inset), contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.PhoneAndroid, contentDescription = null, tint = if (active) Color(0xFF5B6CFF) else chrome.muted)
+                Icon(blockSymbol(blocker.symbol), contentDescription = null, tint = if (active) Color(0xFF5B6CFF) else chrome.muted)
             }
             Column(Modifier.padding(start = 12.dp).weight(1f)) {
                 Text(blocker.name, color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 18.sp)
@@ -283,106 +388,156 @@ private fun BlockerEditor(
     onDismiss: () -> Unit,
     onSave: (Blocker) -> Boolean,
     onDelete: (Blocker) -> Unit,
-    exceedsCap: (Set<String>, String?, String?) -> Boolean,
-    onUpgrade: () -> Unit,
 ) {
     var draft by remember(initial.id) { mutableStateOf(initial) }
     var picking by remember { mutableStateOf(false) }
+    var choosingIcon by remember { mutableStateOf(false) }
+    val changed = draft != initial
     val chrome = rot()
     BottomSheet(onDismiss = onDismiss) {
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Box(Modifier.size(72.dp).clip(CircleShape).background(Color(0xFFD6E4FF)), contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.PhoneAndroid, contentDescription = null, tint = Color(0xFF5B6CFF), modifier = Modifier.size(32.dp))
+        Column(Modifier.fillMaxSize()) {
+            Box(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
+                Text(
+                    "Cancel",
+                    color = chrome.blue,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 17.sp,
+                    modifier = Modifier.align(Alignment.CenterStart).clickable(onClick = onDismiss).padding(horizontal = 12.dp, vertical = 8.dp),
+                )
+                Text(
+                    "Edit Block",
+                    color = chrome.ink,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.align(Alignment.Center).padding(horizontal = 72.dp),
+                )
             }
-            BasicTextField(
-                value = draft.name,
-                onValueChange = { draft = draft.copy(name = it) },
-                textStyle = TextStyle(color = chrome.ink, fontSize = 20.sp, fontWeight = FontWeight.Bold),
-                modifier = Modifier.padding(top = 16.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(chrome.inset).padding(16.dp),
-            )
-            Row(Modifier.padding(vertical = 14.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("allDay" to "All Day", "schedule" to "Schedule", "dailyLimit" to "Daily Limit").forEach { (mode, label) ->
-                    val on = draft.mode == mode
-                    Text(
-                        label,
-                        color = if (on) Color.White else chrome.muted,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.clip(CircleShape).background(if (on) chrome.blue else Color.Transparent).clickable {
-                            if (mode == draft.mode) return@clickable
-                            val stash = draft.modeApps + (draft.mode to draft.apps)
-                            draft = draft.copy(mode = mode, apps = stash[mode].orEmpty(), modeApps = stash)
-                        }.padding(horizontal = 14.dp, vertical = 8.dp),
-                    )
-                }
-            }
-            Text("Blocked Apps", color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.fillMaxWidth())
-            Text("Used for ${modeLabel(draft.mode)}. Each mode keeps its own list.", color = chrome.muted, fontSize = 13.sp, modifier = Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 8.dp))
-            Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(chrome.inset).clickable { picking = true }.padding(14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text(listName, color = chrome.ink, fontWeight = FontWeight.Bold)
-                    Text(
-                        if (draft.apps.isEmpty()) "No apps yet" else "${draft.apps.size} apps",
-                        color = chrome.muted,
-                        fontSize = 13.sp,
-                    )
-                }
-                Text("🚀", modifier = Modifier.padding(end = 8.dp))
-                Text("›", color = chrome.muted, fontWeight = FontWeight.Bold)
-            }
-            if (draft.mode == "schedule") {
-                Text("Timeframe", color = chrome.ink, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 14.dp).fillMaxWidth())
-                Row(Modifier.padding(top = 8.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(Scoring.hourLabel(draft.startHour), color = chrome.ink, modifier = Modifier.chip().clickable { draft = draft.copy(startHour = (draft.startHour + 1) % 24) })
-                    Text(Scoring.hourLabel(draft.endHour), color = chrome.ink, modifier = Modifier.chip().clickable { draft = draft.copy(endHour = (draft.endHour + 1) % 24) })
-                }
-            }
-            if (draft.mode == "dailyLimit") {
-                Text("${draft.limitMinutes} min a day, then blocked", color = chrome.ink, modifier = Modifier.padding(top = 12.dp).fillMaxWidth())
-                Row(Modifier.padding(top = 8.dp)) {
-                    Text("−", color = chrome.ink, modifier = Modifier.chip().clickable { draft = draft.copy(limitMinutes = (draft.limitMinutes - 5).coerceIn(5, 240)) })
-                    Text("+", color = chrome.ink, modifier = Modifier.padding(start = 8.dp).chip().clickable { draft = draft.copy(limitMinutes = (draft.limitMinutes + 5).coerceIn(5, 240)) })
-                }
-            }
-            Text("Active Days", color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.padding(top = 16.dp).fillMaxWidth())
-            Row(Modifier.padding(top = 8.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                listOf("Weekdays" to (1..5).toList(), "Weekends" to listOf(0, 6), "All" to (0..6).toList()).forEach { (label, days) ->
-                    val on = draft.days == days
-                    Text(
-                        label,
-                        color = if (on) Color.White else chrome.muted,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.clip(CircleShape).background(if (on) chrome.blue else Color.Transparent).clickable { draft = draft.copy(days = days) }.padding(horizontal = 14.dp, vertical = 8.dp),
-                    )
-                }
-            }
-            Row(Modifier.padding(top = 12.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                listOf("Su", "Mo", "Tu", "We", "Th", "Fr", "Sa").forEachIndexed { index, label ->
-                    val on = index in draft.days
+            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
+                SheetLabel("NAME")
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
-                        Modifier.size(36.dp).clip(CircleShape).background(if (on) chrome.blue else chrome.inset).clickable {
-                            val days = if (on) draft.days - index else (draft.days + index).sorted()
-                            draft = draft.copy(days = days)
-                        },
+                        Modifier.size(48.dp).clip(CircleShape).background(Color(0xFFD6E4FF)).clickable { choosingIcon = true },
                         contentAlignment = Alignment.Center,
                     ) {
-                        Text(label, color = if (on) Color.White else chrome.ink, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Icon(blockSymbol(draft.symbol), contentDescription = "Block icon", tint = Color(0xFF5B6CFF), modifier = Modifier.size(24.dp))
+                    }
+                    BasicTextField(
+                        value = draft.name,
+                        onValueChange = { draft = draft.copy(name = it) },
+                        textStyle = TextStyle(color = chrome.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold),
+                        modifier = Modifier.padding(start = 12.dp).weight(1f).clip(RoundedCornerShape(14.dp)).background(chrome.inset).padding(16.dp),
+                    )
+                }
+                SheetLabel("MODE")
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(chrome.inset).padding(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    listOf("allDay" to "All Day", "schedule" to "Schedule", "dailyLimit" to "Limit").forEach { (mode, label) ->
+                        val on = draft.mode == mode
+                        Text(
+                            label,
+                            color = if (on) Color.White else chrome.muted,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 14.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.weight(1f).clip(RoundedCornerShape(10.dp)).background(if (on) chrome.blue else Color.Transparent).clickable {
+                                if (mode == draft.mode) return@clickable
+                                val stash = draft.modeApps + (draft.mode to draft.apps)
+                                draft = draft.copy(mode = mode, apps = stash[mode].orEmpty(), modeApps = stash)
+                            }.padding(vertical = 10.dp),
+                        )
+                    }
+                }
+                if (draft.mode == "schedule") {
+                    Text("Timeframe", color = chrome.muted, fontSize = 13.sp, modifier = Modifier.padding(top = 12.dp).fillMaxWidth())
+                    Row(Modifier.padding(top = 8.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(Scoring.hourLabel(draft.startHour), color = chrome.ink, modifier = Modifier.chip().clickable { draft = draft.copy(startHour = (draft.startHour + 1) % 24) })
+                        Text(Scoring.hourLabel(draft.endHour), color = chrome.ink, modifier = Modifier.chip().clickable { draft = draft.copy(endHour = (draft.endHour + 1) % 24) })
+                    }
+                }
+                if (draft.mode == "dailyLimit") {
+                    Text("${draft.limitMinutes} min a day, then blocked", color = chrome.ink, modifier = Modifier.padding(top = 12.dp).fillMaxWidth())
+                    Row(Modifier.padding(top = 8.dp)) {
+                        Text("−", color = chrome.ink, modifier = Modifier.chip().clickable { draft = draft.copy(limitMinutes = (draft.limitMinutes - 5).coerceIn(5, 240)) })
+                        Text("+", color = chrome.ink, modifier = Modifier.padding(start = 8.dp).chip().clickable { draft = draft.copy(limitMinutes = (draft.limitMinutes + 5).coerceIn(5, 240)) })
+                    }
+                }
+                SheetLabel("BLOCKED APPS")
+                Text("Used for ${modeLabel(draft.mode)}. Each mode keeps its own list.", color = chrome.muted, fontSize = 13.sp, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
+                BlockedAppsRow(draft.apps) { picking = true }
+                SheetLabel("ACTIVE DAYS")
+                Column(
+                    Modifier.padding(bottom = 16.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(chrome.field).padding(14.dp),
+                ) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        listOf("Su", "Mo", "Tu", "We", "Th", "Fr", "Sa").forEachIndexed { index, label ->
+                            val on = index in draft.days
+                            Box(
+                                Modifier.size(36.dp).clip(CircleShape).background(if (on) chrome.blue else chrome.pill).clickable {
+                                    val days = if (on) draft.days - index else (draft.days + index).sorted()
+                                    draft = draft.copy(days = days)
+                                },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(label, color = if (on) Color.White else chrome.ink, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                        }
+                    }
+                    Row(Modifier.padding(top = 14.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf("Weekdays" to (1..5).toList(), "Weekends" to listOf(0, 6), "Every day" to (0..6).toList()).forEachIndexed { index, (label, days) ->
+                            if (index > 0) Text("·", color = chrome.muted, fontWeight = FontWeight.Bold)
+                            val on = draft.days == days
+                            Text(
+                                label,
+                                color = if (on) chrome.blue else chrome.ink,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 15.sp,
+                                modifier = Modifier.clickable { draft = draft.copy(days = days) },
+                            )
+                        }
                     }
                 }
             }
-            PrimaryButton("Save Changes") { onSave(draft.copy(modeApps = draft.modeApps + (draft.mode to draft.apps))) }
-            Text(
-                if (draft.mode == "schedule") "Delete Schedule" else "Delete Block",
-                color = chrome.danger,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(top = 16.dp, bottom = 12.dp).clickable { onDelete(draft) },
-            )
+            Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 12.dp)) {
+                PrimaryButton("Save Changes", enabled = changed) {
+                    onSave(draft.copy(modeApps = draft.modeApps + (draft.mode to draft.apps)))
+                }
+                Text(
+                    if (draft.mode == "schedule") "Delete Schedule" else "Delete Block",
+                    color = chrome.danger,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 4.dp).clickable { onDelete(draft) },
+                )
+            }
         }
     }
+    if (choosingIcon) {
+        AlertDialog(
+            onDismissRequest = { choosingIcon = false },
+            title = { Text("Block icon") },
+            text = {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    blockSymbols.forEach { (id, icon) ->
+                        val on = draft.symbol == id
+                        Box(
+                            Modifier.size(48.dp).clip(CircleShape).background(if (on) chrome.blue else chrome.inset).clickable {
+                                draft = draft.copy(symbol = id)
+                                choosingIcon = false
+                            },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(icon, contentDescription = id, tint = if (on) Color.White else chrome.ink)
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { choosingIcon = false }) { Text("Done") } },
+        )
+    }
     if (picking) {
-        val reserved = draft.modeApps.filterKeys { it != draft.mode }.values.flatten().map { it.packageName }.toSet()
         AppPickerDialog(
             apps = installed,
             selected = draft.apps,
@@ -391,13 +546,6 @@ private fun BlockerEditor(
                 val next = draft.copy(apps = chosen, modeApps = draft.modeApps + (draft.mode to chosen))
                 draft = next
                 if (onSave(next)) picking = false
-            },
-            exceedsCap = { proposed ->
-                exceedsCap(proposed + reserved, draft.id, if (draft.id == "brick") draft.appListId else null)
-            },
-            onUpgrade = {
-                picking = false
-                onUpgrade()
             },
         )
     }
@@ -408,8 +556,6 @@ private fun ListEditor(
     initial: AppList,
     installed: List<TrackedApp>,
     onDismiss: () -> Unit,
-    exceedsCap: (Set<String>) -> Boolean,
-    onUpgrade: () -> Unit,
     onSave: (AppList) -> Boolean,
 ) {
     var draft by remember(initial.id) { mutableStateOf(initial) }
@@ -462,8 +608,6 @@ private fun ListEditor(
                 draft = next
                 if (onSave(next)) picking = false
             },
-            exceedsCap = exceedsCap,
-            onUpgrade = { picking = false; onUpgrade() },
         )
     }
 }
@@ -476,10 +620,71 @@ private fun presetLook(title: String): Pair<Color, BrainStyle> = when (title) {
     else -> Color(0xFFE0D6F0) to BrainStyle.Newspaper
 }
 
+@Composable
+private fun BlockedAppsRow(apps: List<TrackedApp>, onClick: () -> Unit) {
+    val chrome = rot()
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(chrome.field).clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (apps.isEmpty()) {
+            Text("Choose apps", color = chrome.muted, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+        } else {
+            val shown = apps.take(4)
+            Box(Modifier.width((28 + (shown.size - 1) * 16).dp).height(28.dp)) {
+                shown.forEachIndexed { index, app ->
+                    AppGlyph(
+                        app.packageName,
+                        Modifier.padding(start = (index * 16).dp).size(28.dp).border(2.dp, chrome.field, RoundedCornerShape(8.dp)),
+                    )
+                }
+            }
+            Text(
+                "${apps.size} apps",
+                color = chrome.ink,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 16.sp,
+                modifier = Modifier.padding(start = 12.dp).weight(1f),
+            )
+            Text("›", color = chrome.muted, fontWeight = FontWeight.Bold, fontSize = 22.sp)
+        }
+    }
+}
+
+@Composable
+private fun SheetLabel(text: String) {
+    Text(
+        text,
+        color = rot().muted,
+        fontWeight = FontWeight.Bold,
+        fontSize = 12.sp,
+        letterSpacing = 1.1.sp,
+        modifier = Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 8.dp),
+    )
+}
+
+private val blockSymbols = listOf(
+    "phone" to Icons.Default.PhoneAndroid,
+    "bed" to Icons.Default.Bedtime,
+    "star" to Icons.Default.Star,
+    "lock" to Icons.Default.Lock,
+)
+
+private fun blockSymbol(id: String) = blockSymbols.firstOrNull { it.first == id }?.second ?: Icons.Default.PhoneAndroid
+
 private fun modeLabel(mode: String) = when (mode) {
     "schedule" -> "Schedule"
     "dailyLimit" -> "Daily Limit"
     else -> "All Day"
+}
+
+@Composable
+private fun Modifier.listDeleteBar(): Modifier {
+    val chrome = rot()
+    val shape = RoundedCornerShape(12.dp)
+    return this.then(
+        Modifier.border(1.dp, chrome.muted, shape).clip(shape).padding(vertical = 10.dp),
+    )
 }
 
 @Composable

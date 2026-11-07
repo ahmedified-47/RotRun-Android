@@ -5,6 +5,7 @@ import android.content.Context
 import com.ahmed.rotrun.billing.PlayBilling
 import com.ahmed.rotrun.icon.LauncherIcons
 import com.ahmed.rotrun.logic.BlockRules
+import com.ahmed.rotrun.logic.withoutAppList
 import com.ahmed.rotrun.logic.PaywallGate
 import com.ahmed.rotrun.logic.Products
 import com.ahmed.rotrun.logic.Scoring
@@ -24,6 +25,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -36,6 +38,7 @@ sealed interface UiPulse {
     data object ShowAudioSlap : UiPulse
     data object OpenPaywall : UiPulse
     data object OpenChat : UiPulse
+    data object ClosePaywall : UiPulse
 }
 
 class RotRunRepository(context: Context) {
@@ -69,8 +72,16 @@ class RotRunRepository(context: Context) {
     val pulses: SharedFlow<UiPulse> = _pulses.asSharedFlow()
     private var host: WeakReference<Activity>? = null
     val backend = Backend(app, this)
-    private val billing = PlayBilling(app, ::applyEntitlement, ::toast)
+    private val billing = PlayBilling(
+        app,
+        accountId = { backend.userId },
+        onEntitlement = ::applyEntitlement,
+        onMessage = ::toast,
+        onPurchased = { _pulses.tryEmit(UiPulse.ClosePaywall) },
+        sync = { purchases -> backend.syncPlayPurchases(purchases) },
+    )
     private val launchFinished = AtomicBoolean(false)
+    private var usageGeneration = 0
 
     fun attach(activity: Activity) {
         host = WeakReference(activity)
@@ -141,21 +152,42 @@ class RotRunRepository(context: Context) {
 
     fun refreshUsage() {
         rollOpenDay()
+        val generation = ++usageGeneration
+        val previous = _usage.value
+        val saved = _state.value
         _refreshing.value = true
         scope.launch {
-            val snapshot = withContext(Dispatchers.Default) { UsageReader.read(app, _state.value) }
-            _usage.value = snapshot
+            val snapshot = try {
+                withContext(Dispatchers.Default) { UsageReader.read(app, saved) }
+            } catch (cancelled: CancellationException) {
+                if (generation == usageGeneration) _refreshing.value = false
+                throw cancelled
+            } catch (_: Exception) {
+                previous
+            }
+            if (generation != usageGeneration) return@launch
+            val shown = mergeHomeUsage(previous, snapshot)
+            _usage.value = shown
             publishWidget()
             _refreshing.value = false
             withContext(Dispatchers.IO) {
-                backend.syncScreenTime(snapshot)
+                backend.syncScreenTime(shown)
                 backend.syncStreak(_state.value)
-                if (snapshot.authorized) {
-                    val xp = Scoring.dailyXp((snapshot.todaySeconds / 60).toInt(), _state.value.goalHours * 60, _state.value.askBrainCount, _state.value.ransomDebit)
-                    backend.syncXp(xp, "You")
-                }
+                publishCurrentXp(shown.authorized)
             }
         }
+    }
+
+    private fun publishCurrentXp(hasReading: Boolean) {
+        if (!hasReading) return
+        val usage = _usage.value
+        val xp = Scoring.dailyXp(
+            (usage.todaySeconds / 60).toInt(),
+            _state.value.goalHours * 60,
+            _state.value.askBrainCount,
+            _state.value.ransomDebit,
+        )
+        scope.launch(Dispatchers.IO) { backend.publishXp(xp, hasReading = true) }
     }
 
     fun loadInstalled() {
@@ -188,12 +220,25 @@ class RotRunRepository(context: Context) {
 
     fun applyRemoteBlocks(lists: List<AppList>, blockers: List<Blocker>) {
         if (lists.isEmpty() && blockers.isEmpty()) return
+        var trimmed = false
         update { current ->
+            val mergedLists = lists.ifEmpty { current.appLists }
+            val mergedBlockers = blockers.ifEmpty { current.blockers }
+            val ordered = mergedBlockers.flatMap { it.packageOrder() } + mergedLists.flatMap { list -> list.apps.map { it.packageName } }
+            val (kept, cut) = com.ahmed.rotrun.logic.BillingQuotes.keepingFirst(
+                emptyList(),
+                ordered,
+                current.premiumActive(),
+                PaywallGate.shows,
+            )
+            trimmed = cut
+            val allow = kept.toSet()
             current.copy(
-                appLists = lists.ifEmpty { current.appLists },
-                blockers = blockers.ifEmpty { current.blockers },
+                appLists = mergedLists.map { list -> list.copy(apps = list.apps.filter { it.packageName in allow }) },
+                blockers = mergedBlockers.map { blocker -> blocker.copy(apps = blocker.apps.filter { it.packageName in allow }) },
             )
         }
+        if (trimmed) requestPaywall()
     }
 
     fun advance() = update { stepForward(it) }
@@ -227,16 +272,19 @@ class RotRunRepository(context: Context) {
 
     fun restore() = billing.restore()
 
-    private fun applyEntitlement(productId: String?, lifetime: Boolean, active: Boolean) {
+    fun refreshBilling() = billing.start()
+
+    private fun applyEntitlement(productId: String?, lifetime: Boolean, active: Boolean, expiresAtMillis: Long?) {
         update { current ->
             if (!active) {
                 current.copy(premium = false, lifetime = false, productId = null, premiumUntil = 0L)
             } else {
+                val until = com.ahmed.rotrun.logic.BillingQuotes.premiumUntilMillis(lifetime, expiresAtMillis, current.premiumUntil)
                 val next = current.copy(
                     premium = true,
                     lifetime = lifetime,
                     productId = productId,
-                    premiumUntil = if (lifetime) Long.MAX_VALUE / 4 else System.currentTimeMillis() + 400L * 24 * 60 * 60 * 1000,
+                    premiumUntil = until,
                 )
                 if (!next.onboardingCompleted && OnboardingStep.fromRaw(next.onboardingStep).let {
                         it == OnboardingStep.GetAccess || it == OnboardingStep.OneTimeOffer || it == OnboardingStep.PurchaseComplete
@@ -248,28 +296,39 @@ class RotRunRepository(context: Context) {
                 }
             }
         }
-        if (active) toast("RotRun Premium is on.")
     }
 
     fun saveBlocker(blocker: Blocker): Boolean {
-        val proposed = blocker.packageOrder().toSet()
-        if (overFreeCap(proposed, exceptBlocker = blocker.id, exceptList = if (blocker.id == "brick") blocker.appListId else null)) {
-            toast(BlockRules.FREE_LIMIT_MESSAGE)
-            requestPaywall()
-            return false
-        }
-        update { current ->
-            val without = current.blockers.filterNot { it.id == blocker.id }
-            val lists = if (blocker.id == "brick") {
-                current.appLists.map { list ->
-                    if (list.id == blocker.appListId) list.copy(apps = blocker.apps) else list
+        val current = _state.value
+        val previous = current.blockers.firstOrNull { it.id == blocker.id }?.packageOrder().orEmpty()
+        val (kept, trimmed) = com.ahmed.rotrun.logic.BillingQuotes.keepingFirst(
+            previous,
+            blocker.packageOrder(),
+            current.premiumActive(),
+            PaywallGate.shows,
+        )
+        val allow = kept.toSet()
+        val nextBlocker = blocker.copy(
+            apps = blocker.apps.filter { it.packageName in allow },
+            modeApps = blocker.modeApps.mapValues { (_, apps) -> apps.filter { it.packageName in allow } },
+        )
+        update { saved ->
+            val without = saved.blockers.filterNot { it.id == nextBlocker.id }
+            val lists = if (nextBlocker.id == "brick") {
+                saved.appLists.map { list ->
+                    if (list.id == nextBlocker.appListId) list.copy(apps = nextBlocker.apps) else list
                 }
             } else {
-                current.appLists
+                saved.appLists
             }
-            current.copy(blockers = listOf(blocker) + without, appLists = lists)
+            saved.copy(blockers = listOf(nextBlocker) + without, appLists = lists)
         }
-        toast("Saved ${blocker.name}")
+        if (trimmed) {
+            toast(BlockRules.FREE_LIMIT_MESSAGE)
+            requestPaywall()
+        } else {
+            toast("Saved ${blocker.name}")
+        }
         return true
     }
 
@@ -281,23 +340,61 @@ class RotRunRepository(context: Context) {
         toast("Deleted $name")
     }
 
-    fun saveList(list: AppList): Boolean {
-        if (overFreeCap(list.apps.map { it.packageName }.toSet(), exceptList = list.id)) {
+    fun saveRotRunApps(apps: List<TrackedApp>) {
+        val current = _state.value
+        val previous = current.appLists.firstOrNull { it.id == "list.brainmelt" }?.apps?.map { it.packageName }.orEmpty()
+        val (kept, trimmed) = com.ahmed.rotrun.logic.BillingQuotes.keepingFirst(
+            previous,
+            apps.map { it.packageName },
+            current.premiumActive(),
+            PaywallGate.shows,
+        )
+        val allow = kept.toSet()
+        val chosen = apps.filter { it.packageName in allow }
+        update { saved ->
+            val lists = saved.appLists.ifEmpty { listOf(AppList("list.brainmelt", "RotRun Apps")) }.map { list ->
+                if (list.id == "list.brainmelt") list.copy(apps = chosen) else list
+            }
+            saved.copy(appLists = lists, blockers = saved.blockers.map { if (it.id == "brick") it.copy(apps = chosen) else it })
+        }
+        if (trimmed) {
             toast(BlockRules.FREE_LIMIT_MESSAGE)
             requestPaywall()
-            return false
         }
-        update { current ->
-            val lists = current.appLists.toMutableList()
-            val index = lists.indexOfFirst { it.id == list.id }
-            if (index >= 0) lists[index] = list else lists.add(list)
-            val blockers = current.blockers.map { blocker ->
-                if (blocker.appListId == list.id && blocker.id == "brick") blocker.copy(apps = list.apps) else blocker
+    }
+
+    fun saveList(list: AppList): Boolean {
+        val current = _state.value
+        val previous = current.appLists.firstOrNull { it.id == list.id }?.apps?.map { it.packageName }.orEmpty()
+        val (kept, trimmed) = com.ahmed.rotrun.logic.BillingQuotes.keepingFirst(
+            previous,
+            list.apps.map { it.packageName },
+            current.premiumActive(),
+            PaywallGate.shows,
+        )
+        val chosen = list.copy(apps = list.apps.filter { it.packageName in kept.toSet() })
+        update { saved ->
+            val lists = saved.appLists.toMutableList()
+            val index = lists.indexOfFirst { it.id == chosen.id }
+            if (index >= 0) lists[index] = chosen else lists.add(chosen)
+            val blockers = saved.blockers.map { blocker ->
+                if (blocker.appListId == chosen.id && blocker.id == "brick") blocker.copy(apps = chosen.apps) else blocker
             }
-            current.copy(appLists = lists, blockers = blockers)
+            saved.copy(appLists = lists, blockers = blockers)
         }
-        toast("Saved ${list.name}")
+        if (trimmed) {
+            toast(BlockRules.FREE_LIMIT_MESSAGE)
+            requestPaywall()
+        } else {
+            toast("Saved ${list.name}")
+        }
         return true
+    }
+
+    fun deleteList(id: String) {
+        val name = _state.value.appLists.firstOrNull { it.id == id }?.name ?: return
+        update { it.withoutAppList(id) }
+        toast("Deleted $name")
     }
 
     fun startFocus(targetMinutes: Int?, legendary: Boolean, scopeName: String) {
@@ -333,7 +430,10 @@ class RotRunRepository(context: Context) {
                 current.copy(askBrainCount = current.askBrainCount + 1, lastAskToken = token)
             }
         }
-        if (charged) toast("−20 XP · caught rotting")
+        if (charged) {
+            toast("−20 XP · caught rotting")
+            publishCurrentXp(_usage.value.authorized)
+        }
     }
 
     fun grantUnlock(minutes: Int): Boolean {
@@ -346,6 +446,7 @@ class RotRunRepository(context: Context) {
     fun payRansom() {
         update { it.copy(ransomDebit = it.ransomDebit + 100) }
         toast("−100 XP · ransom paid")
+        publishCurrentXp(_usage.value.authorized)
     }
 
     fun noteBailout(from: String) {
@@ -383,6 +484,40 @@ class RotRunRepository(context: Context) {
 
     fun requestFocusChooser() {
         _pulses.tryEmit(UiPulse.OpenFocusChooser)
+    }
+
+    @Volatile
+    private var chatPending = false
+
+    /** Talk sheet. Buffered so a launch that arrives before the shell collects still opens chat. */
+    fun requestChat() {
+        chatPending = true
+        _pulses.tryEmit(UiPulse.OpenChat)
+    }
+
+    private val _askIntervention = MutableStateFlow<AskIntervention?>(null)
+    val askIntervention: StateFlow<AskIntervention?> = _askIntervention.asStateFlow()
+
+    /** One enabled intervention style, shown until the user leaves it. A second call does not roll again. */
+    fun requestAskIntervention(packageName: String, label: String, forcedMode: String? = null) {
+        if (packageName.isBlank()) return
+        if (AskInterventionPlan.alreadyShowing(_askIntervention.value)) return
+        val mode = forcedMode?.takeIf { it.isNotBlank() } ?: AskInterventionPlan.mode(pickStyle())
+        _askIntervention.value = AskIntervention(
+            packageName = packageName,
+            label = label.ifBlank { "this app" },
+            mode = mode,
+        )
+    }
+
+    fun clearAskIntervention() {
+        _askIntervention.value = null
+    }
+
+    fun takeChatRequest(): Boolean {
+        if (!chatPending) return false
+        chatPending = false
+        return true
     }
 
     fun pickStyle(): String? {
@@ -437,6 +572,7 @@ class RotRunRepository(context: Context) {
             now = ZonedDateTime.now(),
             usageSeconds = seconds,
             windows = windows,
+            chatPackage = com.ahmed.rotrun.watch.ShieldSession.chatPackage(),
         )
     }
 
@@ -509,6 +645,12 @@ class RotRunRepository(context: Context) {
         return next
     }
 
+    /** Same re-check RootView runs when Rewards or App Icon opens. */
+    fun recheckRewards() {
+        val next = clampRewards(_state.value)
+        if (next != _state.value) update { next }
+    }
+
     private fun expireFocus(current: SavedState, force: Boolean = false): SavedState {
         val session = current.focus ?: return current
         val elapsed = System.currentTimeMillis() - session.startedAt
@@ -532,9 +674,9 @@ class RotRunRepository(context: Context) {
         val offenders = if (!known) {
             "Connect usage"
         } else {
-            _usage.value.offenders.filter { it.seconds >= 60 }.take(3)
-                .joinToString("\n") { "${it.label}  ${Scoring.formatDuration(it.seconds)}" }
-                .ifBlank { "No apps yet" }
+            _usage.value.offenders.filter { it.seconds > 0 }.take(5)
+                .joinToString("\n") { "${it.label}\t${it.seconds}\t${it.packageName}" }
+                .ifBlank { "" }
         }
         val focus = current.focus
         prefs.edit()
@@ -618,7 +760,7 @@ class RotRunRepository(context: Context) {
 
     private fun decode(json: JSONObject): SavedState {
         val fresh = freshState()
-        val lists = json.optJSONArray("appLists").toLists().ifEmpty { fresh.appLists }
+        val lists = if (json.has("appLists")) json.optJSONArray("appLists").toLists() else fresh.appLists
         val blockers = json.optJSONArray("blockers").toBlockers().ifEmpty { fresh.blockers }
         val focusJson = json.optJSONObject("focus")
         return SavedState(
@@ -739,6 +881,7 @@ private fun encodeBlocker(blocker: Blocker) = JSONObject()
     .put("endHour", blocker.endHour)
     .put("limitMinutes", blocker.limitMinutes)
     .put("days", JSONArray(blocker.days))
+    .put("symbol", blocker.symbol)
     .put("apps", JSONArray().apply { blocker.apps.forEach { put(encodeApp(it)) } })
     .put("modeApps", JSONObject().apply {
         blocker.modeApps.forEach { (mode, apps) ->
@@ -795,6 +938,7 @@ private fun JSONArray?.toBlockers(): List<Blocker> {
                     endHour = item.optInt("endHour", 17),
                     limitMinutes = item.optInt("limitMinutes", 30),
                     days = days,
+                    symbol = item.optString("symbol", "phone").ifBlank { "phone" },
                     apps = item.optJSONArray("apps").toApps(),
                     modeApps = item.optJSONObject("modeApps").toModeApps(),
                 ),

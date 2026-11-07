@@ -1,8 +1,15 @@
 package com.ahmed.rotrun.ui
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -22,10 +29,18 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -64,9 +79,9 @@ fun HomeScreen(state: SavedState, usage: UsageSnapshot, refreshing: Boolean, onR
         Box(Modifier.fillMaxWidth().height(if (short) 118.dp else brainSize + 78.dp)) {
             if (scenic) HeroBackdrop(state.theme, Modifier.fillMaxWidth().fillMaxHeight())
             Column(Modifier.fillMaxWidth()) {
-                HomeHeader(state.streak.coerceAtLeast(1), refreshing, scenic, on, onRefresh, onTalk)
+                HomeHeader(state.streak.coerceAtLeast(1), refreshing, scenic, on, onRefresh, onTalk, Modifier.zIndex(1f))
                 Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
-                    CartoonBrain(style, Modifier.size(brainSize), animated = false)
+                    CartoonBrain(style, Modifier.size(brainSize), animated = !short)
                 }
             }
         }
@@ -97,7 +112,7 @@ fun HomeScreen(state: SavedState, usage: UsageSnapshot, refreshing: Boolean, onR
                     .background(if (scenic) Color.Black.copy(alpha = 0.22f) else chrome.line),
                 contentAlignment = Alignment.CenterStart,
             ) {
-                val fraction = ((health ?: 0) / 100f).coerceIn(0f, 1f)
+                val fraction = easeWidth(((health ?: 0) / 100f).coerceIn(0f, 1f), 550, reduceMotion())
                 if (health != null && fraction <= 0f) {
                     Box(Modifier.padding(start = 2.dp).size(12.dp).clip(CircleShape).background(if (scenic) Color.White else Melt.Action))
                 } else {
@@ -110,30 +125,35 @@ fun HomeScreen(state: SavedState, usage: UsageSnapshot, refreshing: Boolean, onR
             }
         }
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            MetricCard("Screen Time", if (usage.authorized) Scoring.formatDuration(usage.todaySeconds) else "—", MetricKind.Screen, Modifier.weight(1f))
-            MetricCard("Pickups", if (usage.authorized) usage.pickups.toString() else "—", MetricKind.Pickups, Modifier.weight(1f))
-            MetricCard("Focus Time", Scoring.formatDuration(state.focusMinutesToday() * 60L), MetricKind.Focus, Modifier.weight(1f))
+            MetricCard("Screen Time", Scoring.visibleDuration(if (usage.authorized) usage.todaySeconds else 0L), MetricKind.Screen, Modifier.weight(1f))
+            MetricCard("Pickups", if (usage.authorized) Scoring.visibleCount(usage.pickups) else "Not in yet", MetricKind.Pickups, Modifier.weight(1f))
+            MetricCard("Focus Time", Scoring.visibleDuration(state.focusMinutesToday() * 60L), MetricKind.Focus, Modifier.weight(1f))
         }
         Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             SectionTitle("Top Offenders", scenic)
             RaisedCard(Modifier.fillMaxWidth()) {
                 Column {
-                val offenders = usage.offenders.filter { it.seconds > 0L }
-                if (offenders.isEmpty()) {
-                    Text("No apps yet", color = Color.White.copy(alpha = 0.85f), fontWeight = FontWeight.Medium, modifier = Modifier.padding(16.dp))
-                } else {
-                    offenders.forEachIndexed { index, app ->
-                        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            AppDot(app.label)
-                            Column(Modifier.padding(start = 12.dp).weight(1f)) {
-                                Text(app.label, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, maxLines = 1)
-                                Text("App", color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp)
-                            }
-                            Text(Scoring.formatDuration(app.seconds), color = Color.White, fontWeight = FontWeight.SemiBold)
-                        }
-                        if (index < offenders.lastIndex) {
-                            Box(Modifier.padding(start = 64.dp).fillMaxWidth().height(1.dp).background(Color.White.copy(alpha = 0.12f)))
-                        }
+                val offenders = usage.offenders.filter { it.seconds >= 60L }
+                val rows = if (offenders.isEmpty()) listOf(null, null) else offenders.map { it }
+                rows.forEachIndexed { index, app ->
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        AppDot(app?.label ?: "?")
+                        Text(
+                            app?.label ?: "Not in yet",
+                            color = Color.White,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 17.sp,
+                            maxLines = 1,
+                            modifier = Modifier.padding(start = 12.dp).weight(1f),
+                        )
+                        Text(
+                            if (app == null) "Not in yet" else Scoring.visibleDuration(app.seconds),
+                            color = Color.White,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                    if (index < rows.lastIndex) {
+                        Box(Modifier.padding(start = 64.dp).fillMaxWidth().height(1.dp).background(Color.White.copy(alpha = 0.12f)))
                     }
                 }
                 }
@@ -144,9 +164,9 @@ fun HomeScreen(state: SavedState, usage: UsageSnapshot, refreshing: Boolean, onR
                 Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(Scoring.paceLine(usage.aheadOfPace), color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Legend(Melt.Orange, "Today", if (usage.authorized) Scoring.formatDuration(usage.todaySeconds) else "—", Melt.Orange)
+                        Legend(Melt.Orange, "Today", Scoring.visibleDuration(if (usage.authorized) usage.todaySeconds else 0L), Melt.Orange)
                         Spacer(Modifier.weight(1f))
-                        Legend(Color.White, "Average", if (usage.authorized) Scoring.formatDuration(usage.avgSeconds) else "—", Color.White)
+                        Legend(Color.White, "Average", Scoring.visibleDuration(if (usage.authorized) usage.avgSeconds else 0L), Color.White)
                     }
                     TrendChart(usage.hourlyToday, usage.hourlyAvg, Modifier.fillMaxWidth().height(120.dp))
                 }
@@ -154,8 +174,8 @@ fun HomeScreen(state: SavedState, usage: UsageSnapshot, refreshing: Boolean, onR
             RaisedCard {
                 Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     Text(Scoring.comparisonLine(usage.todaySeconds, usage.avgSeconds, usage.diffPercent, usage.belowAverage), color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
-                    CompareBar(if (usage.authorized) Scoring.formatDuration(usage.todaySeconds) else "—", "Today", usage.todaySeconds, usage.avgSeconds, Melt.Orange)
-                    CompareBar(if (usage.authorized) Scoring.formatDuration(usage.avgSeconds) else "—", "7-day avg", usage.avgSeconds, usage.avgSeconds, Color.White.copy(alpha = 0.38f))
+                    CompareBar(Scoring.visibleDuration(if (usage.authorized) usage.todaySeconds else 0L), "Today", usage.todaySeconds, usage.avgSeconds, Melt.Orange)
+                    CompareBar(Scoring.visibleDuration(if (usage.authorized) usage.avgSeconds else 0L), "7-day avg", usage.avgSeconds, usage.avgSeconds, Color.White.copy(alpha = 0.38f))
                 }
             }
             RaisedCard {
@@ -192,8 +212,8 @@ private fun ConnectUsageCard(onConnect: () -> Unit) {
 }
 
 @Composable
-private fun HomeHeader(streak: Int, refreshing: Boolean, scenic: Boolean, on: Color, onRefresh: () -> Unit, onTalk: () -> Unit) {
-    BoxWithConstraints(Modifier.fillMaxWidth()) {
+private fun HomeHeader(streak: Int, refreshing: Boolean, scenic: Boolean, on: Color, onRefresh: () -> Unit, onTalk: () -> Unit, modifier: Modifier = Modifier) {
+    BoxWithConstraints(modifier.fillMaxWidth()) {
         // Padding is inside so maxWidth is the full screen. The centered title collides with the streak badge below ~400dp.
         val headerMod = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
         if (maxWidth < 400.dp) {
@@ -224,11 +244,32 @@ private fun HomeHeader(streak: Int, refreshing: Boolean, scenic: Boolean, on: Co
 
 @Composable
 private fun RefreshOrb(refreshing: Boolean, scenic: Boolean, on: Color, onRefresh: () -> Unit) {
+    val spin = rememberInfiniteTransition(label = "home-refresh")
+    val angle by spin.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(700, easing = LinearEasing), RepeatMode.Restart),
+        label = "home-refresh-angle",
+    )
     Box(
-        Modifier.size(40.dp).clip(CircleShape).background(Color.White.copy(alpha = if (scenic) 0.28f else 0.7f)).clickable(onClick = onRefresh),
+        Modifier
+            .size(48.dp)
+            .zIndex(1f)
+            .semantics { contentDescription = "Refresh"; role = Role.Button }
+            .pointerInput(onRefresh) { detectTapGestures(onTap = { onRefresh() }) },
         contentAlignment = Alignment.Center,
     ) {
-        Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = on.copy(alpha = if (refreshing) 0.45f else 1f), modifier = Modifier.size(22.dp))
+        Box(
+            Modifier.size(40.dp).clip(CircleShape).background(Color.White.copy(alpha = if (scenic) 0.28f else 0.7f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                Icons.Default.Refresh,
+                contentDescription = null,
+                tint = on.copy(alpha = if (refreshing) 0.45f else 1f),
+                modifier = Modifier.size(22.dp).graphicsLayer { if (refreshing) rotationZ = angle },
+            )
+        }
     }
 }
 

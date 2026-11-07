@@ -4,6 +4,10 @@ import android.content.Intent
 import android.provider.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -61,6 +65,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import com.ahmed.rotrun.data.DeviceAccessReader
 import com.ahmed.rotrun.data.RotRunRepository
 import com.ahmed.rotrun.data.UiPulse
+import com.ahmed.rotrun.watch.ShieldSession
 import com.ahmed.rotrun.logic.BrainHealthLevel
 import com.ahmed.rotrun.logic.PaywallGate
 import com.ahmed.rotrun.logic.PlayCatalog
@@ -76,15 +81,18 @@ fun RotRunRoot(repo: RotRunRepository) {
     val toast by repo.toast.collectAsState()
     LaunchedEffect(toast) {
         if (toast != null) {
-            delay(2400)
+            delay(2200)
             repo.clearToast()
         }
     }
     Box(Modifier.fillMaxSize()) {
+        val needsProfile by repo.backend.needsProfile.collectAsState()
+        val ask by repo.askIntervention.collectAsState()
         when {
             !state.onboardingCompleted -> OnboardingScreen(repo)
             else -> MainShell(repo)
         }
+        if (needsProfile && ask == null) ProfileSetup(repo)
         if (toast != null) {
             Text(
                 toast.orEmpty(),
@@ -94,11 +102,13 @@ fun RotRunRoot(repo: RotRunRepository) {
         }
         if (state.bailoutFrom.isNotBlank()) {
             LaunchedEffect(state.bailoutFrom) { delay(4000); repo.clearBailout() }
+            Appear(0f, Modifier.align(Alignment.TopCenter).padding(top = 96.dp)) {
             Text(
                 "${state.bailoutFrom} bailed you out. You owe them a coffee.",
                 color = Color.White,
-                modifier = Modifier.align(Alignment.TopCenter).padding(top = 96.dp).clip(CircleShape).background(Melt.House).padding(horizontal = 14.dp, vertical = 8.dp),
+                modifier = Modifier.clip(CircleShape).background(Melt.House).padding(horizontal = 14.dp, vertical = 8.dp),
             )
+            }
         }
     }
 }
@@ -107,28 +117,17 @@ fun RotRunRoot(repo: RotRunRepository) {
 private fun Gate(repo: RotRunRepository) {
     val state by repo.state.collectAsState()
     var plan by remember { mutableStateOf(Products.YEARLY) }
-    var offer by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().background(rot().page).verticalScroll(rememberScrollState())) {
-        if (offer && !state.skippedOneTimeOffer) {
-            OneTimeOffer(
-                onRedeem = { repo.purchase(Products.YEARLY70) },
-                onOther = { repo.leaveOffer(); offer = false },
-                showClose = true,
-                onClose = { repo.leaveOffer(); offer = false },
-            )
-        } else {
-            GetAccessPaywall(
-                state = state,
-                showClose = !state.skippedOneTimeOffer,
-                showDiscountLink = !state.skippedOneTimeOffer,
-                onClose = { offer = true },
-                onDiscount = { offer = true },
-                onPurchase = repo::purchase,
-                onRestore = repo::restore,
-                selected = plan,
-                onSelect = { plan = it },
-            )
-        }
+        GetAccessPaywall(
+            state = state,
+            showClose = true,
+            onClose = {},
+            onPurchase = repo::purchase,
+            onRestore = repo::restore,
+            onRetry = repo::refreshBilling,
+            selected = plan,
+            onSelect = { plan = it },
+        )
     }
 }
 
@@ -139,15 +138,14 @@ private fun MainShell(repo: RotRunRepository) {
     val refreshing by repo.refreshing.collectAsState()
     val installed by repo.installed.collectAsState()
     val batteryAsk by repo.batteryAsk.collectAsState()
+    val ask by repo.askIntervention.collectAsState()
     var tabName by rememberSaveable { mutableStateOf(Tab.Home.name) }
     val tab = runCatching { Tab.valueOf(tabName) }.getOrDefault(Tab.Home)
     var focusSheet by rememberSaveable { mutableStateOf(false) }
     var audio by rememberSaveable { mutableStateOf(false) }
     var talk by rememberSaveable { mutableStateOf(false) }
     var upgrade by rememberSaveable { mutableStateOf(false) }
-    var offer by rememberSaveable { mutableStateOf(false) }
     var plan by remember { mutableStateOf(Products.YEARLY) }
-    val offerNow by androidx.compose.runtime.rememberUpdatedState(offer)
     val context = LocalContext.current
     val look = Looks.byId(state.theme)
     val level = BrainHealthLevel.fromLabel(state.brainHealth)
@@ -155,15 +153,20 @@ private fun MainShell(repo: RotRunRepository) {
     val screenMinutes = if (usage.authorized) (usage.todaySeconds / 60).toInt() else null
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         repo.onForeground()
-        if (com.ahmed.rotrun.logic.PaywallGate.shows && !repo.state.value.premiumActive() && !offerNow) upgrade = true
+        if (PaywallGate.shows && !repo.state.value.premiumActive() && !PlayCatalog.purchasing.value) upgrade = true
     }
     LaunchedEffect(Unit) {
+        if (repo.takeChatRequest()) talk = true
         repo.pulses.collect { pulse ->
             when (pulse) {
                 UiPulse.OpenFocusChooser -> focusSheet = true
                 UiPulse.ShowAudioSlap -> audio = true
                 UiPulse.OpenPaywall -> upgrade = true
-                UiPulse.OpenChat -> talk = true
+                UiPulse.ClosePaywall -> upgrade = false
+                UiPulse.OpenChat -> {
+                    repo.takeChatRequest()
+                    talk = true
+                }
             }
         }
     }
@@ -205,36 +208,29 @@ private fun MainShell(repo: RotRunRepository) {
             onFocus = { if (state.focus == null) focusSheet = true },
             modifier = Modifier.align(Alignment.BottomCenter),
         )
-        if (focusSheet) {
-            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)).clickable { focusSheet = false })
-            Box(Modifier.align(Alignment.BottomCenter).padding(12.dp).navigationBarsPadding()) {
-                FocusChooser(onClose = { focusSheet = false }, repo = repo)
-            }
+        var focusShown by remember { mutableStateOf(state.focus) }
+        LaunchedEffect(state.focus?.startedAt) {
+            if (state.focus != null) focusShown = state.focus
         }
-        state.focus?.let { FocusOverlay(it, repo) }
-        if (talk) TalkSheet(repo) { talk = false }
-        if (offer && PaywallGate.shows && !state.yearly70Dismissed) {
-            Box(Modifier.fillMaxSize().background(rot().page).statusBarsPadding().verticalScroll(rememberScrollState())) {
-                OneTimeOffer(
-                    onRedeem = { repo.purchase(Products.YEARLY70) },
-                    onOther = { repo.dismissYearly70(); offer = false },
-                    showClose = true,
-                    onClose = { repo.dismissYearly70(); offer = false },
-                )
-            }
-        } else if (upgrade && PaywallGate.shows && !state.premiumActive()) {
+        AnimatedVisibility(visible = state.focus != null && !focusSheet, modifier = Modifier.fillMaxSize(), enter = focusFadeIn(), exit = focusFadeOut()) {
+            focusShown?.let { FocusOverlay(it, repo) }
+        }
+        AnimatedVisibility(visible = focusSheet, modifier = Modifier.fillMaxSize(), enter = focusFadeIn(), exit = focusFadeOut()) {
+            FocusChooser(onClose = { focusSheet = false }, repo = repo)
+        }
+        if (talk) TalkSheet(repo) {
+            talk = false
+            ShieldSession.endChat()
+        }
+        if (upgrade && PaywallGate.shows && !state.premiumActive()) {
             Box(Modifier.fillMaxSize().background(rot().page).statusBarsPadding().verticalScroll(rememberScrollState())) {
                 GetAccessPaywall(
                     state = state,
                     showClose = true,
-                    showDiscountLink = false,
-                    onClose = {
-                        upgrade = false
-                        if (!state.yearly70Dismissed && PlayCatalog.quote(Products.YEARLY70) != null) offer = true
-                    },
-                    onDiscount = {},
+                    onClose = { upgrade = false },
                     onPurchase = repo::purchase,
                     onRestore = repo::restore,
+                    onRetry = repo::refreshBilling,
                     selected = plan,
                     onSelect = { plan = it },
                 )
@@ -254,19 +250,50 @@ private fun MainShell(repo: RotRunRepository) {
                 dismissButton = { TextButton(onClick = repo::dismissBatteryAsk) { Text("Not now") } },
             )
         }
-        if (audio) {
+        AnimatedVisibility(visible = audio, modifier = Modifier.fillMaxSize(), enter = coverEnter(reduceMotion()), exit = coverExit(reduceMotion())) {
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.55f)), contentAlignment = Alignment.Center) {
                 AudioSlap(state.cameoName.ifBlank { "a friend" }) { audio = false }
             }
         }
-        val offerUp = offer && PaywallGate.shows && !state.yearly70Dismissed
-        val upgradeUp = !offerUp && upgrade && PaywallGate.shows && !state.premiumActive()
-        BackHandler(enabled = audio || offerUp || upgradeUp || talk || focusSheet || state.focus != null) {
+        ask?.let { pending ->
+            InterventionFlow(
+                appName = pending.label,
+                startMode = pending.mode,
+                packageName = pending.packageName,
+                repo = repo,
+                onDismiss = {
+                    repo.clearAskIntervention()
+                    ShieldSession.endChat()
+                },
+                onUnlock = { minutes ->
+                    if (!repo.grantUnlock(minutes)) {
+                        repo.toast("Unlock waits until Focus ends")
+                    } else {
+                        ShieldSession.markOpened(pending.packageName)
+                        com.ahmed.rotrun.watch.BlockAccessibilityService.dismiss()
+                        com.ahmed.rotrun.watch.BlockWatchService.dismiss()
+                        context.packageManager.getLaunchIntentForPackage(pending.packageName)?.let { launch ->
+                            launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            runCatching { context.startActivity(launch) }
+                        }
+                        repo.clearAskIntervention()
+                    }
+                },
+            )
+        }
+        val upgradeUp = upgrade && PaywallGate.shows && !state.premiumActive()
+        BackHandler(enabled = ask != null || audio || upgradeUp || talk || focusSheet || state.focus != null) {
             when {
+                ask != null -> {
+                    repo.clearAskIntervention()
+                    ShieldSession.endChat()
+                }
                 audio -> audio = false
-                offerUp -> offer = false
                 upgradeUp -> upgrade = false
-                talk -> talk = false
+                talk -> {
+                    talk = false
+                    ShieldSession.endChat()
+                }
                 focusSheet -> focusSheet = false
                 else -> Unit
             }

@@ -107,7 +107,12 @@ class BlockWatchService : Service() {
             FocusWidgetProvider.updateAll(this)
         }
         startInForeground(watching)
-        if (BlockAccessibilityService.connected && BlockAccessibilityService.covering) {
+        if (AskLaunchPolicy.leaveOverlayUp(AskBrainLaunch.launching)) return
+        if (!AskLaunchPolicy.showShield(ShieldSession.chatPackage() != null)) {
+            hideOverlay()
+            return
+        }
+        if (BlockAccessibilityService.connected) {
             hideOverlay()
             return
         }
@@ -141,12 +146,14 @@ class BlockWatchService : Service() {
                     packageName = packageName,
                     label = label,
                     onAsk = { openAsk(packageName, label) },
+                    onCall = { AskBrainLaunch.open(this, packageName, label, com.ahmed.rotrun.logic.BrainCallPolicy.MODE) },
                 )
                 shownFor = if (overlay == null) null else packageName
             }
             return
         }
-        if (now - (shownAt[packageName] ?: 0L) < 20_000) return
+        val elapsed = now - (shownAt[packageName] ?: 0L)
+        if (!AskLaunchPolicy.raiseShieldActivity(InterventionActivity.showingPackage == packageName, elapsed)) return
         shownAt[packageName] = now
         val copy = InterventionCopy.forPackage(packageName, label)
         val open = Intent(this, InterventionActivity::class.java).apply {
@@ -161,26 +168,12 @@ class BlockWatchService : Service() {
             open,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        getSystemService(NotificationManager::class.java).notify(ALERT_ID, buildNotification(copy.headline, pending))
+        runCatching { startActivity(open) }
+        getSystemService(NotificationManager::class.java).notify(ALERT_ID, shieldNotification(copy.headline, pending))
     }
 
     private fun openAsk(packageName: String, label: String) {
-        ShieldSession.hold(packageName)
-        hideOverlay()
-        BlockAccessibilityService.dismiss()
-        if (!RotRunGraph.ready()) {
-            ShieldSession.release()
-            return
-        }
-        val mode = RotRunGraph.repo.pickStyle() ?: "standard"
-        val open = Intent(this, InterventionActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-            putExtra(InterventionActivity.EXTRA_APP, label)
-            putExtra(InterventionActivity.EXTRA_PACKAGE, packageName)
-            putExtra(InterventionActivity.EXTRA_MODE, mode)
-        }
-        val started = runCatching { startActivity(open) }.isSuccess
-        if (!started) ShieldSession.release()
+        AskBrainLaunch.open(this, packageName, label)
     }
 
     private fun hideOverlay() {
@@ -201,6 +194,23 @@ class BlockWatchService : Service() {
             .build()
     }
 
+    private fun shieldNotification(text: String, tap: PendingIntent): Notification {
+        if (Build.VERSION.SDK_INT >= 26) {
+            val channel = NotificationChannel(ALERT_CHANNEL, "Rot shield", NotificationManager.IMPORTANCE_HIGH)
+            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+        }
+        return NotificationCompat.Builder(this, ALERT_CHANNEL)
+            .setSmallIcon(R.drawable.ic_stat_rot)
+            .setContentTitle("Your Brain")
+            .setContentText(text)
+            .setContentIntent(tap)
+            .setFullScreenIntent(tap, true)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .build()
+    }
+
     private fun ensureChannel() {
         if (Build.VERSION.SDK_INT < 26) return
         val manager = getSystemService(NotificationManager::class.java)
@@ -210,6 +220,7 @@ class BlockWatchService : Service() {
 
     companion object {
         private const val CHANNEL = "rotrun.watch"
+        private const val ALERT_CHANNEL = "rotrun.shield"
         private const val NOTIFICATION_ID = 42
         private const val ALERT_ID = 43
 

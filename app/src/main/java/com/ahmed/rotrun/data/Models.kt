@@ -1,5 +1,6 @@
 package com.ahmed.rotrun.data
 
+import com.ahmed.rotrun.logic.BillingQuotes
 import com.ahmed.rotrun.logic.CatalogStatus
 import com.ahmed.rotrun.logic.PaywallGate
 import com.ahmed.rotrun.logic.PlayCatalog
@@ -55,11 +56,15 @@ enum class OnboardingStep(val raw: Int) {
         SeeForYourself, ConnectScreenTime, LimitedOffer, ChoosePlan -> true
         PurchaseComplete -> !state.premiumActive()
         GetAccess -> !PaywallGate.shows || state.premiumActive() || PlayCatalog.status.value == CatalogStatus.Unavailable
-        OneTimeOffer -> {
-            if (!PaywallGate.shows || state.premiumActive() || state.yearly70Dismissed) true
-            else if (PlayCatalog.status.value == CatalogStatus.Unavailable) true
-            else PlayCatalog.status.value == CatalogStatus.Ready && PlayCatalog.quote(Products.YEARLY70) == null
-        }
+        OneTimeOffer -> !BillingQuotes.yearly70Visible(
+            paywall = PaywallGate.shows,
+            premium = state.premiumActive(),
+            dismissed = state.yearly70Dismissed,
+            productId = state.productId,
+            catalogReady = PlayCatalog.status.value == CatalogStatus.Ready,
+            catalogUnavailable = PlayCatalog.status.value == CatalogStatus.Unavailable,
+            hasQuote = PlayCatalog.quote(Products.YEARLY70) != null,
+        )
         else -> false
     }
 
@@ -83,6 +88,7 @@ data class Blocker(
     val days: List<Int> = (0..6).toList(),
     val apps: List<TrackedApp> = emptyList(),
     val modeApps: Map<String, List<TrackedApp>> = emptyMap(),
+    val symbol: String = "phone",
 ) {
     /** Active apps first, then apps stashed on the other modes. */
     fun packageOrder(): List<String> =
@@ -152,7 +158,7 @@ data class SavedState(
     val bailoutFrom: String = "",
 ) {
     fun premiumActive(now: Long = System.currentTimeMillis()): Boolean =
-        premium && (lifetime || productId == Products.LIFETIME || premiumUntil > now)
+        premium && (lifetime || productId == Products.LIFETIME || premiumUntil <= 0L || premiumUntil > now)
 
     fun cameoToday(day: String = Scoring.dayKey()): Boolean = cameoName.isNotBlank() && cameoDay == day
 

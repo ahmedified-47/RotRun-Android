@@ -12,12 +12,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -36,12 +35,12 @@ import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Help
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.QuestionMark
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -51,6 +50,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -62,19 +62,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ahmed.rotrun.BuildConfig
 import com.ahmed.rotrun.R
-import com.ahmed.rotrun.icon.LauncherIcons
 import com.ahmed.rotrun.data.DeviceAccessReader
 import com.ahmed.rotrun.data.RotRunRepository
 import com.ahmed.rotrun.data.SavedState
 import com.ahmed.rotrun.data.TrackedApp
-import com.ahmed.rotrun.data.iconStreak
-import com.ahmed.rotrun.data.themeStreak
 import com.ahmed.rotrun.logic.BrainHealthLevel
 import com.ahmed.rotrun.logic.Products
 import com.ahmed.rotrun.logic.SupportCopy
@@ -112,12 +108,14 @@ fun SettingsScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunR
         "contact" -> ContactPage { page = "support" }
         "widget" -> WidgetPage { page = "root" }
         "memory" -> MemoryPage(repo) { page = "root" }
+        "profile" -> ProfilePage(repo) { page = "root" }
         "subscription" -> PremiumManage(state, repo, onBack = { page = "support" }, onChangePlan = { page = "plans" })
         "plans" -> Column(Modifier.padding(bottom = 12.dp)) {
             BackHeader("RotRun Premium") { page = "subscription" }
             GetAccessPaywall(
-                state, showClose = false, showDiscountLink = false, onClose = {}, onDiscount = {},
-                onPurchase = repo::purchase, onRestore = repo::restore, selected = plan, onSelect = { plan = it }, settingsStyle = true,
+                state, showClose = false, onClose = {},
+                onPurchase = repo::purchase, onRestore = repo::restore, onRetry = repo::refreshBilling,
+                selected = plan, onSelect = { plan = it },
             )
         }
         else -> RootSettings(
@@ -176,12 +174,18 @@ private fun RootSettings(
 ) {
     val context = LocalContext.current
     val chrome = rot()
+    val scope = rememberCoroutineScope()
+    var confirmDelete by remember { mutableStateOf(false) }
+    var deleting by remember { mutableStateOf(false) }
     Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
             Modifier.size(84.dp).clip(CircleShape).background(Brush.verticalGradient(listOf(Color(0xFF7DDE9A), Color(0xFF3CB371)))),
             contentAlignment = Alignment.Center,
         ) { CartoonBrain(BrainStyle.Meadow, Modifier.size(72.dp), animated = false) }
         Text("Settings", color = chrome.ink, fontSize = 34.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 8.dp))
+        CardGroup {
+            RowLink("Profile", icon = Icons.Default.Person, tint = chrome.blue) { open("profile") }
+        }
         if (!access.usage) {
             CardGroup {
                 Column(Modifier.fillMaxWidth().clickable(onClick = onUsage).padding(16.dp)) {
@@ -224,6 +228,8 @@ private fun RootSettings(
             Hairline()
             RowLink("App Icon", icon = Icons.Default.GridView, tint = Color(0xFF5E5CE6)) { open("icon") }
         }
+        Text("Subscription", color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 20.sp, modifier = Modifier.padding(top = 8.dp).fillMaxWidth())
+        SubscriptionSection(state, repo, onChangePlan = { open("plans") })
         CardGroup {
             RowLink("Support & Feedback", icon = Icons.Default.QuestionMark, tint = Color(0xFFFF375F)) { open("support") }
             Hairline()
@@ -250,6 +256,49 @@ private fun RootSettings(
             fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(top = 14.dp).clickable { open("memory") },
         )
+        if (repo.backend.signedIn) {
+            CardGroup {
+                Text(
+                    "Delete account",
+                    color = Color(0xFFFF3B30),
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 17.sp,
+                    modifier = Modifier.fillMaxWidth().clickable(enabled = !deleting) { confirmDelete = true }.padding(horizontal = 16.dp, vertical = 14.dp),
+                )
+            }
+            if (confirmDelete) {
+                AlertDialog(
+                    onDismissRequest = { if (!deleting) confirmDelete = false },
+                    title = { Text("Delete account") },
+                    text = {
+                        Text("This permanently deletes your account, chat history, memories, stats, and leaderboard entry. Subscriptions must be cancelled in Google Play separately.")
+                    },
+                    confirmButton = {
+                        TextButton(
+                            enabled = !deleting,
+                            onClick = {
+                                deleting = true
+                                scope.launch {
+                                    val error = withContext(Dispatchers.IO) { repo.backend.deleteAccount() }
+                                    if (error != null) {
+                                        deleting = false
+                                        confirmDelete = false
+                                        repo.toast(error)
+                                    } else {
+                                        repo.backend.signOut()
+                                        confirmDelete = false
+                                        repo.update { it.copy(onboardingCompleted = false, onboardingStep = 0) }
+                                    }
+                                }
+                            },
+                        ) { Text("Delete account", color = Color(0xFFFF3B30)) }
+                    },
+                    dismissButton = {
+                        TextButton(enabled = !deleting, onClick = { confirmDelete = false }) { Text("Cancel") }
+                    },
+                )
+            }
+        }
         Text(
             "Sync Screen Time now",
             color = chrome.blue,
@@ -404,109 +453,6 @@ private fun StyleToggle(title: String, subtitle: String, on: Boolean, change: (B
             Text(subtitle, color = chrome.muted, fontSize = 13.sp)
         }
         GreenSwitch(on, change)
-    }
-}
-
-@Composable
-private fun RewardsPage(state: SavedState, repo: RotRunRepository, onBack: () -> Unit) {
-    val chrome = rot()
-    val next = Looks.rewards.firstOrNull { reward -> reward.days != null && state.streak < reward.days }
-    val progress = if (next?.days == null) 1f else (state.streak.toFloat() / next.days).coerceIn(0f, 1f)
-    BackHeader("Rewards", onBack)
-    Text("Keep your streak alive to unlock Home looks, streak badges, and app icons.", color = chrome.muted, modifier = Modifier.padding(horizontal = 20.dp))
-    SettingsCard {
-        Column(Modifier.padding(16.dp)) {
-            Text("${state.streak.coerceAtLeast(1)}-day streak", color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 22.sp)
-            Text(
-                if (next == null) "Every streak reward is unlocked." else "Next: ${next.title} at ${next.days} days",
-                color = chrome.muted,
-                modifier = Modifier.padding(top = 4.dp, bottom = 10.dp),
-            )
-            LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth().height(8.dp).clip(CircleShape), color = chrome.blue, trackColor = chrome.inset)
-        }
-    }
-    Text("Themes", color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 22.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp).fillMaxWidth())
-    Text("Set a look for Home. Streak themes also change your Home brain and streak badge.", color = chrome.muted, modifier = Modifier.padding(horizontal = 20.dp))
-    Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(chrome.card)) {
-        Looks.rewards.forEachIndexed { index, reward ->
-            val unlocked = reward.days == null || state.streak >= reward.days
-            val look = Looks.byId(reward.themeId)
-            val selected = state.theme == reward.themeId
-            if (index > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(chrome.line))
-            Row(
-                Modifier.fillMaxWidth().clickable(enabled = unlocked) {
-                    repo.update { it.copy(theme = reward.themeId) }
-                    repo.toast("Using ${look.title}")
-                }.padding(14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)).background(look.canvas), contentAlignment = Alignment.Center) {
-                    if (unlocked) CartoonBrain(look.brain, Modifier.size(40.dp), animated = false)
-                    else Icon(Icons.Default.Lock, contentDescription = "Locked", tint = Color.White)
-                }
-                Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                    Text(look.title, color = if (unlocked) chrome.ink else chrome.muted, fontWeight = FontWeight.Bold, fontSize = 17.sp)
-                    if (!unlocked) Text("Unlock at ${reward.days}-day streak", color = chrome.muted, fontSize = 13.sp)
-                }
-                if (!unlocked) {
-                    Icon(Icons.Default.Lock, contentDescription = "Locked", tint = chrome.muted)
-                } else if (selected) {
-                    Box(Modifier.size(26.dp).clip(CircleShape).background(chrome.blue), contentAlignment = Alignment.Center) {
-                        Text("✓", color = Color.White, fontWeight = FontWeight.Bold)
-                    }
-                } else {
-                    Box(Modifier.size(26.dp).clip(CircleShape).border(1.5.dp, chrome.muted, CircleShape))
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun IconPage(state: SavedState, repo: RotRunRepository, onBack: () -> Unit) {
-    val chrome = rot()
-    BackHeader("App Icon", onBack)
-    Text(
-        "Use any unlocked icon on your Home Screen.",
-        color = chrome.muted,
-        modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
-    )
-    Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(chrome.card)) {
-        Looks.icons.forEachIndexed { index, (name, need) ->
-            val unlocked = need == null || state.streak >= need
-            val selected = state.appIcon == name
-            if (index > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(chrome.line))
-            Row(
-                Modifier.fillMaxWidth().clickable {
-                    if (!unlocked) repo.toast("Unlock at $need-day streak")
-                    else {
-                        repo.update { it.copy(appIcon = name) }
-                        repo.toast("Launcher icon set to $name")
-                    }
-                }.padding(14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Image(
-                    painterResource(LauncherIcons.preview(name)),
-                    contentDescription = name,
-                    modifier = Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)),
-                    alpha = if (unlocked) 1f else 0.45f,
-                )
-                Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                    Text(name, color = if (unlocked) chrome.ink else chrome.muted, fontWeight = FontWeight.Bold, fontSize = 17.sp)
-                    if (!unlocked) Text("Unlock at $need-day streak", color = chrome.muted, fontSize = 13.sp)
-                }
-                if (!unlocked) {
-                    Icon(Icons.Default.Lock, contentDescription = "Locked", tint = chrome.muted)
-                } else if (selected) {
-                    Box(Modifier.size(26.dp).clip(CircleShape).background(chrome.blue), contentAlignment = Alignment.Center) {
-                        Text("✓", color = Color.White, fontWeight = FontWeight.Bold)
-                    }
-                } else {
-                    Box(Modifier.size(26.dp).clip(CircleShape).border(1.5.dp, chrome.muted, CircleShape))
-                }
-            }
-        }
     }
 }
 
@@ -687,6 +633,17 @@ private fun WidgetPage(onBack: () -> Unit) {
 }
 
 @Composable
+private fun ProfilePage(repo: RotRunRepository, onBack: () -> Unit) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+        BackHeader("Profile", onBack)
+        Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+            Text("This name and photo show on Daily XP. A photo is optional.", color = rot().muted, modifier = Modifier.padding(bottom = 16.dp))
+            ProfileEditor(repo, blocking = false)
+        }
+    }
+}
+
+@Composable
 private fun BackHeader(title: String, onBack: () -> Unit) {
     Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
         Box(
@@ -733,38 +690,46 @@ private fun BoxButton(title: String, onClick: () -> Unit) {
 
 @Composable
 private fun PremiumManage(state: SavedState, repo: RotRunRepository, onBack: () -> Unit, onChangePlan: () -> Unit) {
+    BackHeader("RotRun Premium", onBack)
+    Column(Modifier.padding(horizontal = 16.dp)) {
+        SubscriptionSection(state, repo, onChangePlan)
+    }
+}
+
+@Composable
+private fun SubscriptionSection(state: SavedState, repo: RotRunRepository, onChangePlan: () -> Unit) {
     val context = LocalContext.current
     val chrome = rot()
-    val plan = Products.planName(state.productId)
-    val renews = if (state.premiumActive() && !state.lifetime && state.premiumUntil > System.currentTimeMillis()) {
-        "Renews ${java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(java.util.Date(state.premiumUntil))}"
-    } else if (state.lifetime) {
-        "Does not renew"
-    } else {
-        "Prices come from Google Play"
+    val plan = if (state.premiumActive() && !state.productId.isNullOrBlank()) Products.planName(state.productId) else "No plan yet"
+    val renews = when {
+        state.lifetime && state.premiumActive() -> "Does not renew"
+        state.premiumActive() && state.premiumUntil > System.currentTimeMillis() ->
+            "Renews ${java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(java.util.Date(state.premiumUntil))}"
+        else -> "Prices come from Google Play"
     }
-    BackHeader("RotRun Premium", onBack)
     Text(
-        "Buy, restore, or manage your plan. Blocking, Focus, Brick, and Ask-my-brain stay available without a subscription.",
+        if (state.premiumActive()) "Buy, restore, or manage your plan. RotRun stays open while your subscription is active."
+        else "You're not subscribed. Get Premium to start a plan, or Restore Purchases if you already bought one on this Google account.",
         color = chrome.muted,
-        modifier = Modifier.padding(horizontal = 20.dp),
+        modifier = Modifier.padding(horizontal = 4.dp),
     )
-    Column(Modifier.padding(horizontal = 20.dp, vertical = 16.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(chrome.card).padding(vertical = 18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        CartoonBrain(BrainStyle.Meadow, Modifier.size(120.dp), animated = false)
-        Text(if (state.premiumActive()) plan else "No plan yet", color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 22.sp, modifier = Modifier.padding(top = 8.dp))
+    Column(Modifier.padding(vertical = 12.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(chrome.card).padding(vertical = 18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(plan, color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 22.sp)
         Text(renews, color = chrome.muted, modifier = Modifier.padding(top = 4.dp))
     }
-    Column(Modifier.padding(horizontal = 16.dp)) {
     CardGroup {
-        RowLink("Change Plan", icon = Icons.Default.CardGiftcard, tint = Melt.Orange, onClick = onChangePlan)
+        RowLink(if (state.premiumActive()) "Change Plan" else "Get Premium", icon = Icons.Default.CardGiftcard, tint = Melt.Orange, onClick = onChangePlan)
         Hairline()
-        RowLink("Manage Subscription", if (state.premiumActive()) plan else null, icon = Icons.Default.GridView, tint = chrome.blue) {
-            val uri = android.net.Uri.parse("https://play.google.com/store/account/subscriptions?package=${context.packageName}")
+        RowLink("Manage Subscription", plan, icon = Icons.Default.GridView, tint = chrome.blue) {
+            val product = state.productId
+            val uri = android.net.Uri.parse(
+                if (product.isNullOrBlank()) "https://play.google.com/store/account/subscriptions?package=${context.packageName}"
+                else "https://play.google.com/store/account/subscriptions?sku=$product&package=${context.packageName}",
+            )
             runCatching { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, uri)) }
         }
         Hairline()
         RowLink("Restore Purchases", icon = Icons.Default.Refresh, tint = chrome.blue, onClick = repo::restore)
-    }
     }
 }
 

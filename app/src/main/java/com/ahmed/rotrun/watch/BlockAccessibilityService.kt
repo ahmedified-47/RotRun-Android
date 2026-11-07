@@ -1,31 +1,40 @@
 package com.ahmed.rotrun.watch
 
 import android.accessibilityservice.AccessibilityService
-import android.content.Intent
+import android.os.Handler
+import android.os.Looper
 import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
-import com.ahmed.rotrun.InterventionActivity
 import com.ahmed.rotrun.data.RotRunGraph
 import com.ahmed.rotrun.data.UsageReader
 
 /** Foreground block. Window-state changes draw the Rot shield over the blocked app. */
 class BlockAccessibilityService : AccessibilityService() {
+    private val handler = Handler(Looper.getMainLooper())
     private var overlay: View? = null
     private var shownFor: String? = null
+    private val poll = object : Runnable {
+        override fun run() {
+            val current = UsageReader.foreground(this@BlockAccessibilityService)
+            if (!current.isNullOrBlank()) consider(current)
+            handler.postDelayed(this, 1_000)
+        }
+    }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
         live = this
         connected = true
-        val current = UsageReader.foreground(this) ?: return
-        consider(current)
+        handler.removeCallbacks(poll)
+        handler.post(poll)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        val fromEvent = event?.packageName?.toString()?.takeIf { it.isNotBlank() }
         val packageName = when (event?.eventType) {
-            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> event.packageName?.toString()
-            AccessibilityEvent.TYPE_WINDOWS_CHANGED -> rootInActiveWindow?.packageName?.toString()
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> fromEvent ?: rootInActiveWindow?.packageName?.toString()
+            AccessibilityEvent.TYPE_WINDOWS_CHANGED -> fromEvent ?: rootInActiveWindow?.packageName?.toString()
             else -> return
         } ?: return
         consider(packageName)
@@ -33,9 +42,18 @@ class BlockAccessibilityService : AccessibilityService() {
 
     private fun consider(packageName: String) {
         if (!RotRunGraph.ready()) return
+        if (AskLaunchPolicy.leaveOverlayUp(AskBrainLaunch.launching)) return
+        if (!AskLaunchPolicy.showShield(ShieldSession.chatPackage() != null)) {
+            hide()
+            return
+        }
         if (ShieldSession.blocks(packageName)) {
             hide()
             if (ShieldSession.openedInto(packageName) && !repoReadyBlocked(packageName)) ShieldSession.release()
+            return
+        }
+        if (AskLaunchPolicy.keepShownShield(shownFor, packageName, this.packageName)) {
+            covering = overlay != null
             return
         }
         val repo = RotRunGraph.repo
@@ -55,6 +73,7 @@ class BlockAccessibilityService : AccessibilityService() {
             packageName = packageName,
             label = label,
             onAsk = { openAsk(packageName, label) },
+            onCall = { AskBrainLaunch.open(this, packageName, label, com.ahmed.rotrun.logic.BrainCallPolicy.MODE) },
         )
         shownFor = if (overlay == null) null else packageName
         covering = overlay != null
@@ -65,6 +84,7 @@ class BlockAccessibilityService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        handler.removeCallbacks(poll)
         if (live === this) live = null
         connected = false
         hide()
@@ -78,22 +98,7 @@ class BlockAccessibilityService : AccessibilityService() {
     }
 
     private fun openAsk(packageName: String, label: String) {
-        ShieldSession.hold(packageName)
-        hide()
-        BlockWatchService.dismiss()
-        if (!RotRunGraph.ready()) {
-            ShieldSession.release()
-            return
-        }
-        val mode = RotRunGraph.repo.pickStyle() ?: "standard"
-        val open = Intent(this, InterventionActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-            putExtra(InterventionActivity.EXTRA_APP, label)
-            putExtra(InterventionActivity.EXTRA_PACKAGE, packageName)
-            putExtra(InterventionActivity.EXTRA_MODE, mode)
-        }
-        val started = runCatching { startActivity(open) }.isSuccess
-        if (!started) ShieldSession.release()
+        AskBrainLaunch.open(this, packageName, label)
     }
 
     private fun hide() {
