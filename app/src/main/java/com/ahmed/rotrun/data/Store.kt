@@ -499,13 +499,14 @@ class RotRunRepository(context: Context) {
     val askIntervention: StateFlow<AskIntervention?> = _askIntervention.asStateFlow()
 
     /** One enabled intervention style, shown until the user leaves it. A second call does not roll again. */
-    fun requestAskIntervention(packageName: String, label: String) {
+    fun requestAskIntervention(packageName: String, label: String, forcedMode: String? = null) {
         if (packageName.isBlank()) return
         if (AskInterventionPlan.alreadyShowing(_askIntervention.value)) return
+        val mode = forcedMode?.takeIf { it.isNotBlank() } ?: AskInterventionPlan.mode(pickStyle())
         _askIntervention.value = AskIntervention(
             packageName = packageName,
             label = label.ifBlank { "this app" },
-            mode = AskInterventionPlan.mode(pickStyle()),
+            mode = mode,
         )
     }
 

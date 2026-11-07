@@ -1,8 +1,15 @@
 package com.ahmed.rotrun.ui
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.Ringtone
+import android.media.RingtoneManager
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -25,6 +32,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -44,6 +52,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ahmed.rotrun.data.RotRunRepository
+import com.ahmed.rotrun.logic.BrainCallPolicy
 import com.ahmed.rotrun.logic.InterventionCopy
 import com.ahmed.rotrun.logic.ShieldPalette
 import com.ahmed.rotrun.watch.AskBrainLaunch
@@ -67,16 +76,28 @@ fun InterventionFlow(
     val friend = state.cameoName.takeIf { state.cameoToday() }
     val shieldCopy = InterventionCopy.forPackage(packageName, name)
     val shield = if (mode == "shield") shieldColors(shieldCopy.id) else null
-    if (mode == "shield") {
+    if (BrainCallPolicy.isCall(mode)) {
+        BrainCall(
+            friend = friend,
+            onDecline = { mode = BrainCallPolicy.afterDecline() },
+            onUnlock = onUnlock,
+        )
+    } else if (mode == "shield") {
         val context = LocalContext.current
         Column(
             Modifier.fillMaxSize().background(shield?.second ?: Color(0xFF3D1A28)).padding(horizontal = 28.dp, vertical = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Shield(name, packageName, shield?.first ?: Melt.Action, onAsk = {
-                AskBrainLaunch.open(context, packageName, name)
-                (context as? android.app.Activity)?.finish()
-            })
+            Shield(
+                name,
+                packageName,
+                shield?.first ?: Melt.Action,
+                onAsk = {
+                    AskBrainLaunch.open(context, packageName, name)
+                    (context as? android.app.Activity)?.finish()
+                },
+                onCall = { mode = BrainCallPolicy.MODE },
+            )
         }
     } else if (mode == "standard") {
         Standard(name, friend, state.cameoKind, onDismiss, onUnlock)
@@ -89,7 +110,6 @@ fun InterventionFlow(
                 when (mode) {
                     "quick" -> Quick(name, friend, onDismiss, onUnlock)
                     "breathing" -> Breathing(friend, state.cameoKind, onDismiss, onUnlock)
-                    "mirror" -> Mirror(friend, onDismiss, onUnlock)
                     "cameo" -> Cameo(name, friend ?: "a friend", state.cameoKind, onDismiss, onUnlock)
                     else -> Quick(name, friend, onDismiss, onUnlock)
                 }
@@ -99,7 +119,7 @@ fun InterventionFlow(
 }
 
 @Composable
-private fun ColumnScope.Shield(appName: String, packageName: String, accent: Color, onAsk: () -> Unit) {
+private fun ColumnScope.Shield(appName: String, packageName: String, accent: Color, onAsk: () -> Unit, onCall: () -> Unit) {
     var opening by remember { mutableStateOf(false) }
     val copy = InterventionCopy.forPackage(packageName, appName)
     Spacer(Modifier.weight(1f))
@@ -118,6 +138,18 @@ private fun ColumnScope.Shield(appName: String, packageName: String, accent: Col
             if (opening) return@clickable
             opening = true
             onAsk()
+        }.padding(vertical = 18.dp),
+    )
+    Text(
+        "FaceTime",
+        color = Color.White,
+        fontWeight = FontWeight.Bold,
+        fontSize = 18.sp,
+        textAlign = TextAlign.Center,
+        modifier = Modifier.padding(top = 12.dp).fillMaxWidth().clip(CircleShape).background(Color(0xFF34C759)).clickable(enabled = !opening) {
+            if (opening) return@clickable
+            opening = true
+            onCall()
         }.padding(vertical = 18.dp),
     )
 }
@@ -305,42 +337,87 @@ private fun Breathing(friend: String?, kind: String, onDismiss: () -> Unit, onUn
 }
 
 @Composable
-private fun Mirror(friend: String?, onDismiss: () -> Unit, onUnlock: (Int) -> Unit) {
+private fun BrainCall(friend: String?, onDecline: () -> Unit, onUnlock: (Int) -> Unit) {
     val context = LocalContext.current
     var accepted by remember { mutableStateOf(false) }
+    var incomingHandled by remember { mutableStateOf(false) }
     var granted by remember { mutableStateOf(context.checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) }
     val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted = it }
     var step by remember { mutableIntStateOf(1) }
-    Text("MIRROR MODE", color = Melt.Action, fontWeight = FontWeight.Black)
-    Text(friend ?: "Your Brain", fontSize = 28.sp, fontWeight = FontWeight.Bold)
-    if (!accepted) {
-        Text("Wants a mirror match")
-        if (!granted) {
-            Text("Camera access is off — the match still works.", color = Melt.Muted, textAlign = TextAlign.Center)
-            Text("Open Settings", color = Melt.Action, modifier = Modifier.clickable {
-                ask.launch(Manifest.permission.CAMERA)
-                context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:${context.packageName}")))
-            })
-        } else {
-            MirrorPreview(Modifier.padding(8.dp).fillMaxWidth().height(220.dp).clip(RoundedCornerShape(16.dp)))
+    IncomingRing(active = !accepted)
+    Box(Modifier.fillMaxSize().background(Color.Black)) {
+        if (granted) {
+            MirrorPreview(Modifier.fillMaxSize())
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)))
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Pill("Decline") { onDismiss() }
-            Pill("Accept") { accepted = true }
-        }
-    } else {
-        if (granted) MirrorPreview(Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(16.dp)))
-        else Text("YOU", color = Color.White, modifier = Modifier.clip(RoundedCornerShape(16.dp)).background(Color.Black).padding(20.dp))
-        if (step == 1) {
-            Bubble("You really wanna keep scrolling?")
-            Pill("Nah, you're right") { onDismiss() }
-            Pill("Yes, I really do") { step = 2 }
-        } else {
-            Bubble("How long do you need?")
-            DurationTiles(onUnlock)
-            Pill("Actually, never mind") { onDismiss() }
+        Column(Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("MIRROR MODE", color = Color.White, fontWeight = FontWeight.Black)
+            Spacer(Modifier.weight(1f))
+            if (!accepted) {
+                Text(friend ?: "Your Brain", color = Color.White, fontSize = 40.sp, fontWeight = FontWeight.Black, textAlign = TextAlign.Center)
+                Text("Wants a mirror match", color = Color.White, fontSize = 18.sp, modifier = Modifier.padding(top = 8.dp))
+                if (!granted) {
+                    Text("Camera access is off — the match still works.", color = Color.White.copy(alpha = 0.85f), textAlign = TextAlign.Center, modifier = Modifier.padding(top = 16.dp))
+                    Text("Allow camera", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp).clickable { ask.launch(Manifest.permission.CAMERA) })
+                }
+            } else {
+                Text("YOU", color = Color.White, fontWeight = FontWeight.Black)
+                if (step == 1) {
+                    Bubble("You really wanna keep scrolling?")
+                    Pill("Nah, you're right") { onDecline() }
+                    Pill("Yes, I really do") { step = 2 }
+                } else {
+                    Bubble("How long do you need?")
+                    DurationTiles(onUnlock)
+                    Pill("Actually, never mind") { onDecline() }
+                }
+            }
+            Spacer(Modifier.weight(1f))
+            if (!accepted) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Box(Modifier.weight(1f)) {
+                        Pill("Decline") { if (!incomingHandled) { incomingHandled = true; onDecline() } }
+                    }
+                    Box(Modifier.weight(1f)) {
+                        Pill("Accept") {
+                            if (incomingHandled || BrainCallPolicy.answerStartsVoice()) return@Pill
+                            incomingHandled = true
+                            accepted = true
+                        }
+                    }
+                }
+            }
         }
     }
+}
+
+@Composable
+private fun IncomingRing(active: Boolean) {
+    val context = LocalContext.current
+    DisposableEffect(active) {
+        if (!active) return@DisposableEffect onDispose { }
+        val tone = ringtone(context)
+        val vibrator = vibrator(context)
+        tone?.play()
+        val pattern = VibrationEffect.createWaveform(longArrayOf(0, 700, 500), 0)
+        runCatching { vibrator?.vibrate(pattern) }
+        onDispose {
+            runCatching { tone?.stop() }
+            runCatching { vibrator?.cancel() }
+        }
+    }
+}
+
+private fun ringtone(context: Context): Ringtone? = runCatching {
+    val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+    RingtoneManager.getRingtone(context, uri)
+}.getOrNull()
+
+private fun vibrator(context: Context): Vibrator? = if (Build.VERSION.SDK_INT >= 31) {
+    context.getSystemService(VibratorManager::class.java)?.defaultVibrator
+} else {
+    @Suppress("DEPRECATION")
+    context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
 }
 
 @Composable

@@ -10,6 +10,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import com.ahmed.rotrun.logic.BrainCallPolicy
 import com.ahmed.rotrun.MainActivity
 import com.ahmed.rotrun.R
 import com.ahmed.rotrun.data.RotRunGraph
@@ -38,12 +39,13 @@ object AskBrainLaunch {
     var launching: Boolean = false
         private set
 
-    fun open(context: Context, packageName: String, label: String) {
+    fun open(context: Context, packageName: String, label: String, mode: String? = null) {
         if (!AskLaunchPolicy.acceptTap(launching)) return
         if (packageName.isNotBlank() && ShieldSession.chatPackage() == packageName) return
         launching = true
         try {
             if (packageName.isNotBlank()) ShieldSession.holdForChat(packageName, label)
+            if (RotRunGraph.ready()) RotRunGraph.repo.requestAskIntervention(packageName, label, mode)
             val brought = bringForward(context, packageName, label)
             val decision = AskLaunchPolicy.shieldAfterAttempt(startFailed = !brought)
             if (decision.dismiss) {
@@ -149,17 +151,23 @@ object AskBrainLaunch {
             manager.createNotificationChannel(channel)
         }
         val text = if (label.isBlank()) "Ask my brain" else "Ask my brain · $label"
-        val notification: Notification = NotificationCompat.Builder(context, CHANNEL)
+        val notification = NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_rot)
             .setContentTitle("Your Brain")
             .setContentText(text)
             .setContentIntent(tap)
-            .setFullScreenIntent(tap, true)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setAutoCancel(true)
-            .build()
-        manager.notify(NOTIFICATION_ID, notification)
+        if (BrainCallPolicy.postFullScreenIntent(Build.VERSION.SDK_INT, fullScreenAllowed(context), alreadyPosted = false)) {
+            notification.setFullScreenIntent(tap, true)
+        }
+        manager.notify(NOTIFICATION_ID, notification.build())
+    }
+
+    private fun fullScreenAllowed(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT < 34) return true
+        return context.getSystemService(NotificationManager::class.java).canUseFullScreenIntent()
     }
 }
