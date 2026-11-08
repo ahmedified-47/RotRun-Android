@@ -178,7 +178,6 @@ private fun MainShell(repo: RotRunRepository, onOpenBoard: () -> Unit, onEditYou
     var upgrade by rememberSaveable { mutableStateOf(false) }
     var plan by remember { mutableStateOf(Products.YEARLY) }
     val context = LocalContext.current
-    val look = Looks.byId(state.theme)
     val level = BrainHealthLevel.fromLabel(state.brainHealth)
     val health = Scoring.shownHealth(usage.authorized, usage.drainSeconds, state.focusMinutesToday(), level)
     val screenMinutes = if (usage.authorized) (usage.todaySeconds / 60).toInt() else null
@@ -201,9 +200,10 @@ private fun MainShell(repo: RotRunRepository, onOpenBoard: () -> Unit, onEditYou
             }
         }
     }
-    val scenicHome = tab == Tab.Home && sceneFor(state.theme) != null
-    val canvas = if (scenicHome) look.canvas else rot().page
-    val barColor = if (scenicHome) look.tab else rot().tab
+    val scene = com.ahmed.rotrun.logic.RewardSceneTint.resolve(state.theme)
+    val scenicHome = tab == Tab.Home && !scene.system
+    val canvas = if (scenicHome) Color(scene.canvas) else rot().page
+    val barColor = if (scenicHome) Color(scene.tabBar) else rot().tab
     val tabClearance = 148.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val homeScroll = rememberScrollState()
     val blockScroll = rememberScrollState()

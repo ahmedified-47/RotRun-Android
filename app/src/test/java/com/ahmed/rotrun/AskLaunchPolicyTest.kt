@@ -6,6 +6,7 @@ import com.ahmed.rotrun.data.AskInterventionPlan
 import com.ahmed.rotrun.data.GoogleNonce
 import com.ahmed.rotrun.data.GoogleSignInPolicy
 import com.ahmed.rotrun.watch.AskLaunchPolicy
+import com.ahmed.rotrun.watch.ForegroundGate
 import com.ahmed.rotrun.watch.ShieldSession
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -76,6 +77,25 @@ class AskLaunchPolicyTest {
         assertFalse(AskLaunchPolicy.raiseShieldActivity(alreadyShowing = true, elapsedMs = 20_000))
         assertFalse(AskLaunchPolicy.raiseShieldActivity(alreadyShowing = false, elapsedMs = 1_000))
         assertTrue(AskLaunchPolicy.raiseShieldActivity(alreadyShowing = false, elapsedMs = 8_000))
+    }
+
+    @Test
+    fun openingRotRunDoesNotCountAsTheBlockedApp() {
+        val own = "com.ahmed.rotrun"
+        val safety = setOf(own, "com.android.systemui", "com.android.launcher3")
+        assertEquals("com.ahmed.rotrun", ForegroundGate.latestResume(listOf("com.instagram.android", own)))
+        assertTrue(ForegroundGate.ignore(own, own))
+        assertTrue(ForegroundGate.ignore("com.android.systemui", own))
+        assertTrue(ForegroundGate.ignore("com.coloros.oppoguardelf", own))
+        assertTrue(ForegroundGate.ignore("com.oplus.systemui", own))
+        assertTrue(ForegroundGate.ignore("com.oppo.launcher", own))
+        assertFalse(ForegroundGate.ignore("com.instagram.android", own))
+        assertFalse(ForegroundGate.shouldShowShield(own, own, safety, blocked = true))
+        assertFalse(ForegroundGate.shouldShowShield("com.android.systemui", own, safety, blocked = true))
+        assertFalse(ForegroundGate.shouldShowShield("com.android.launcher3", own, safety, blocked = true))
+        assertFalse(ForegroundGate.shouldShowShield("com.instagram.android", own, safety, blocked = false))
+        assertTrue(ForegroundGate.shouldShowShield("com.instagram.android", own, safety, blocked = true))
+        assertFalse(ForegroundGate.shouldShowShield(null, own, safety, blocked = true))
     }
 
     @Test

@@ -120,6 +120,10 @@ class BlockWatchService : Service() {
             hideOverlay()
             return
         }
+        if (ForegroundGate.ignore(packageName, this.packageName)) {
+            hideOverlay()
+            return
+        }
         if (ShieldSession.blocks(packageName)) {
             hideOverlay()
             if (ShieldSession.openedInto(packageName) && !repo.isBlocked(packageName, repo.safetyPackages())) {

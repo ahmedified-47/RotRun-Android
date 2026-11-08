@@ -63,7 +63,7 @@ fun ProfilePrompt(repo: RotRunRepository, editing: Boolean, onDismiss: () -> Uni
                 fontSize = 24.sp,
             )
             Text(
-                "Shown as your first name and last initial, like Ahmed J. Change it in Settings or by tapping your own leaderboard row. A photo is optional.",
+                "Shown as your first name and last initial, like Ahmed J. Change it by tapping your own leaderboard row. A photo is optional.",
                 color = rot().muted,
                 modifier = Modifier.padding(top = 8.dp, bottom = 16.dp),
             )

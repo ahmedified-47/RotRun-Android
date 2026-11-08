@@ -43,7 +43,6 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         if (RotRunGraph.ready()) RotRunGraph.repo.attach(this)
-        openHeldIntervention()
     }
 
     override fun onNewIntent(intent: Intent) {

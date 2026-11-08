@@ -115,9 +115,10 @@ object UsageReader {
     }
 
     /**
-     * Package that last came to the foreground. The window is hours, not seconds:
-     * a block service often starts after the blocked app is already open, and that
-     * resume event is older than a few seconds.
+     * Package that last came to the foreground, including RotRun.
+     * Skipping this package made opening RotRun look like the previous app was still in front.
+     * The window is hours, not seconds: a block service often starts after the blocked app
+     * is already open, and that resume event is older than a few seconds.
      */
     fun foreground(context: Context): String? {
         if (!hasAccess(context)) return null
@@ -130,15 +131,14 @@ object UsageReader {
         var latestTime = 0L
         while (events.hasNextEvent()) {
             events.getNextEvent(event)
-            if (event.eventType == resume && event.timeStamp >= latestTime && event.packageName != context.packageName) {
+            if (event.eventType == resume && event.timeStamp >= latestTime) {
                 latestTime = event.timeStamp
                 latest = event.packageName
             }
         }
         if (latest != null) return latest
         val stats = manager.queryUsageStats(UsageStatsManager.INTERVAL_BEST, end - 60 * 60_000L, end).orEmpty()
-        return stats.filter { it.lastTimeUsed > 0L && it.packageName != context.packageName }
-            .maxByOrNull { it.lastTimeUsed }?.packageName
+        return stats.filter { it.lastTimeUsed > 0L }.maxByOrNull { it.lastTimeUsed }?.packageName
     }
 
     /**

@@ -17,7 +17,7 @@ class BlockAccessibilityService : AccessibilityService() {
     private val poll = object : Runnable {
         override fun run() {
             val current = UsageReader.foreground(this@BlockAccessibilityService)
-            if (!current.isNullOrBlank()) consider(current)
+            if (current.isNullOrBlank()) hide() else consider(current)
             handler.postDelayed(this, 1_000)
         }
     }
@@ -37,6 +37,21 @@ class BlockAccessibilityService : AccessibilityService() {
             AccessibilityEvent.TYPE_WINDOWS_CHANGED -> fromEvent ?: rootInActiveWindow?.packageName?.toString()
             else -> return
         } ?: return
+        if (ForegroundGate.ignore(packageName, this.packageName)) {
+            val real = UsageReader.foreground(this)
+            val safety = if (RotRunGraph.ready()) RotRunGraph.repo.safetyPackages() else emptySet()
+            val blocked = real != null && repoReadyBlocked(real)
+            if (ForegroundGate.shouldShowShield(real, this.packageName, safety, blocked)) {
+                if (AskLaunchPolicy.keepShownShield(shownFor, packageName, this.packageName)) {
+                    covering = overlay != null
+                    return
+                }
+                consider(real!!)
+                return
+            }
+            hide()
+            return
+        }
         consider(packageName)
     }
 
@@ -44,6 +59,10 @@ class BlockAccessibilityService : AccessibilityService() {
         if (!RotRunGraph.ready()) return
         if (AskLaunchPolicy.leaveOverlayUp(AskBrainLaunch.launching)) return
         if (!AskLaunchPolicy.showShield(ShieldSession.chatPackage() != null)) {
+            hide()
+            return
+        }
+        if (ForegroundGate.ignore(packageName, this.packageName)) {
             hide()
             return
         }

@@ -48,6 +48,7 @@ import com.ahmed.rotrun.data.SavedState
 import com.ahmed.rotrun.data.UsageSnapshot
 import com.ahmed.rotrun.icon.LauncherIcons
 import com.ahmed.rotrun.logic.BrainHealthLevel
+import com.ahmed.rotrun.logic.RewardSceneTint
 import com.ahmed.rotrun.logic.Scoring
 import com.ahmed.rotrun.logic.WidgetGlyph
 import com.ahmed.rotrun.logic.WidgetGlyphs
@@ -224,7 +225,7 @@ private fun WorldPhoneCard(
 
 @Composable
 private fun WorldPhoneScreen(look: HomeLook, usage: UsageSnapshot, state: SavedState) {
-    val scene = if (look.id == "Default") "Grassy" else look.id
+    val scene = RewardSceneTint.resolve(look.id)
     val level = BrainHealthLevel.fromLabel(state.brainHealth)
     val health = Scoring.shownHealth(usage.authorized, usage.drainSeconds, state.focusMinutesToday(), level)
     val known = if (usage.todaySeconds >= 60L) health else null
@@ -232,11 +233,19 @@ private fun WorldPhoneScreen(look: HomeLook, usage: UsageSnapshot, state: SavedS
     val pickups = if (usage.pickups > 0) usage.pickups.toString() else "—"
     val focus = Scoring.formatDuration(state.focusMinutesToday() * 60L)
     val offenders = usage.offenders.filter { it.seconds > 0 }.take(2)
+    val header = if (scene.system) Ink else Color(RewardSceneTint.ink(scene.sky, preferLight = true))
+    val percent = if (scene.system) Ink else Color(RewardSceneTint.ink(scene.sky, scene.lightPercent))
+    val onCard = if (scene.system) Ink else Color(RewardSceneTint.ink(scene.cardTop, scene.lightInk))
+    val onList = if (scene.system) Ink else Color(RewardSceneTint.ink(scene.cardBottom, scene.lightInk))
     Box(Modifier.fillMaxSize()) {
-        HeroBackdrop(scene, Modifier.fillMaxSize())
+        if (scene.system) {
+            Box(Modifier.fillMaxSize().background(Color(0xFFF2F2F7)))
+        } else {
+            HeroBackdrop(look.id, Modifier.fillMaxSize())
+        }
         Column(Modifier.fillMaxSize().padding(top = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("BRAINROT", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
+                Text("BRAINROT", color = header, fontSize = 16.sp, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
                 Box(Modifier.size(24.dp).clip(CircleShape).background(Color.White), contentAlignment = Alignment.Center) {
                     Icon(Icons.Default.LocalFireDepartment, contentDescription = null, tint = Color(0xFFFF8C29), modifier = Modifier.size(14.dp))
                 }
@@ -244,42 +253,42 @@ private fun WorldPhoneScreen(look: HomeLook, usage: UsageSnapshot, state: SavedS
             CartoonBrain(look.brain, Modifier.padding(top = 8.dp).size(118.dp), animated = false)
             Text(
                 if (known == null) "Not in yet" else "$known%",
-                color = if (known == null) Color.White else Color.Black,
+                color = if (known == null) header else percent,
                 fontSize = if (known == null) 22.sp else 42.sp,
                 fontWeight = FontWeight.Black,
                 modifier = Modifier.padding(top = 4.dp),
             )
             Box(
-                Modifier.padding(horizontal = 28.dp, vertical = 8.dp).fillMaxWidth().height(8.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.35f)),
+                Modifier.padding(horizontal = 28.dp, vertical = 8.dp).fillMaxWidth().height(8.dp).clip(CircleShape).background(header.copy(alpha = 0.22f)),
             ) {
                 if (known != null) {
-                    Box(Modifier.fillMaxHeight().fillMaxWidth((known / 100f).coerceIn(0.04f, 1f)).background(Color(0xFF59D16B)))
+                    Box(Modifier.fillMaxHeight().fillMaxWidth((known / 100f).coerceIn(0.04f, 1f)).background(header))
                 }
             }
             Row(Modifier.padding(horizontal = 10.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                WorldStat(screen, "Screen", Modifier.weight(1f))
-                WorldStat(pickups, "Pickups", Modifier.weight(1f))
-                WorldStat(focus, "Focus", Modifier.weight(1f))
+                WorldStat(screen, "Screen", onCard, Color(scene.cardTop), Modifier.weight(1f))
+                WorldStat(pickups, "Pickups", onCard, Color(scene.cardTop), Modifier.weight(1f))
+                WorldStat(focus, "Focus", onCard, Color(scene.cardTop), Modifier.weight(1f))
             }
             if (offenders.isNotEmpty()) {
                 Column(
-                    Modifier.padding(horizontal = 10.dp, vertical = 8.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color.Black.copy(alpha = 0.18f)).padding(10.dp),
+                    Modifier.padding(horizontal = 10.dp, vertical = 8.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color(scene.cardBottom)).padding(10.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    Text("Top Offenders", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("Top Offenders", color = onList, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     offenders.forEach { app ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             OffenderMark(app.label, app.packageName)
                             Text(
                                 app.label,
-                                color = Color.White,
+                                color = onList,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
                             )
-                            Text(Scoring.formatDuration(app.seconds), color = Color.White.copy(alpha = 0.9f), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text(Scoring.formatDuration(app.seconds), color = onList.copy(alpha = 0.9f), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -289,13 +298,13 @@ private fun WorldPhoneScreen(look: HomeLook, usage: UsageSnapshot, state: SavedS
 }
 
 @Composable
-private fun WorldStat(value: String, title: String, modifier: Modifier) {
+private fun WorldStat(value: String, title: String, ink: Color, fill: Color, modifier: Modifier) {
     Column(
-        modifier.clip(RoundedCornerShape(12.dp)).background(Color.Black.copy(alpha = 0.18f)).padding(vertical = 8.dp),
+        modifier.clip(RoundedCornerShape(12.dp)).background(fill).padding(vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(value, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-        Text(title, color = Color.White.copy(alpha = 0.85f), fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+        Text(value, color = ink, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+        Text(title, color = ink.copy(alpha = 0.85f), fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 
