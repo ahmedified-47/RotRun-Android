@@ -25,7 +25,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.resume
 
 data class PlayPurchaseUpload(val productId: String, val purchaseToken: String, val kind: String)
 
@@ -36,13 +38,20 @@ data class ServerEntitlement(
     val active: Boolean = true,
 )
 
+data class PlaySyncResult(
+    val entitlements: List<ServerEntitlement>?,
+    val error: String?,
+) {
+    val active: Boolean get() = entitlements?.any { it.active } == true
+}
+
 class PlayBilling(
     context: Context,
     private val accountId: () -> String?,
     private val onEntitlement: (productId: String?, lifetime: Boolean, active: Boolean, expiresAtMillis: Long?) -> Unit,
     private val onMessage: (String) -> Unit,
     private val onPurchased: () -> Unit,
-    private val sync: (List<PlayPurchaseUpload>) -> List<ServerEntitlement>?,
+    private val sync: (List<PlayPurchaseUpload>) -> PlaySyncResult,
 ) : PurchasesUpdatedListener {
     private val app = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -94,12 +103,14 @@ class PlayBilling(
             .setProductDetails(product)
             .setOfferToken(quote.offerToken)
             .build()
+        val userId = accountId()?.takeIf { it.isNotBlank() }
+        if (userId == null) {
+            onMessage("Sign in with Google before buying, so voice can verify Premium.")
+            return
+        }
         val flow = BillingFlowParams.newBuilder()
             .setProductDetailsParamsList(listOf(productParams))
-        val userId = accountId()?.takeIf { it.isNotBlank() }
-        if (userId != null) {
-            flow.setObfuscatedAccountId(BillingQuotes.obfuscatedAccountId(userId))
-        }
+            .setObfuscatedAccountId(BillingQuotes.obfuscatedAccountId(userId))
         val from = ownedSubscriptionProduct
         val token = ownedSubscriptionToken
         when (BillingQuotes.planChange(from, planId)) {
@@ -282,7 +293,7 @@ class PlayBilling(
             val rows = if (!signedIn || uploads.isEmpty()) {
                 null
             } else {
-                withContext(Dispatchers.IO) { runCatching { sync(uploads) }.getOrNull() }
+                withContext(Dispatchers.IO) { runCatching { sync(uploads) }.getOrNull() }?.entitlements
             }
             if (rows != null && BillingQuotes.keepLocalPlayGrant(active != null)) {
                 val row = rows.firstOrNull { it.productId == productId && it.active }
@@ -304,6 +315,35 @@ class PlayBilling(
             if (announce) {
                 onMessage(if (purchased.isEmpty()) BillingQuotes.NOTHING_TO_RESTORE else BillingQuotes.RESTORED_MESSAGE)
             }
+        }
+    }
+
+    suspend fun uploadOwned(): PlaySyncResult {
+        if (!client.isReady) return PlaySyncResult(null, "Google Play isn't ready to verify this purchase.")
+        val subs = query(BillingClient.ProductType.SUBS)
+        val inApp = query(BillingClient.ProductType.INAPP)
+        if (subs == null || inApp == null) return PlaySyncResult(null, "Google Play couldn't list purchases.")
+        val uploads = (subs + inApp).mapNotNull { purchase ->
+            if (purchase.purchaseState != Purchase.PurchaseState.PURCHASED) return@mapNotNull null
+            val id = purchase.products.firstOrNull { it in Products.all } ?: return@mapNotNull null
+            PlayPurchaseUpload(id, purchase.purchaseToken, if (id == Products.LIFETIME) "inapp" else "subs")
+        }.take(8)
+        if (accountId().isNullOrBlank()) return PlaySyncResult(null, "Sign in with Google so Rot can verify the purchase.")
+        if (uploads.isEmpty()) {
+            return PlaySyncResult(emptyList(), "This Google account has no active RotRun Premium purchase to verify.")
+        }
+        val result = withContext(Dispatchers.IO) { sync(uploads) }
+        val row = result.entitlements?.firstOrNull { it.active }
+        if (row != null) {
+            onEntitlement(row.productId, row.lifetime || row.productId == Products.LIFETIME, true, row.expiresAtMillis)
+        }
+        return result
+    }
+
+    private suspend fun query(type: String): List<Purchase>? = suspendCancellableCoroutine { cont ->
+        client.queryPurchasesAsync(QueryPurchasesParams.newBuilder().setProductType(type).build()) { result, purchases ->
+            if (!cont.isActive) return@queryPurchasesAsync
+            cont.resume(if (result.responseCode == BillingClient.BillingResponseCode.OK) purchases else null)
         }
     }
 

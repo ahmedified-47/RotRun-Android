@@ -39,5 +39,52 @@ object VoiceSession {
         return exact.ifBlank { fallback }
     }
 
+    /** agent-qa returns this on HTTP 429 when the user has no verified entitlements row. */
+    fun isPaywallRequired(errorCode: String?): Boolean = errorCode == "paywall_required"
+
+    /**
+     * A 429 that is not paywall_required is a voice cap. paywall_required must not be
+     * reported as "resets tomorrow".
+     */
+    fun isVoiceLimit(status: Int, errorCode: String?): Boolean {
+        if (isPaywallRequired(errorCode)) return false
+        if (errorCode == "voice_daily_limit" || errorCode == "voice_monthly_limit" || errorCode == "budget_exhausted") {
+            return true
+        }
+        return status == 429
+    }
+
+    enum class PaywallAction { ShowPaywall, RetryPurchaseSync, ShowVerificationFailure }
+
+    /** A local Play grant with no server row retries the purchase upload once, then says why. */
+    fun paywallAction(locallyPremium: Boolean, alreadyRetried: Boolean): PaywallAction = when {
+        !locallyPremium -> PaywallAction.ShowPaywall
+        !alreadyRetried -> PaywallAction.RetryPurchaseSync
+        else -> PaywallAction.ShowVerificationFailure
+    }
+
+    fun spokenFailure(error: String?, message: String?, fallback: String): String {
+        val reason = serverMessage(error, message, "")
+        if (reason.isBlank()) return fallback
+        if (reason.startsWith("Voice")) return reason
+        return "Voice couldn't start. $reason"
+    }
+
+    fun verificationFailure(reason: String?): String {
+        val detail = reason?.trim().orEmpty().ifBlank {
+            "This Google account has no active RotRun Premium purchase to verify."
+        }
+        return spokenFailure(detail, null, detail)
+    }
+
+    fun noticeCanRetry(message: String): Boolean {
+        val text = message.lowercase()
+        if (text.contains("premium")) return false
+        if (text.contains("limit")) return false
+        if (text.contains("permission")) return false
+        if (text.contains("sign in")) return false
+        return true
+    }
+
     private fun encode(value: String): String = URLEncoder.encode(value, Charsets.UTF_8.name())
 }

@@ -54,6 +54,23 @@ class DailyBoardTest {
         assertEquals("Ahmed", DailyBoard.displayName("Ahmed https://example.com/x"))
         assertFalse(DailyBoard.displayName("You").contains("@"))
         assertTrue(DailyBoard.displayName("A".repeat(80)).length <= 40)
+        assertEquals("Ahmed J.", DailyBoard.boardName("Ahmed", "Javed"))
+        assertEquals("Ahmed J.", DailyBoard.boardName(" Ahmed ", " javed "))
+        assertNull(DailyBoard.boardName("Ahmed", ""))
+        assertNull(DailyBoard.boardName("", "Javed"))
+        assertNull(DailyBoard.boardName("You", "Javed"))
+        assertNull(DailyBoard.boardName("Ahmed", "You"))
+        assertFalse(DailyBoard.boardName("Ahmed", "Javed").orEmpty().equals("You", ignoreCase = true))
+        assertTrue(DailyBoard.isRealName("Ahmed Javed"))
+        assertFalse(DailyBoard.isRealName("You"))
+        assertFalse(DailyBoard.isRealName("RotRun user"))
+        assertFalse(DailyBoard.isRealName("a@b.com"))
+        assertEquals("Ahmed" to "J", DailyBoard.splitName("Ahmed J."))
+        assertEquals("Ahmed" to "", DailyBoard.splitName("Ahmed"))
+        assertTrue(DailyBoard.isBoardName("Ahmed J."))
+        assertTrue(DailyBoard.isBoardName("Ahmed Javed"))
+        assertFalse(DailyBoard.isBoardName("Ahmed"))
+        assertFalse(DailyBoard.isBoardName("You"))
     }
 
     @Test

@@ -63,7 +63,14 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 @Composable
-fun StatsScreen(state: SavedState, health: Int?, screenMinutes: Int?, repo: RotRunRepository) {
+fun StatsScreen(
+    state: SavedState,
+    health: Int?,
+    screenMinutes: Int?,
+    repo: RotRunRepository,
+    onLeaderboard: () -> Unit = {},
+    onEditYou: () -> Unit = {},
+) {
     var page by remember { mutableStateOf("focus") }
     Column(Modifier.padding(bottom = 24.dp)) {
         Row(
@@ -72,7 +79,7 @@ fun StatsScreen(state: SavedState, health: Int?, screenMinutes: Int?, repo: RotR
             Toggle("Focus", page == "focus", Modifier.weight(1f)) { page = "focus" }
             Toggle("Leaderboard", page == "board", Modifier.weight(1f)) { page = "board" }
         }
-        if (page == "focus") FocusStats(state, health) else Leaderboard(state, screenMinutes, repo)
+        if (page == "focus") FocusStats(state, health) else Leaderboard(state, screenMinutes, repo, onLeaderboard, onEditYou)
     }
 }
 
@@ -205,14 +212,26 @@ private fun StoryChip(text: String, icon: @Composable () -> Unit) {
 }
 
 @Composable
-private fun Leaderboard(state: SavedState, screenMinutes: Int?, repo: RotRunRepository) {
+private fun Leaderboard(
+    state: SavedState,
+    screenMinutes: Int?,
+    repo: RotRunRepository,
+    onOpen: () -> Unit,
+    onEditYou: () -> Unit,
+) {
     Column(Modifier.padding(horizontal = 20.dp)) {
-    LeaderboardBody(state, screenMinutes, repo)
+    LeaderboardBody(state, screenMinutes, repo, onOpen, onEditYou)
     }
 }
 
 @Composable
-private fun LeaderboardBody(state: SavedState, screenMinutes: Int?, repo: RotRunRepository) {
+private fun LeaderboardBody(
+    state: SavedState,
+    screenMinutes: Int?,
+    repo: RotRunRepository,
+    onOpen: () -> Unit,
+    onEditYou: () -> Unit,
+) {
     var friends by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val xp = screenMinutes?.let { Scoring.dailyXp(it, state.goalHours * 60, state.askBrainCount, state.ransomDebit) }
@@ -229,6 +248,7 @@ private fun LeaderboardBody(state: SavedState, screenMinutes: Int?, repo: RotRun
             }
         }
     }
+    LaunchedEffect(Unit) { onOpen() }
     LaunchedEffect(xp, repo.backend.signedIn, day, state.askBrainCount, state.ransomDebit) { reload() }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { reload() }
     val chrome = rot()
@@ -254,11 +274,11 @@ private fun LeaderboardBody(state: SavedState, screenMinutes: Int?, repo: RotRun
                 board.rows.isEmpty() && board.pinned == null -> Appear(0.12f) { EmptyBoard() }
                 else -> {
                     if (board.rows.size >= 3) {
-                        Appear(0.04f) { Podium(board.rows.take(3)) }
+                        Appear(0.04f) { Podium(board.rows.take(3), onEditYou) }
                     }
                     val list = if (board.rows.size >= 3) board.rows.drop(3) else board.rows
-                    list.forEachIndexed { index, row -> Appear(0.12f + minOf(index, 7) * 0.05f) { BoardRow(row) } }
-                    board.pinned?.let { PinnedYou(it) }
+                    list.forEachIndexed { index, row -> Appear(0.12f + minOf(index, 7) * 0.05f) { BoardRow(row, onEditYou) } }
+                    board.pinned?.let { PinnedYou(it, onEditYou) }
                 }
             }
             board.message?.let {
@@ -305,17 +325,20 @@ private fun EmptyBoard() {
 }
 
 @Composable
-private fun Podium(top: List<RankedXp>) {
+private fun Podium(top: List<RankedXp>, onEditYou: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.SpaceEvenly) {
-        PodiumPlace(top[1], 88.dp, Color(0xFFB8C2D1))
-        PodiumPlace(top[0], 118.dp, Color(0xFFFFC747))
-        PodiumPlace(top[2], 72.dp, Color(0xFFE68C52))
+        PodiumPlace(top[1], 88.dp, Color(0xFFB8C2D1), onEditYou)
+        PodiumPlace(top[0], 118.dp, Color(0xFFFFC747), onEditYou)
+        PodiumPlace(top[2], 72.dp, Color(0xFFE68C52), onEditYou)
     }
 }
 
 @Composable
-private fun PodiumPlace(row: RankedXp, bar: androidx.compose.ui.unit.Dp, medal: Color) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(96.dp)) {
+private fun PodiumPlace(row: RankedXp, bar: androidx.compose.ui.unit.Dp, medal: Color, onEditYou: () -> Unit) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.width(96.dp).clickable(enabled = row.you, onClick = onEditYou),
+    ) {
         PlayerAvatar(row.name, row.avatarUrl, 48.dp)
         Text(row.name, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, color = rot().ink)
         Text("${row.xp} XP", fontSize = 11.sp, color = rot().muted)
@@ -325,7 +348,7 @@ private fun PodiumPlace(row: RankedXp, bar: androidx.compose.ui.unit.Dp, medal: 
 }
 
 @Composable
-private fun BoardRow(row: RankedXp) {
+private fun BoardRow(row: RankedXp, onEditYou: () -> Unit) {
     val chrome = rot()
     val rankColor = when (row.rank) {
         1 -> Color(0xFFFFC747)
@@ -333,7 +356,7 @@ private fun BoardRow(row: RankedXp) {
         else -> Color(0xFFC7C7CC)
     }
     Row(
-        Modifier.padding(vertical = 4.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(chrome.card).border(if (row.you) 2.dp else 0.dp, if (row.you) Color(0xFFFF8C2E) else Color.Transparent, RoundedCornerShape(22.dp)).padding(horizontal = 14.dp, vertical = 12.dp),
+        Modifier.padding(vertical = 4.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(chrome.card).border(if (row.you) 2.dp else 0.dp, if (row.you) Color(0xFFFF8C2E) else Color.Transparent, RoundedCornerShape(22.dp)).clickable(enabled = row.you, onClick = onEditYou).padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text("#${row.rank}", fontWeight = FontWeight.Black, color = rankColor, modifier = Modifier.width(36.dp))
@@ -350,9 +373,9 @@ private fun BoardRow(row: RankedXp) {
 }
 
 @Composable
-private fun PinnedYou(row: RankedXp) {
+private fun PinnedYou(row: RankedXp, onEditYou: () -> Unit) {
     Row(
-        Modifier.padding(top = 8.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Color(0xFFFF8C2E)).padding(horizontal = 14.dp, vertical = 12.dp),
+        Modifier.padding(top = 8.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Color(0xFFFF8C2E)).clickable(onClick = onEditYou).padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text("#${row.rank}", color = Color.White, fontWeight = FontWeight.Black)

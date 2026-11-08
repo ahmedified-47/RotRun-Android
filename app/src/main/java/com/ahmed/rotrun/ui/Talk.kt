@@ -74,6 +74,7 @@ import com.ahmed.rotrun.data.RotRunRepository
 import com.ahmed.rotrun.logic.FreeTier
 import com.ahmed.rotrun.logic.PaywallGate
 import com.ahmed.rotrun.logic.Scoring
+import com.ahmed.rotrun.logic.VoiceSession
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -121,25 +122,46 @@ fun TalkSheet(repo: RotRunRepository, onClose: () -> Unit) {
         onClose()
     }
     BackHandler(onBack = ::leave)
+    fun applyVoice(kind: String, value: String) {
+        when (kind) {
+            "transcript" -> transcript = value
+            "status" -> if (value != "ended") callStatus = value
+            "ended" -> {
+                calling = false
+                transcript = ""
+                if (value.isNotBlank()) note = value
+            }
+        }
+    }
+    var startAfterMic by remember { mutableStateOf(false) }
     val mic = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (!granted) {
             micDenied = true
             note = "Voice permissions required"
         } else {
             micDenied = false
-            beginCall(repo, { calling = true; callStatus = "Listening"; transcript = "" }, { note = it }) { kind, value ->
-                when (kind) {
-                    "transcript" -> transcript = value
-                    "status" -> {
-                        if (value == "ended") {
-                            calling = false
-                            transcript = ""
-                        } else {
-                            callStatus = value
-                        }
-                    }
-                }
-            }
+            startAfterMic = true
+        }
+    }
+    fun startCall() {
+        if (!repo.state.value.premiumActive()) {
+            note = FreeTier.voiceMessage
+            if (PaywallGate.shows) repo.requestPaywall()
+            return
+        }
+        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        if (!granted) {
+            mic.launch(Manifest.permission.RECORD_AUDIO)
+            return
+        }
+        micDenied = false
+        note = null
+        beginCall(repo, { calling = true; callStatus = "Listening"; transcript = "" }, { note = it }, ::applyVoice)
+    }
+    LaunchedEffect(startAfterMic) {
+        if (startAfterMic) {
+            startAfterMic = false
+            startCall()
         }
     }
     LaunchedEffect(signedIn, needsConsent, declined) {
@@ -159,32 +181,7 @@ fun TalkSheet(repo: RotRunRepository, onClose: () -> Unit) {
             showCall = signedIn && !needsConsent && !declined && !calling,
             onBack = ::leave,
             onEnd = ::leave,
-            onCall = {
-                if (!repo.state.value.premiumActive()) {
-                    note = FreeTier.voiceMessage
-                    if (PaywallGate.shows) repo.requestPaywall()
-                    return@TalkBar
-                }
-                val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-                if (granted) {
-                    micDenied = false
-                    beginCall(repo, { calling = true; callStatus = "Listening"; transcript = "" }, { note = it }) { kind, value ->
-                        when (kind) {
-                            "transcript" -> transcript = value
-                            "status" -> {
-                                if (value == "ended") {
-                                    calling = false
-                                    transcript = ""
-                                } else {
-                                    callStatus = value
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    mic.launch(Manifest.permission.RECORD_AUDIO)
-                }
-            },
+            onCall = { startCall() },
         )
         when {
             !signedIn -> Gate(
@@ -311,8 +308,12 @@ fun TalkSheet(repo: RotRunRepository, onClose: () -> Unit) {
                         }
                     }
                 }
-                note?.let {
-                    Text(it, color = tertiary, fontFamily = Nunito, fontSize = 12.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp))
+                note?.let { message ->
+                    if (isVoiceNotice(message)) {
+                        VoiceNotice(message, ink, card, if (VoiceSession.noticeCanRetry(message)) ::startCall else null)
+                    } else {
+                        Text(message, color = tertiary, fontFamily = Nunito, fontSize = 12.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp))
+                    }
                 }
                 if (micDenied) {
                     Row(Modifier.fillMaxWidth().background(card).padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -375,6 +376,25 @@ private fun send(
                 onNote(null)
             }
             onBusy(false)
+        }
+    }
+}
+
+private fun isVoiceNotice(message: String): Boolean {
+    val text = message.lowercase()
+    return message.startsWith("Voice") || text.contains("microphone") || text.contains("playback") || text.contains("permission")
+}
+
+@Composable
+private fun VoiceNotice(message: String, ink: Color, card: Color, onRetry: (() -> Unit)?) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).clip(RoundedCornerShape(14.dp)).background(card).padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFFF9F0A), modifier = Modifier.size(18.dp))
+        Text(message, color = ink, fontFamily = Nunito, fontSize = 15.sp, modifier = Modifier.padding(start = 8.dp).weight(1f))
+        if (onRetry != null) {
+            Text("Try again", color = ActionBlue, fontFamily = Nunito, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.padding(start = 8.dp).clickable(onClick = onRetry))
         }
     }
 }

@@ -638,7 +638,7 @@ private fun ProfilePage(repo: RotRunRepository, onBack: () -> Unit) {
         BackHeader("Profile", onBack)
         Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
             Text("This name and photo show on Daily XP. A photo is optional.", color = rot().muted, modifier = Modifier.padding(bottom = 16.dp))
-            ProfileEditor(repo, blocking = false)
+            ProfileEditor(repo, prompt = false)
         }
     }
 }

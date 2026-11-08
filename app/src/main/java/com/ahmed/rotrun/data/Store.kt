@@ -80,6 +80,11 @@ class RotRunRepository(context: Context) {
         onPurchased = { _pulses.tryEmit(UiPulse.ClosePaywall) },
         sync = { purchases -> backend.syncPlayPurchases(purchases) },
     )
+
+    init {
+        backend.bindPlaySync { billing.uploadOwned() }
+        backend.onSignedIn = { billing.start() }
+    }
     private val launchFinished = AtomicBoolean(false)
     private var usageGeneration = 0
 
@@ -262,6 +267,10 @@ class RotRunRepository(context: Context) {
     fun dismissYearly70() = update { it.copy(yearly70Dismissed = true, skippedOneTimeOffer = true) }
 
     fun purchase(productId: String) {
+        if (!backend.signedIn) {
+            toast("Sign in with Google before buying, so voice can verify Premium.")
+            return
+        }
         val activity = host?.get()
         if (activity == null) {
             toast("Open RotRun and try that purchase again.")

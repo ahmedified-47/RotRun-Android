@@ -35,6 +35,45 @@ object DailyBoard {
         return shown
     }
 
+    /** First name plus last initial. Both parts are required. "You" is never stored. */
+    fun boardName(givenName: String?, familyName: String?): String? {
+        val given = cleanPart(givenName) ?: return null
+        val family = cleanPart(familyName) ?: return null
+        val initial = family.firstOrNull { it.isLetter() } ?: return null
+        val shown = "$given ${initial.uppercaseChar()}.".take(40).trim()
+        return shown.takeIf { isRealName(it) }
+    }
+
+    fun isRealName(raw: String?): Boolean {
+        val text = raw?.trim().orEmpty()
+        if (text.isEmpty() || text.equals("You", ignoreCase = true) || text.equals(fallbackName, ignoreCase = true)) {
+            return false
+        }
+        val shown = displayName(text)
+        return shown != fallbackName && !shown.equals("You", ignoreCase = true)
+    }
+
+    /** A stored name counts only when both a first name and a last name are present. */
+    fun isBoardName(raw: String?): Boolean {
+        val (given, family) = splitName(raw)
+        return boardName(given, family) != null
+    }
+
+    /** Splits a saved board name back into the two fields. A single word leaves the last name blank. */
+    fun splitName(raw: String?): Pair<String, String> {
+        val parts = raw.orEmpty().trim().split(Regex("\\s+")).filter { it.isNotBlank() }
+        if (parts.size < 2) return raw.orEmpty().trim() to ""
+        val family = parts.last().dropLastWhile { it == '.' }
+        return parts.dropLast(1).joinToString(" ") to family
+    }
+
+    private fun cleanPart(raw: String?): String? {
+        val text = raw?.trim().orEmpty()
+        if (text.isEmpty() || text.contains("@") || text.contains("://")) return null
+        if (text.equals("You", ignoreCase = true)) return null
+        return text
+    }
+
     /** Name stored in auth metadata. Emails, URLs, and the placeholder You are rejected. */
     fun savedFullName(raw: String?): String? {
         var text = raw.orEmpty().trim()

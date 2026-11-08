@@ -3,10 +3,9 @@ package com.ahmed.rotrun.data
 import android.app.Activity
 import android.content.Context
 import android.content.SharedPreferences
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
 import com.ahmed.rotrun.BuildConfig
 import com.ahmed.rotrun.billing.PlayPurchaseUpload
+import com.ahmed.rotrun.billing.PlaySyncResult
 import com.ahmed.rotrun.billing.ServerEntitlement
 import com.ahmed.rotrun.logic.BoardSnapshot
 import com.ahmed.rotrun.logic.DailyBoard
@@ -42,7 +41,7 @@ import java.util.concurrent.TimeUnit
 
 data class ChatCard(val type: String, val data: Map<String, String>)
 
-data class ProfileDraft(val fullName: String, val avatarUrl: String?)
+data class ProfileDraft(val givenName: String, val familyName: String, val avatarUrl: String?)
 
 data class ProfileResult(val saved: Boolean, val message: String?)
 
@@ -52,6 +51,8 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
     private val jsonType = "application/json".toMediaType()
     private val session = openSession(app)
     private var voice: VoiceCall? = null
+    private var playSync: (suspend () -> PlaySyncResult)? = null
+    var onSignedIn: (() -> Unit)? = null
     private val cardLock = Any()
     private var pendingCards: List<ChatCard> = emptyList()
     val signedIn: Boolean get() = accessToken().isNotBlank()
@@ -105,29 +106,70 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
         flags().edit().putBoolean(PROFILE_LATER, true).apply()
     }
 
-    fun profileDraft(): ProfileDraft = ProfileDraft(
-        fullName = session.getString("full_name", null)?.trim().orEmpty(),
-        avatarUrl = storedAvatar(),
-    )
+    fun bindPlaySync(block: suspend () -> PlaySyncResult) {
+        playSync = block
+    }
 
-    fun saveProfile(fullName: String, jpeg: ByteArray?): ProfileResult {
-        val name = DailyBoard.savedFullName(fullName) ?: return ProfileResult(false, "Enter your name.")
+    fun profileDraft(): ProfileDraft {
+        val given = session.getString(GIVEN_NAME, null)?.trim().orEmpty()
+        val family = session.getString(FAMILY_NAME, null)?.trim().orEmpty()
+        if (given.isNotEmpty() || family.isNotEmpty()) return ProfileDraft(given, family, storedAvatar())
+        val split = DailyBoard.splitName(session.getString("full_name", null) ?: session.getString("display_name", null))
+        return ProfileDraft(split.first, split.second, storedAvatar())
+    }
+
+    fun hasLocalDisplayName(): Boolean {
+        if (DailyBoard.boardName(session.getString(GIVEN_NAME, null), session.getString(FAMILY_NAME, null)) != null) return true
+        return DailyBoard.isBoardName(session.getString("display_name", null)) ||
+            DailyBoard.isBoardName(session.getString("full_name", null))
+    }
+
+    /** Copies a real name from auth metadata or daily_xp. Returns true when a name is saved. */
+    fun adoptRemoteDisplayName(): Boolean {
+        if (!signedIn) return false
+        if (hasLocalDisplayName()) return true
+        val meta = googleName(call("GET", "/auth/v1/user", null, accessToken()).json)
+        if (DailyBoard.isBoardName(meta)) {
+            rememberChosenName(meta!!)
+            return true
+        }
+        val id = userId ?: return false
+        val rows = call(
+            "GET",
+            "/rest/v1/daily_xp?user_id=eq.$id&select=display_name&order=day.desc&limit=8",
+            null,
+            accessToken(),
+        ).array ?: return false
+        for (index in 0 until rows.length()) {
+            val name = rows.optJSONObject(index)?.optString("display_name")
+            if (DailyBoard.isBoardName(name)) {
+                rememberChosenName(name!!)
+                return true
+            }
+        }
+        return false
+    }
+
+    fun saveProfile(givenName: String, familyName: String, jpeg: ByteArray?): ProfileResult {
+        val shown = DailyBoard.boardName(givenName, familyName) ?: return ProfileResult(false, "Enter your first and last name.")
         val id = userId ?: return ProfileResult(false, "Sign in first.")
         if (accessToken().isBlank()) return ProfileResult(false, "Sign in first.")
+        if (jpeg != null && jpeg.size > ProfilePhoto.MAX_BYTES) return ProfileResult(false, "That photo is still over 2 MB.")
         var warning: String? = null
         var avatar = storedAvatar()
         if (jpeg != null) {
             val uploaded = uploadAvatar(id, jpeg)
-            if (uploaded.error != null) warning = uploaded.error
-            else avatar = uploaded.url
+            if (uploaded.error != null) return ProfileResult(false, uploaded.error)
+            avatar = uploaded.url
         }
-        val data = JSONObject().put("full_name", name)
+        val data = JSONObject().put("full_name", shown)
         if (!avatar.isNullOrBlank()) data.put("avatar_url", avatar)
         val meta = call("PUT", "/auth/v1/user", JSONObject().put("data", data).toString(), accessToken())
         if (meta.code !in 200..299) return ProfileResult(false, failText(meta, "Couldn’t save your profile."))
-        val shown = DailyBoard.displayName(name)
         session.edit()
-            .putString("full_name", name)
+            .putString(GIVEN_NAME, givenName.trim())
+            .putString(FAMILY_NAME, familyName.trim())
+            .putString("full_name", shown)
             .putString("display_name", shown)
             .putString("avatar_url", avatar.orEmpty())
             .apply()
@@ -137,10 +179,7 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
             .put("avatar_url", if (avatar.isNullOrBlank()) JSONObject.NULL else avatar)
             .put("updated_at", ZonedDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME))
         val patched = call("PATCH", "/rest/v1/daily_xp?user_id=eq.$id", row.toString(), accessToken(), "return=minimal")
-        if (patched.code !in 200..299) {
-            val detail = failText(patched, "Couldn’t update the leaderboard row.")
-            warning = listOfNotNull(warning, detail).joinToString(" ")
-        }
+        if (patched.code !in 200..299) warning = failText(patched, "Couldn’t update the leaderboard row.")
         syncProfileGate()
         return ProfileResult(true, warning)
     }
@@ -246,7 +285,7 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
         return answer
     }
 
-    fun startVoice(onUpdate: (String, String) -> Unit = { _, _ -> }): String? {
+    suspend fun startVoice(onUpdate: (String, String) -> Unit = { _, _ -> }, allowRetry: Boolean = true): String? {
         val state = repo.state.value
         if (!state.premiumActive()) {
             if (PaywallGate.shows) repo.requestPaywall()
@@ -262,11 +301,10 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
         val response = call("POST", "/functions/v1/agent-qa", JSONObject().put("type", "voice_secret").toString(), accessToken())
         val payload = response.json
         val code = payload?.optString("error_code").orEmpty()
-        if (code == "paywall_required") {
-            repo.requestPaywall()
-            return FreeTier.voiceMessage
+        if (VoiceSession.isPaywallRequired(code)) {
+            return paywallVoice(state.premiumActive(), onUpdate, allowRetry)
         }
-        if (code == "voice_daily_limit" || code == "voice_monthly_limit" || code == "budget_exhausted" || response.code == 429) {
+        if (VoiceSession.isVoiceLimit(response.code, code)) {
             val message = if (code == "voice_monthly_limit") {
                 "Voice limit reached, resets on ${dayLabel(payload?.optString("budget_resets_at").orEmpty())}"
             } else {
@@ -277,10 +315,10 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
         }
         val token = payload?.optString("token").orEmpty()
         if (response.code !in 200..299 || token.isBlank()) {
-            return VoiceSession.serverMessage(
+            return VoiceSession.spokenFailure(
                 payload?.optString("error") ?: response.error,
-                payload?.optString("message"),
-                "Rot couldn’t start voice just now.",
+                payload?.optString("message") ?: payload?.optString("msg"),
+                "Voice couldn't start. Rot couldn’t start voice just now.",
             )
         }
         val agentId = payload?.optString("agent_id").orEmpty()
@@ -304,21 +342,15 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
         }
         val call = VoiceCall(
             context = app,
-            onStatus = { status ->
-                emit("status", status)
-                if (status != "Listening" && status != "Talking" && status != FreeTier.voiceWrapUp) repo.toast(status)
-            },
-            onEnded = { reason ->
-                if (reason != null) repo.toast(reason)
-                emit("status", "ended")
-            },
+            onStatus = { status -> emit("status", status) },
+            onEnded = { reason -> emit("ended", reason.orEmpty()) },
             onTranscript = { emit("transcript", it) },
         )
         voice = call
         val serverMax = payload?.optDouble("voice_token_seconds")?.takeIf { !it.isNaN() && it > 0 }
             ?: payload?.optDouble("max_session_seconds")?.takeIf { !it.isNaN() && it > 0 }
         val max = VoiceLimits.cappedSeconds(serverMax)
-        call.start(
+        val failed = call.start(
             token = token,
             model = payload?.optString("model").takeUnless { it.isNullOrBlank() } ?: "grok-voice-latest",
             agentId = agentId,
@@ -327,7 +359,37 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
             maxSeconds = max,
             onConnected = { noteVoiceStart() },
         )
+        if (failed != null) {
+            voice = null
+            return failed
+        }
         return null
+    }
+
+    private suspend fun paywallVoice(
+        locallyPremium: Boolean,
+        onUpdate: (String, String) -> Unit,
+        allowRetry: Boolean,
+    ): String? {
+        return when (VoiceSession.paywallAction(locallyPremium, alreadyRetried = !allowRetry)) {
+            VoiceSession.PaywallAction.ShowPaywall -> {
+                repo.requestPaywall()
+                FreeTier.voiceMessage
+            }
+            VoiceSession.PaywallAction.RetryPurchaseSync -> {
+                val uploaded = uploadPlayPurchases()
+                if (uploaded.active) startVoice(onUpdate, allowRetry = false)
+                else VoiceSession.verificationFailure(uploaded.error)
+            }
+            VoiceSession.PaywallAction.ShowVerificationFailure -> VoiceSession.verificationFailure(null)
+        }
+    }
+
+    private suspend fun uploadPlayPurchases(): PlaySyncResult {
+        val sync = playSync ?: return PlaySyncResult(null, "Google Play isn't ready to verify this purchase.")
+        return runCatching { sync() }.getOrElse {
+            PlaySyncResult(null, it.message ?: "Rot couldn't verify the Play purchase.")
+        }
     }
 
     fun stopVoice() {
@@ -643,17 +705,31 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
         val name = googleName(user)
         val avatar = googleAvatar(user)
         val edit = session.edit()
-        if (session.getString("full_name", null).isNullOrBlank() && !name.isNullOrBlank()) {
-            edit.putString("full_name", name.trim())
-            edit.putString("display_name", DailyBoard.displayName(name))
+        if (session.getString("full_name", null).isNullOrBlank() && DailyBoard.isBoardName(name)) {
+            val shown = DailyBoard.displayName(name)
+            edit.putString("full_name", shown)
+            edit.putString("display_name", shown)
         }
         if (storedAvatar() == null && !avatar.isNullOrBlank()) edit.putString("avatar_url", avatar)
         edit.apply()
     }
 
+    private fun rememberChosenName(name: String) {
+        val shown = DailyBoard.displayName(name)
+        if (!DailyBoard.isBoardName(shown)) return
+        val split = DailyBoard.splitName(shown)
+        session.edit()
+            .putString(GIVEN_NAME, split.first)
+            .putString(FAMILY_NAME, split.second)
+            .putString("full_name", shown)
+            .putString("display_name", shown)
+            .apply()
+        userId?.let { flags().edit().putString(PROFILE_DONE, it).apply() }
+        syncProfileGate()
+    }
+
     private fun syncProfileGate() {
-        val id = userId
-        _needsProfile.value = signedIn && !id.isNullOrBlank() && flags().getString(PROFILE_DONE, null) != id
+        _needsProfile.value = signedIn && !hasLocalDisplayName()
     }
 
     private fun uploadAvatar(id: String, jpeg: ByteArray): Upload {
@@ -701,7 +777,7 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
             .put("user_id", id)
             .put("day", day)
             .put("xp", xp)
-            .put("display_name", name)
+            .put("display_name", if (name.equals("You", ignoreCase = true)) DailyBoard.fallbackName else name)
             .put("avatar_url", if (avatar.isNullOrBlank()) JSONObject.NULL else avatar)
             .put("updated_at", ZonedDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME))
 
@@ -782,6 +858,7 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
             .apply()
         rememberIdentity(user)
         syncProfileGate()
+        notifySignedIn()
         val profile = JSONObject().put("user_id", user?.optString("id")).put("timezone", ZoneId.systemDefault().id)
         call(
             "POST",
@@ -811,6 +888,11 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
             .apply()
         rememberIdentity(user)
         syncProfileGate()
+        notifySignedIn()
+    }
+
+    private fun notifySignedIn() {
+        android.os.Handler(android.os.Looper.getMainLooper()).post { onSignedIn?.invoke() }
     }
 
     private fun ensureProfile() {
@@ -1081,8 +1163,11 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
     private fun accessToken(): String = session.getString("access", "").orEmpty()
     private fun expiresAt(): Long = session.getLong("expires", 0L)
 
-    fun syncPlayPurchases(purchases: List<PlayPurchaseUpload>): List<ServerEntitlement>? {
-        if (purchases.isEmpty() || accessToken().isBlank()) return null
+    fun syncPlayPurchases(purchases: List<PlayPurchaseUpload>): PlaySyncResult {
+        if (accessToken().isBlank()) return PlaySyncResult(null, "Sign in with Google so Rot can verify the purchase.")
+        if (purchases.isEmpty()) {
+            return PlaySyncResult(emptyList(), "This Google account has no active RotRun Premium purchase to verify.")
+        }
         val body = JSONArray()
         purchases.take(8).forEach { purchase ->
             body.put(
@@ -1099,9 +1184,11 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
             accessToken(),
             client = playHttp,
         )
-        if (response.code !in 200..299) return null
-        val rows = response.json?.optJSONArray("entitlements") ?: return emptyList()
-        return buildList {
+        if (response.code !in 200..299) {
+            return PlaySyncResult(null, failText(response, "Rot couldn't verify the Play purchase (${response.code})."))
+        }
+        val rows = response.json?.optJSONArray("entitlements") ?: return PlaySyncResult(emptyList(), null)
+        val entitlements = buildList {
             for (index in 0 until rows.length()) {
                 val row = rows.optJSONObject(index) ?: continue
                 val productId = row.optString("product_id")
@@ -1112,6 +1199,7 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
                 add(ServerEntitlement(productId, millis, productId == com.ahmed.rotrun.logic.Products.LIFETIME, active))
             }
         }
+        return PlaySyncResult(entitlements, null)
     }
 
     private fun call(
@@ -1163,16 +1251,7 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
     )
 
     companion object {
-        private fun openSession(context: Context): SharedPreferences {
-            val master = MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build()
-            return EncryptedSharedPreferences.create(
-                context,
-                "rotrun.session",
-                master,
-                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-            )
-        }
+        private fun openSession(context: Context): SharedPreferences = SessionStore.open(context)
 
         private const val XP_FINGER = "xp.finger"
         private const val XP_PENDING = "xp.pending"
@@ -1180,6 +1259,8 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
         private const val BOARD_DAY = "board.day"
         private const val PROFILE_DONE = "profile.done"
         private const val PROFILE_LATER = "profile.later"
+        private const val GIVEN_NAME = "given_name"
+        private const val FAMILY_NAME = "family_name"
 
         private fun randomNonce(): String {
             val alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._"

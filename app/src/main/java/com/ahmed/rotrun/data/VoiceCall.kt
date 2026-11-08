@@ -50,11 +50,16 @@ class VoiceCall(
         instructions: String,
         maxSeconds: Double?,
         onConnected: () -> Unit,
-    ) {
+    ): String? {
         stop()
         val gen = generation.incrementAndGet()
         running.set(true)
-        routeSpeaker(true)
+        val routed = routeSpeaker(true)
+        if (routed != null) {
+            running.set(false)
+            releaseAudio()
+            return routed
+        }
         val request = Request.Builder()
             .url(VoiceSession.realtimeUrl(model, agentId))
             .header("Authorization", "Bearer $token")
@@ -93,7 +98,12 @@ class VoiceCall(
                     releaseAudio()
                     return
                 }
-                ensurePlayer()
+                val playbackError = ensurePlayer()
+                if (playbackError != null) {
+                    if (running.getAndSet(false)) onEnded(playbackError)
+                    releaseAudio()
+                    return
+                }
                 onConnected()
                 armLimit(maxSeconds)
                 onStatus("Listening")
@@ -105,8 +115,11 @@ class VoiceCall(
                 val type = json.optString("type")
                 if (type == "error") {
                     val message = json.optJSONObject("error")?.optString("message").orEmpty()
+                        .ifBlank { json.optString("message") }
                         .ifBlank { "xAI voice returned an error." }
-                    onStatus(message)
+                    if (running.getAndSet(false)) onEnded(message)
+                    releaseAudio()
+                    webSocket.close(1000, "error")
                     return
                 }
                 transcriptOf(json).takeIf { it.isNotBlank() }?.let(onTranscript)
@@ -123,7 +136,10 @@ class VoiceCall(
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 if (generation.get() != gen) return
-                if (running.getAndSet(false)) onEnded(t.message ?: "Voice disconnected")
+                val http = response?.code
+                val detail = t.message?.takeIf { it.isNotBlank() } ?: "Voice disconnected"
+                val message = if (http != null) "$detail ($http)" else detail
+                if (running.getAndSet(false)) onEnded(message)
                 releaseAudio()
             }
 
@@ -133,6 +149,7 @@ class VoiceCall(
                 releaseAudio()
             }
         })
+        return null
     }
 
     fun stop() {
@@ -205,9 +222,10 @@ class VoiceCall(
         return null
     }
 
-    private fun ensurePlayer() {
-        if (playThread != null) return
-        val track = AudioTrack.Builder()
+    private fun ensurePlayer(): String? {
+        if (playThread != null) return null
+        val track = try {
+            AudioTrack.Builder()
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_MEDIA)
@@ -224,8 +242,16 @@ class VoiceCall(
             .setBufferSizeInBytes(16_000 * 2)
             .setTransferMode(AudioTrack.MODE_STREAM)
             .build()
+        } catch (error: Exception) {
+            return "Playback couldn't start. ${error.message ?: "The speaker didn't start."}"
+        }
         player = track
-        track.play()
+        val started = runCatching { track.play() }
+        if (started.isFailure) {
+            track.release()
+            player = null
+            return "Playback couldn't start. ${started.exceptionOrNull()?.message ?: "The speaker didn't start."}"
+        }
         val thread = Thread {
             while (running.get() || playback.isNotEmpty()) {
                 val chunk = playback.poll(200, TimeUnit.MILLISECONDS) ?: continue
@@ -234,6 +260,7 @@ class VoiceCall(
         }
         playThread = thread
         thread.start()
+        return null
     }
 
     private fun transcriptOf(json: JSONObject): String {
@@ -247,22 +274,28 @@ class VoiceCall(
         return ""
     }
 
-    private fun routeSpeaker(on: Boolean) {
-        val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        if (on) {
-            if (!routed) {
-                previousMode = audio.mode
-                previousSpeaker = audio.isSpeakerphoneOn
-                routed = true
+    private fun routeSpeaker(on: Boolean): String? {
+        val audio = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+            ?: return "The microphone session couldn't start."
+        return try {
+            if (on) {
+                if (!routed) {
+                    previousMode = audio.mode
+                    previousSpeaker = audio.isSpeakerphoneOn
+                    routed = true
+                }
+                audio.mode = AudioManager.MODE_IN_COMMUNICATION
+                @Suppress("DEPRECATION")
+                audio.isSpeakerphoneOn = true
+            } else if (routed) {
+                @Suppress("DEPRECATION")
+                audio.isSpeakerphoneOn = previousSpeaker
+                audio.mode = previousMode
+                routed = false
             }
-            audio.mode = AudioManager.MODE_IN_COMMUNICATION
-            @Suppress("DEPRECATION")
-            audio.isSpeakerphoneOn = true
-        } else if (routed) {
-            @Suppress("DEPRECATION")
-            audio.isSpeakerphoneOn = previousSpeaker
-            audio.mode = previousMode
-            routed = false
+            null
+        } catch (error: Exception) {
+            "The microphone session couldn't start. ${error.message ?: "Audio routing failed."}"
         }
     }
 

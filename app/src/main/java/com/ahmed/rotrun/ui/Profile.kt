@@ -50,39 +50,66 @@ import okhttp3.Request
 private val photoClient = OkHttpClient()
 
 @Composable
-fun ProfileSetup(repo: RotRunRepository) {
-    Column(Modifier.fillMaxSize().background(rot().page).statusBarsPadding().padding(24.dp)) {
-        Text("Your leaderboard name", color = rot().ink, fontFamily = Nunito, fontWeight = FontWeight.Bold, fontSize = 28.sp)
-        Text(
-            "This name and photo show on Daily XP. A photo is optional.",
-            color = rot().muted,
-            modifier = Modifier.padding(top = 8.dp, bottom = 20.dp),
-        )
-        ProfileEditor(repo, blocking = true)
+fun ProfilePrompt(repo: RotRunRepository, editing: Boolean, onDismiss: () -> Unit) {
+    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)).clickable(onClick = onDismiss), contentAlignment = Alignment.Center) {
+        Column(
+            Modifier.padding(24.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(24.dp)).background(rot().page).clickable(enabled = false) {}.padding(20.dp),
+        ) {
+            Text(
+                if (editing) "Edit your name" else "Your name on the board",
+                color = rot().ink,
+                fontFamily = Nunito,
+                fontWeight = FontWeight.Bold,
+                fontSize = 24.sp,
+            )
+            Text(
+                "Shown as your first name and last initial, like Ahmed J. Change it in Settings or by tapping your own leaderboard row. A photo is optional.",
+                color = rot().muted,
+                modifier = Modifier.padding(top = 8.dp, bottom = 16.dp),
+            )
+            ProfileEditor(repo, prompt = !editing, onFinished = onDismiss)
+            Text("Not now", color = rot().muted, modifier = Modifier.padding(top = 8.dp).clickable(onClick = onDismiss))
+        }
     }
 }
 
 @Composable
-fun ProfileEditor(repo: RotRunRepository, blocking: Boolean) {
+fun ProfileEditor(repo: RotRunRepository, prompt: Boolean, onFinished: () -> Unit = {}) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val draft = remember { repo.backend.profileDraft() }
-    var name by remember { mutableStateOf(draft.fullName) }
+    var given by remember { mutableStateOf(draft.givenName) }
+    var family by remember { mutableStateOf(draft.familyName) }
     var remoteUrl by remember { mutableStateOf(draft.avatarUrl) }
     var jpeg by remember { mutableStateOf<ByteArray?>(null) }
     var preview by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var saving by remember { mutableStateOf(false) }
+    val shown = DailyBoard.boardName(given, family)
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
             val bytes = withContext(Dispatchers.IO) { ProfilePhoto.jpeg(context.contentResolver, uri) }
             if (bytes == null) {
-                error = "Couldn’t read that photo."
+                error = "That photo couldn’t be read, or it is still over 2 MB."
             } else {
                 jpeg = bytes
                 preview = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
                 error = null
+            }
+        }
+    }
+    fun save(photo: ByteArray?) {
+        if (saving || shown == null) return
+        saving = true
+        error = null
+        scope.launch {
+            val result = withContext(Dispatchers.IO) { repo.backend.saveProfile(given, family, photo) }
+            saving = false
+            if (!result.saved) error = result.message
+            else {
+                result.message?.let { repo.toast(it) }
+                onFinished()
             }
         }
     }
@@ -95,40 +122,40 @@ fun ProfileEditor(repo: RotRunRepository, blocking: Boolean) {
         ) {
             when {
                 preview != null -> Image(preview!!.asImageBitmap(), contentDescription = "Profile photo", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                !remoteUrl.isNullOrBlank() -> PlayerAvatar(name.ifBlank { DailyBoard.fallbackName }, remoteUrl, 96.dp)
-                else -> Text(letter(name), color = rot().ink, fontWeight = FontWeight.Bold, fontSize = 28.sp)
+                !remoteUrl.isNullOrBlank() -> PlayerAvatar(shown ?: DailyBoard.fallbackName, remoteUrl, 96.dp)
+                else -> Text(letter(given), color = rot().ink, fontWeight = FontWeight.Bold, fontSize = 28.sp)
             }
         }
         Text("Photo is optional", color = rot().muted, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp, bottom = 16.dp))
-        BasicTextField(
-            value = name,
-            onValueChange = { if (it.length <= 40) name = it },
-            textStyle = TextStyle(color = rot().ink, fontFamily = Nunito, fontSize = 18.sp),
-            modifier = Modifier.fillMaxWidth().clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp)).background(rot().card).padding(16.dp),
-            decorationBox = { inner ->
-                if (name.isBlank()) Text("Your name", color = rot().muted)
-                inner()
-            },
-        )
-        error?.let { Text(it, color = rot().danger, modifier = Modifier.padding(top = 8.dp)) }
-        PrimaryButton(if (saving) "Saving…" else "Save", enabled = !saving) {
-            if (saving) return@PrimaryButton
-            saving = true
-            error = null
-            scope.launch {
-                val result = withContext(Dispatchers.IO) { repo.backend.saveProfile(name, jpeg) }
-                saving = false
-                if (!result.saved) error = result.message
-                else result.message?.let { repo.toast(it) }
-            }
+        NameField(given, "First name") { if (it.length <= 40) given = it }
+        NameField(family, "Last name") { if (it.length <= 40) family = it }
+        shown?.let { Text("On the board: $it", color = rot().muted, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp)) }
+        error?.let { Text(it, color = rot().danger, modifier = Modifier.padding(top = 8.dp), textAlign = TextAlign.Center) }
+        PrimaryButton(if (saving) "Saving…" else "Save", enabled = !saving && shown != null) { save(jpeg) }
+        if (prompt) {
+            Text("Skip photo", color = rot().blue, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp).clickable { save(null) })
         }
-        if (!blocking && !repo.backend.signedIn) {
+        if (!prompt && !repo.backend.signedIn) {
             Text("Sign in with Google", color = rot().blue, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp).clickable {
                 val activity = context as? Activity ?: return@clickable
                 repo.backend.signIn(activity) { message -> message?.let { repo.toast(it) } }
             })
         }
     }
+}
+
+@Composable
+private fun NameField(value: String, hint: String, onChange: (String) -> Unit) {
+    BasicTextField(
+        value = value,
+        onValueChange = onChange,
+        textStyle = TextStyle(color = rot().ink, fontFamily = Nunito, fontSize = 18.sp),
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp)).background(rot().card).padding(16.dp),
+        decorationBox = { inner ->
+            if (value.isBlank()) Text(hint, color = rot().muted)
+            inner()
+        },
+    )
 }
 
 @Composable
