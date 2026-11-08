@@ -202,8 +202,13 @@ private fun MainShell(repo: RotRunRepository, onOpenBoard: () -> Unit, onEditYou
     }
     val scene = com.ahmed.rotrun.logic.RewardSceneTint.resolve(state.theme)
     val scenicHome = tab == Tab.Home && !scene.system
-    val canvas = if (scenicHome) Color(scene.canvas) else rot().page
+    val canvas = when {
+        tab != Tab.Home -> rot().page
+        scene.system -> if (rot().dark) Color.Black else Color.White
+        else -> Color(scene.canvas)
+    }
     val barColor = if (scenicHome) Color(scene.tabBar) else rot().tab
+    val contentInk = if (scenicHome) Color(com.ahmed.rotrun.logic.RewardSceneTint.label(scene.lightInk)) else rot().ink
     val tabClearance = 148.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val homeScroll = rememberScrollState()
     val blockScroll = rememberScrollState()
@@ -216,7 +221,7 @@ private fun MainShell(repo: RotRunRepository, onOpenBoard: () -> Unit, onEditYou
         Tab.Settings -> settingsScroll
     }
     Box(Modifier.fillMaxSize().background(canvas)) {
-        CompositionLocalProvider(LocalContentColor provides if (scenicHome) Color.White else rot().ink) {
+        CompositionLocalProvider(LocalContentColor provides contentInk) {
         Column(Modifier.fillMaxSize().statusBarsPadding().verticalScroll(scroll).padding(bottom = tabClearance)) {
             when (tab) {
                 Tab.Home -> HomeScreen(state, usage, refreshing, repo::refreshUsage, { talk = true }) {

@@ -153,7 +153,7 @@ object AskBrainLaunch {
         val text = if (label.isBlank()) "Ask my brain" else "Ask my brain · $label"
         val notification = NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_rot)
-            .setContentTitle("Your Brain")
+            .setContentTitle("RotRun")
             .setContentText(text)
             .setContentIntent(tap)
             .setCategory(NotificationCompat.CATEGORY_ALARM)

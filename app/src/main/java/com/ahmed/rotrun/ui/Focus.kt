@@ -120,13 +120,13 @@ fun FocusChooser(onClose: () -> Unit, repo: RotRunRepository) {
                         }
                     }
                 }
-                FocusSetting("Apps to block", if (scope == "all") "All Apps" else "Brainrot Apps", legendary = false, icon = {
+                FocusSetting("Apps to block", if (scope == "all") "All Apps" else "RotRun Apps", legendary = false, icon = {
                     Icon(Icons.Default.PhoneAndroid, contentDescription = null, tint = Color(red = 0.45f, green = 0.40f, blue = 0.92f), modifier = Modifier.size(18.dp))
                 }) {
                     Box {
                         Chevron { appsOpen = true }
                         DropdownMenu(expanded = appsOpen, onDismissRequest = { appsOpen = false }) {
-                            listOf("all" to "All Apps", "brainrot" to "Brainrot Apps").forEach { (id, label) ->
+                            listOf("all" to "All Apps", "brainrot" to "RotRun Apps").forEach { (id, label) ->
                                 DropdownMenuItem(text = { Text(label, fontFamily = Nunito) }, onClick = { scope = id; appsOpen = false })
                             }
                         }

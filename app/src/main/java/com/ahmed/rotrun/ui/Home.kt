@@ -223,7 +223,7 @@ private fun HomeHeader(streak: Int, refreshing: Boolean, scenic: Boolean, on: Co
             Row(headerMod, verticalAlignment = Alignment.CenterVertically) {
                 RefreshOrb(refreshing, scenic, on, onRefresh)
                 Text(
-                    "BRAINROT",
+                    "RotRun",
                     color = on,
                     fontWeight = FontWeight.Black,
                     fontSize = 20.sp,
@@ -237,7 +237,7 @@ private fun HomeHeader(streak: Int, refreshing: Boolean, scenic: Boolean, on: Co
             }
         } else {
             Box(headerMod, contentAlignment = Alignment.Center) {
-                Text("BRAINROT", color = on, fontWeight = FontWeight.Black, fontSize = 28.sp, letterSpacing = 0.6.sp, maxLines = 1)
+                Text("RotRun", color = on, fontWeight = FontWeight.Black, fontSize = 28.sp, letterSpacing = 0.6.sp, maxLines = 1)
                 Box(Modifier.align(Alignment.CenterStart)) { RefreshOrb(refreshing, scenic, on, onRefresh) }
                 Box(Modifier.align(Alignment.CenterEnd)) { StreakTalk(streak, on, onTalk) }
             }
@@ -467,20 +467,20 @@ private fun scenePaint(scene: RewardSceneTint.Palette, chrome: RotChrome): Scene
             hairline = chrome.line,
         )
     }
-    val onCanvas = Color(RewardSceneTint.ink(scene.canvas, scene.lightInk))
-    val onCard = Color(RewardSceneTint.ink(scene.cardTop, scene.lightInk))
+    val ink = Color(RewardSceneTint.label(scene.lightInk))
+    val percent = Color(RewardSceneTint.label(scene.lightPercent))
     return ScenePaint(
-        header = Color(RewardSceneTint.ink(scene.sky, preferLight = true)),
-        ink = onCanvas,
-        soft = onCanvas.copy(alpha = 0.82f),
-        percent = Color(RewardSceneTint.ink(scene.canvas, scene.lightPercent)),
-        track = onCanvas.copy(alpha = 0.22f),
-        meter = onCanvas,
+        header = ink,
+        ink = ink,
+        soft = ink.copy(alpha = 0.82f),
+        percent = percent,
+        track = percent.copy(alpha = 0.22f),
+        meter = percent,
         cardTop = Color(scene.cardTop),
         cardBottom = Color(scene.cardBottom),
         cardLip = Color(scene.cardLip),
-        onCard = onCard,
-        onCardSoft = onCard.copy(alpha = 0.82f),
-        hairline = onCard.copy(alpha = 0.15f),
+        onCard = ink,
+        onCardSoft = ink.copy(alpha = 0.9f),
+        hairline = ink.copy(alpha = if (scene.lightInk) 0.22f else 0.16f),
     )
 }

@@ -415,7 +415,7 @@ class RotRunRepository(context: Context) {
         )
         update { it.copy(focus = session) }
         val target = if (legendary || targetMinutes == null) "As long as you can!" else "${targetMinutes}m"
-        val apps = if (scopeName == "brainrot") "Brainrot Apps" else "All Apps"
+        val apps = if (scopeName == "brainrot") "RotRun Apps" else "All Apps"
         val legend = if (legendary) " · Legendary" else ""
         toast("Focus started · $target · $apps$legend")
     }

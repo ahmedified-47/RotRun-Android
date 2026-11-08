@@ -233,19 +233,19 @@ private fun WorldPhoneScreen(look: HomeLook, usage: UsageSnapshot, state: SavedS
     val pickups = if (usage.pickups > 0) usage.pickups.toString() else "—"
     val focus = Scoring.formatDuration(state.focusMinutesToday() * 60L)
     val offenders = usage.offenders.filter { it.seconds > 0 }.take(2)
-    val header = if (scene.system) Ink else Color(RewardSceneTint.ink(scene.sky, preferLight = true))
-    val percent = if (scene.system) Ink else Color(RewardSceneTint.ink(scene.sky, scene.lightPercent))
-    val onCard = if (scene.system) Ink else Color(RewardSceneTint.ink(scene.cardTop, scene.lightInk))
-    val onList = if (scene.system) Ink else Color(RewardSceneTint.ink(scene.cardBottom, scene.lightInk))
+    val header = if (scene.system) Ink else Color(RewardSceneTint.label(scene.lightInk))
+    val percent = if (scene.system) Ink else Color(RewardSceneTint.label(scene.lightPercent))
+    val onCard = if (scene.system) Ink else Color(RewardSceneTint.label(scene.lightInk))
     Box(Modifier.fillMaxSize()) {
         if (scene.system) {
-            Box(Modifier.fillMaxSize().background(Color(0xFFF2F2F7)))
+            Box(Modifier.fillMaxSize().background(Color.White))
         } else {
+            Box(Modifier.fillMaxSize().background(Color(scene.canvas)))
             HeroBackdrop(look.id, Modifier.fillMaxSize())
         }
         Column(Modifier.fillMaxSize().padding(top = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("BRAINROT", color = header, fontSize = 16.sp, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
+                Text("RotRun", color = header, fontSize = 16.sp, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
                 Box(Modifier.size(24.dp).clip(CircleShape).background(Color.White), contentAlignment = Alignment.Center) {
                     Icon(Icons.Default.LocalFireDepartment, contentDescription = null, tint = Color(0xFFFF8C29), modifier = Modifier.size(14.dp))
                 }
@@ -275,20 +275,20 @@ private fun WorldPhoneScreen(look: HomeLook, usage: UsageSnapshot, state: SavedS
                     Modifier.padding(horizontal = 10.dp, vertical = 8.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color(scene.cardBottom)).padding(10.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    Text("Top Offenders", color = onList, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("Top Offenders", color = onCard, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     offenders.forEach { app ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             OffenderMark(app.label, app.packageName)
                             Text(
                                 app.label,
-                                color = onList,
+                                color = onCard,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
                             )
-                            Text(Scoring.formatDuration(app.seconds), color = onList.copy(alpha = 0.9f), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text(Scoring.formatDuration(app.seconds), color = onCard.copy(alpha = 0.9f), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }

@@ -1,10 +1,9 @@
 package com.ahmed.rotrun.logic
 
 /**
- * Screen colours under a reward scene. Surface hexes start from iOS
- * `RewardSceneTint` at 3cb279e9. Cosmic is pushed toward blue so it does not
- * sit on Twilight, and two card bottoms are lightened just enough for black
- * text to stay WCAG AA on both ends of the gradient.
+ * Home colours under a reward scene. Hexes are iOS `RewardSceneTint` at
+ * 691880d, converted from unit RGB with half-up rounding.
+ * Unknown saved themes fall back to Grassy, same as iOS `resolve`.
  */
 object RewardSceneTint {
     data class Palette(
@@ -15,7 +14,6 @@ object RewardSceneTint {
         val cardBottom: Long,
         val cardLip: Long,
         val tabBar: Long,
-        val sky: Long,
         val lightInk: Boolean,
         val lightPercent: Boolean,
     )
@@ -30,73 +28,71 @@ object RewardSceneTint {
         cardBottom = 0xFFFFFFFF,
         cardLip = 0xFFB3B3B3,
         tabBar = 0xFFFFFFFF,
-        sky = 0xFFF2F2F7,
         lightInk = false,
         lightPercent = false,
     )
 
+    /** Meadow `#3DB370`. Cards and the tab are the darkened green. */
     val grassy = Palette(
         name = "Grassy",
         system = false,
         canvas = 0xFF3DB370,
-        cardTop = 0xFF4DA86B,
-        cardBottom = 0xFF2C8454,
-        cardLip = 0xFF124729,
-        tabBar = 0xFF24754D,
-        sky = 0xFF8CD1ED,
-        lightInk = true,
-        lightPercent = false,
-    )
-
-    val sunrise = Palette(
-        name = "Sunrise",
-        system = false,
-        canvas = 0xFF579E5C,
-        cardTop = 0xFFDB7538,
-        cardBottom = 0xFFB45C28,
-        cardLip = 0xFF5C290F,
-        tabBar = 0xFF7A381A,
-        sky = 0xFFFFC76B,
-        lightInk = true,
-        lightPercent = false,
-    )
-
-    val zen = Palette(
-        name = "Zen",
-        system = false,
-        canvas = 0xFF5C9E8A,
-        cardTop = 0xFF3D8075,
-        cardBottom = 0xFF295C57,
-        cardLip = 0xFF143833,
-        tabBar = 0xFF1F524D,
-        sky = 0xFFBDE0DB,
-        lightInk = true,
-        lightPercent = false,
-    )
-
-    val twilight = Palette(
-        name = "Twilight",
-        system = false,
-        canvas = 0xFF47336B,
-        cardTop = 0xFF6B4DA3,
-        cardBottom = 0xFF3D2966,
-        cardLip = 0xFF1F1438,
-        tabBar = 0xFF291A47,
-        sky = 0xFF8C61C7,
+        cardTop = 0xFF0E5A28,
+        cardBottom = 0xFF0A3E1C,
+        cardLip = 0xFF062814,
+        tabBar = 0xFF0A3E1C,
         lightInk = true,
         lightPercent = true,
     )
 
-    /** Bluer than the 3cb279e9 night sky, which was only a few degrees from Twilight. */
+    /** Sunrise sky `#FFC76B`. Page and cards stay gold; the tab is the deep ember. */
+    val sunrise = Palette(
+        name = "Sunrise",
+        system = false,
+        canvas = 0xFFFFC76B,
+        cardTop = 0xFFFFD18A,
+        cardBottom = 0xFFF0B15A,
+        cardLip = 0xFFC4842E,
+        tabBar = 0xFF7A2808,
+        lightInk = false,
+        lightPercent = false,
+    )
+
+    /** Spa water `#0E6E78`, not the mint hill. */
+    val zen = Palette(
+        name = "Zen",
+        system = false,
+        canvas = 0xFF0E6E78,
+        cardTop = 0xFF0C5560,
+        cardBottom = 0xFF083E46,
+        cardLip = 0xFF062E34,
+        tabBar = 0xFF08343C,
+        lightInk = true,
+        lightPercent = true,
+    )
+
+    /** Orchid `#F0B4F4`. The tab keeps the deep magenta. */
+    val twilight = Palette(
+        name = "Twilight",
+        system = false,
+        canvas = 0xFFF0B4F4,
+        cardTop = 0xFFF6D0F8,
+        cardBottom = 0xFFE7A0EE,
+        cardLip = 0xFFC46CD0,
+        tabBar = 0xFF6A1878,
+        lightInk = false,
+        lightPercent = false,
+    )
+
+    /** Night sky shifted blue (`#070B24`). */
     val cosmic = Palette(
         name = "Cosmic",
         system = false,
-        canvas = 0xFF102848,
-        cardTop = 0xFF1A4478,
-        cardBottom = 0xFF0E2C52,
-        cardLip = 0xFF08162C,
-        tabBar = 0xFF0A1C36,
-        sky = 0xFF1A4478,
+        canvas = 0xFF070B24,
+        cardTop = 0xFF1A2A72,
+        cardBottom = 0xFF101848,
+        cardLip = 0xFF0A102E,
+        tabBar = 0xFF050814,
         lightInk = true,
         lightPercent = true,
     )
@@ -108,43 +104,16 @@ object RewardSceneTint {
     fun explicit(raw: String?): Boolean = raw != null && raw in byName
 
     const val WHITE = 0xFFFFFFFF
-    const val BLACK = 0xFF000000L
+    /** iOS `RewardSceneTint.darkInk` (0.06, 0.07, 0.09). Fixed so Dark Mode cannot flip it. */
+    const val DARK_INK = 0xFF0F1217
+
+    /** White when [light] is set, otherwise the fixed dark ink. No contrast swap. */
+    fun label(light: Boolean): Long = if (light) WHITE else DARK_INK
 
     fun contrast(foreground: Long, background: Long): Double {
         val lighter = maxOf(luminance(foreground), luminance(background))
         val darker = minOf(luminance(foreground), luminance(background))
         return (lighter + 0.05) / (darker + 0.05)
-    }
-
-    /** Prefer the scene's ink, and switch when that colour misses WCAG AA on this surface. */
-    fun ink(background: Long, preferLight: Boolean): Long {
-        val preferred = if (preferLight) WHITE else BLACK
-        val other = if (preferLight) BLACK else WHITE
-        val preferredContrast = contrast(preferred, background)
-        if (preferredContrast >= 4.5) return preferred
-        return if (contrast(other, background) >= preferredContrast) other else preferred
-    }
-
-    fun hueDegrees(packed: Long): Double {
-        val r = channel(packed, 16) / 255.0
-        val g = channel(packed, 8) / 255.0
-        val b = channel(packed, 0) / 255.0
-        val max = maxOf(r, g, b)
-        val min = minOf(r, g, b)
-        val delta = max - min
-        if (delta == 0.0) return 0.0
-        val hue = when (max) {
-            r -> ((g - b) / delta) % 6.0
-            g -> ((b - r) / delta) + 2.0
-            else -> ((r - g) / delta) + 4.0
-        }
-        val degrees = hue * 60.0
-        return if (degrees < 0) degrees + 360.0 else degrees
-    }
-
-    fun hueDistance(first: Long, second: Long): Double {
-        val delta = kotlin.math.abs(hueDegrees(first) - hueDegrees(second))
-        return minOf(delta, 360.0 - delta)
     }
 
     private fun luminance(packed: Long): Double {

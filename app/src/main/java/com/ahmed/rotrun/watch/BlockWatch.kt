@@ -189,7 +189,7 @@ class BlockWatchService : Service() {
         ensureChannel()
         return NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_rot)
-            .setContentTitle("Your Brain")
+            .setContentTitle("RotRun")
             .setContentText(text)
             .setContentIntent(tap)
             .setOngoing(tap == null)
@@ -204,7 +204,7 @@ class BlockWatchService : Service() {
         }
         return NotificationCompat.Builder(this, ALERT_CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_rot)
-            .setContentTitle("Your Brain")
+            .setContentTitle("RotRun")
             .setContentText(text)
             .setContentIntent(tap)
             .setFullScreenIntent(tap, true)

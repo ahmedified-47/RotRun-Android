@@ -614,7 +614,7 @@ private fun WidgetPage(onBack: () -> Unit) {
     BackHeader("Home Screen Widget", onBack)
     Text("Brain Health on your home screen, and a Focus widget that starts a session.", color = Melt.Muted, modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp))
     Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Color(0xFF24754D)).padding(16.dp)) {
-        Text("ROTRUN", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+        Text("RotRun", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
         Text("Brain Health", color = Color.White.copy(alpha = 0.85f), fontSize = 13.sp)
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
