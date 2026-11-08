@@ -127,7 +127,7 @@ fun HomeScreen(state: SavedState, usage: UsageSnapshot, refreshing: Boolean, onR
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             MetricCard("Screen Time", Scoring.visibleDuration(if (usage.authorized) usage.todaySeconds else 0L), MetricKind.Screen, Modifier.weight(1f))
             MetricCard("Pickups", if (usage.authorized) Scoring.visibleCount(usage.pickups) else "Not in yet", MetricKind.Pickups, Modifier.weight(1f))
-            MetricCard("Focus Time", Scoring.visibleDuration(state.focusMinutesToday() * 60L), MetricKind.Focus, Modifier.weight(1f))
+            MetricCard("Focus Time", Scoring.formatDuration(focusShownSeconds(state)), MetricKind.Focus, Modifier.weight(1f))
         }
         Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             SectionTitle("Top Offenders", scenic)
@@ -289,6 +289,14 @@ private fun StreakTalk(streak: Int, on: Color, onTalk: () -> Unit) {
     }
 }
 
+private fun focusShownSeconds(state: SavedState): Long {
+    val saved = state.focusMinutesToday() * 60L
+    val session = state.focus ?: return saved
+    val elapsed = ((System.currentTimeMillis() - session.startedAt) / 1000L).coerceAtLeast(0L)
+    val cap = session.targetMinutes?.times(60L)
+    return saved + if (cap == null) elapsed else minOf(elapsed, cap)
+}
+
 private enum class MetricKind { Screen, Pickups, Focus }
 
 @Composable
@@ -305,7 +313,16 @@ private fun MetricCard(title: String, value: String, kind: MetricKind, modifier:
                     }
                 }
             }
-            Text(value, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 22.sp, maxLines = 1)
+            Text(
+                value,
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+                fontSize = if (value.length > 6) 16.sp else 22.sp,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+            )
             Text(title, color = Color.White.copy(alpha = 0.9f), fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 1)
         }
     }

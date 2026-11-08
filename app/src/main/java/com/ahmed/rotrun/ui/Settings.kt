@@ -9,6 +9,7 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
@@ -26,19 +27,24 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.CardGiftcard
-import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.automirrored.filled.Help
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Diamond
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.GridView
-import androidx.compose.material.icons.filled.Help
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Paid
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.QuestionMark
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Switch
@@ -56,6 +62,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -111,7 +118,7 @@ fun SettingsScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunR
         "profile" -> ProfilePage(repo) { page = "root" }
         "subscription" -> PremiumManage(state, repo, onBack = { page = "support" }, onChangePlan = { page = "plans" })
         "plans" -> Column(Modifier.padding(bottom = 12.dp)) {
-            BackHeader("RotRun Premium") { page = "subscription" }
+            BackHeader("RotRun Premium", { page = "subscription" })
             GetAccessPaywall(
                 state, showClose = false, onClose = {},
                 onPurchase = repo::purchase, onRestore = repo::restore, onRetry = repo::refreshBilling,
@@ -177,31 +184,33 @@ private fun RootSettings(
     val scope = rememberCoroutineScope()
     var confirmDelete by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
-    Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(
-            Modifier.size(84.dp).clip(CircleShape).background(Brush.verticalGradient(listOf(Color(0xFF7DDE9A), Color(0xFF3CB371)))),
-            contentAlignment = Alignment.Center,
-        ) { CartoonBrain(BrainStyle.Meadow, Modifier.size(72.dp), animated = false) }
-        Text("Settings", color = chrome.ink, fontSize = 34.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 8.dp))
-        CardGroup {
-            RowLink("Profile", icon = Icons.Default.Person, tint = chrome.blue) { open("profile") }
+    Column(
+        Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(22.dp),
+    ) {
+        SettingsHeader(state.theme)
+        SettingsGroup {
+            RowLink("Brain Health", state.brainHealth, Icons.Default.Favorite, Color(0xFFFF3B30)) { open("brain") }
+            Hairline()
+            RowLink("Excluded Apps", icon = Icons.Default.Diamond, tint = Color(0xFF59B8F2)) { open("excluded") }
         }
-        if (!access.usage) {
-            CardGroup {
-                Column(Modifier.fillMaxWidth().clickable(onClick = onUsage).padding(16.dp)) {
-                    Text("Usage access is off", color = chrome.danger, fontWeight = FontWeight.Bold, fontSize = 17.sp)
-                    Text(
-                        "Brain Health and Screen Time stay blank until you connect usage. Tap to open Settings.",
-                        color = chrome.muted,
-                        fontSize = 14.sp,
-                        modifier = Modifier.padding(top = 4.dp),
-                    )
-                }
-            }
+        SettingsGroup {
+            RowLink("Intervention Style", icon = Icons.AutoMirrored.Filled.Chat, tint = Color(0xFF598CF2)) { open("styles") }
+            Hairline()
+            RowLink("Rewards", icon = Icons.Default.CardGiftcard, tint = Color(0xFFF28C33)) { open("rewards") }
+            Hairline()
+            RowLink("App Icon", icon = Icons.Default.Apps, tint = Color(0xFF738CF2)) { open("icon") }
         }
-        CardGroup {
+        SettingsGroup {
+            RowLink("Support & Feedback", icon = Icons.AutoMirrored.Filled.Help, tint = Color(0xFFF25973)) { open("support") }
+            Hairline()
+            RowLink("Home Screen Widget", icon = Icons.Default.GridView, tint = Color(0xFF598CF2)) { open("widget") }
+        }
+        PermissionColumn(access, onUsage, onAccessibility, onNotifications, onOverlay, onBattery)
+        SettingsGroup {
             Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-                Text("Upgrade reminders", color = chrome.ink, fontWeight = FontWeight.Bold)
+                Text("Upgrade reminders", color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         "One local note a day from Rot about RotRun Premium. Off until you turn this on. RotRun will not ask for notification permission just to send these.",
@@ -216,53 +225,18 @@ private fun RootSettings(
                 }
             }
         }
-        CardGroup {
-            RowLink("Brain Health", state.brainHealth, Icons.Default.Favorite, Color(0xFFFF3B30)) { open("brain") }
+        SettingsGroup {
+            RowLink("Profile", icon = Icons.Default.Person, tint = chrome.blue) { open("profile") }
             Hairline()
-            RowLink("Excluded Apps", icon = Icons.Default.Diamond, tint = Color(0xFF5AC8FA)) { open("excluded") }
+            RowLink("Rot's memory", icon = Icons.Default.Refresh, tint = chrome.blue) { open("memory") }
         }
-        CardGroup {
-            RowLink("Intervention Style", icon = Icons.Default.Chat, tint = Color(0xFF64B5F6)) { open("styles") }
-            Hairline()
-            RowLink("Rewards", icon = Icons.Default.CardGiftcard, tint = Color(0xFFFF9F0A)) { open("rewards") }
-            Hairline()
-            RowLink("App Icon", icon = Icons.Default.GridView, tint = Color(0xFF5E5CE6)) { open("icon") }
-        }
-        Text("Subscription", color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 20.sp, modifier = Modifier.padding(top = 8.dp).fillMaxWidth())
-        SubscriptionSection(state, repo, onChangePlan = { open("plans") })
-        CardGroup {
-            RowLink("Support & Feedback", icon = Icons.Default.QuestionMark, tint = Color(0xFFFF375F)) { open("support") }
-            Hairline()
-            RowLink("Home Screen Widget", icon = Icons.Default.GridView, tint = Color(0xFF0A84FF)) { open("widget") }
-        }
-        Text("Permissions", color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 20.sp, modifier = Modifier.padding(top = 18.dp).fillMaxWidth())
-        Text("Request usage and blocking access", color = chrome.muted, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 4.dp, bottom = 8.dp).fillMaxWidth())
-        CardGroup {
-            PermissionRow("Usage Access", "Today’s screen time, pickups, and top apps.", access.usage, onUsage)
-            Hairline()
-            PermissionRow("Accessibility", stringResource(R.string.accessibility_disclosure), access.accessibility, onAccessibility)
-            Hairline()
-            PermissionRow("Notifications", "Rot’s notes, focus timer, and Ask my brain.", access.notifications, onNotifications)
-            if (!access.accessibility) {
-                Hairline()
-                PermissionRow("Display over other apps", "Fallback shield when Accessibility is off.", access.overlay, onOverlay)
-            }
-            Hairline()
-            PermissionRow("Battery", "Keep blocking after a restart and when RotRun is swiped away.", access.batteryUnrestricted, onBattery)
-        }
-        Text(
-            "Rot's memory",
-            color = chrome.blue,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(top = 14.dp).clickable { open("memory") },
-        )
         if (repo.backend.signedIn) {
-            CardGroup {
+            SettingsGroup {
                 Text(
                     "Delete account",
                     color = Color(0xFFFF3B30),
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
                     modifier = Modifier.fillMaxWidth().clickable(enabled = !deleting) { confirmDelete = true }.padding(horizontal = 16.dp, vertical = 14.dp),
                 )
             }
@@ -299,13 +273,62 @@ private fun RootSettings(
                 )
             }
         }
-        Text(
-            "Sync Screen Time now",
-            color = chrome.blue,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(top = 8.dp).clickable { repo.refreshUsage() },
-        )
     }
+}
+
+@Composable
+private fun SettingsHeader(theme: String) {
+    val chrome = rot()
+    val look = Looks.byId(theme)
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(top = 8.dp)) {
+        Box(
+            Modifier
+                .size(92.dp)
+                .shadow(8.dp, CircleShape, ambientColor = Color.Black.copy(alpha = 0.08f), spotColor = Color.Black.copy(alpha = 0.08f))
+                .clip(CircleShape)
+                .background(Brush.verticalGradient(themePreview(theme, chrome)))
+                .border(4.dp, chrome.page, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) { CartoonBrain(look.brain, Modifier.size(78.dp), animated = false) }
+        Text("Settings", color = chrome.ink, fontSize = 34.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp))
+    }
+}
+
+/** Same stops as iOS AppThemeOption.previewGradient. */
+private fun themePreview(theme: String, chrome: RotChrome): List<Color> = when (theme) {
+    "Default" -> listOf(chrome.inset, chrome.card)
+    "Sunrise" -> listOf(Color(0xFFFFB861), Color(0xFFFA6B47))
+    "Zen" -> listOf(Color(0xFFB8E0DB), Color(0xFF6BAD94))
+    "Twilight" -> listOf(Color(0xFF9E7AE0), Color(0xFF472E7A))
+    "Cosmic" -> listOf(Color(0xFF382E85), Color(0xFF0F1438))
+    else -> listOf(Color(0xFF8CD1ED), Color(0xFF3DB370))
+}
+
+@Composable
+private fun PermissionColumn(
+    access: com.ahmed.rotrun.data.DeviceAccess,
+    onUsage: () -> Unit,
+    onAccessibility: () -> Unit,
+    onNotifications: () -> Unit,
+    onOverlay: () -> Unit,
+    onBattery: () -> Unit,
+) {
+    SettingsGroup {
+        PermissionRow("Usage Access", "Which app is open, today’s time, and daily limits.", access.usage, onUsage)
+        PermissionRule()
+        PermissionRow("Accessibility", "Shows the Rot shield over apps you chose. RotRun does not read what you type.", access.accessibility, onAccessibility)
+        PermissionRule()
+        PermissionRow("Notifications", "The shield can still open if the overlay is off.", access.notifications, onNotifications)
+        PermissionRule()
+        PermissionRow("Display over other apps", "Fallback shield when Accessibility is off.", access.overlay, onOverlay)
+        PermissionRule()
+        PermissionRow("Battery", "Keep blocking after a restart and when RotRun is swiped away.", access.batteryUnrestricted, onBattery)
+    }
+}
+
+@Composable
+private fun PermissionRule() {
+    Box(Modifier.padding(start = 16.dp).fillMaxWidth().height(1.dp).background(rot().line))
 }
 
 @Composable
@@ -341,7 +364,7 @@ private fun GreenSwitch(checked: Boolean, onChange: (Boolean) -> Unit) {
 
 @Composable
 private fun Hairline() {
-    Box(Modifier.padding(start = 52.dp).fillMaxWidth().height(1.dp).background(rot().line))
+    Box(Modifier.padding(start = 56.dp).fillMaxWidth().height(1.dp).background(rot().line))
 }
 
 @Composable
@@ -460,30 +483,34 @@ private fun StyleToggle(title: String, subtitle: String, on: Boolean, change: (B
 private fun SupportPage(open: (String) -> Unit) {
     var legal by remember { mutableStateOf<String?>(null) }
     LegalDialog(legal) { legal = null }
-    BackHeader("Support & Feedback") { open("root") }
-    Text("Need help? Reach out or leave us feedback!", color = Melt.Muted, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp))
-    CardGroup {
-        RowLink("Help") { open("help") }
-        RowLink("Feedback / Bug Report") { open("feedback") }
-        RowLink("Contact Us") { open("contact") }
-        RowLink("Privacy Policy") { legal = "privacy" }
-        RowLink("Terms & Conditions") { legal = "terms" }
-        RowLink("Manage Subscription") { open("subscription") }
-    }
-    Text("Follow us", fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp))
-    Row(Modifier.padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        FollowGlyph(Icons.Default.Close, "X")
-        FollowGlyph(Icons.Default.PhotoCamera, "Camera")
-        FollowGlyph(Icons.Default.MusicNote, "Music")
-    }
-    Text(SupportCopy.EMAIL, color = Melt.Action, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(20.dp))
-    Text(versionLine(), color = Melt.Muted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 20.dp))
-}
-
-@Composable
-private fun FollowGlyph(icon: ImageVector, label: String) {
-    Box(Modifier.size(44.dp).clip(CircleShape).background(rot().inset), contentAlignment = Alignment.Center) {
-        Icon(icon, contentDescription = label, tint = Melt.Ink)
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+        BackHeader(
+            "Support & Feedback",
+            { open("root") },
+            "Need help? Reach out or leave us feedback!",
+        )
+        Column(Modifier.padding(horizontal = 20.dp)) {
+            SettingsGroup {
+                RowLink("Help", icon = Icons.Default.QuestionMark, tint = Color(0xFFF25980)) { open("help") }
+                Hairline()
+                RowLink("Feedback / Bug Report", icon = Icons.Default.Warning, tint = Color(0xFFFF9F0A)) { open("feedback") }
+                Hairline()
+                RowLink("Contact Us", icon = Icons.AutoMirrored.Filled.Chat, tint = Color(0xFF73B3FA)) { open("contact") }
+                Hairline()
+                RowLink("Privacy Policy", icon = Icons.Default.Lock, tint = Color(0xFFFF9F0A)) { legal = "privacy" }
+                Hairline()
+                RowLink("Terms & Conditions", icon = Icons.Default.Search, tint = Color(0xFF8C8CF2)) { legal = "terms" }
+                Hairline()
+                RowLink("Manage Subscription", icon = Icons.Default.Paid, tint = Color(0xFFF2BF33)) { open("subscription") }
+            }
+        }
+        Text("Follow us", color = rot().ink, fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth())
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(28.dp, Alignment.CenterHorizontally)) {
+            Icon(Icons.Default.Close, contentDescription = "X", tint = rot().ink, modifier = Modifier.size(22.dp))
+            Icon(Icons.Default.PhotoCamera, contentDescription = "Camera", tint = rot().ink, modifier = Modifier.size(22.dp))
+            Icon(Icons.Default.MusicNote, contentDescription = "Music", tint = rot().ink, modifier = Modifier.size(22.dp))
+        }
+        Text(versionLine(), color = rot().muted, fontSize = 12.sp, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), textAlign = TextAlign.Center)
     }
 }
 
@@ -644,19 +671,27 @@ private fun ProfilePage(repo: RotRunRepository, onBack: () -> Unit) {
 }
 
 @Composable
-private fun BackHeader(title: String, onBack: () -> Unit) {
-    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+private fun BackHeader(title: String, onBack: () -> Unit, subtitle: String? = null) {
+    Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp).fillMaxWidth(), horizontalAlignment = Alignment.Start) {
         Box(
             Modifier.size(36.dp).clip(CircleShape).background(rot().card).clickable(onClick = onBack),
             contentAlignment = Alignment.Center,
-        ) { Text("‹", color = rot().ink, fontWeight = FontWeight.Bold, fontSize = 20.sp) }
-        Text(title, color = rot().ink, fontSize = 32.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp, start = 4.dp))
+        ) { Text("‹", color = rot().ink, fontWeight = FontWeight.SemiBold, fontSize = 16.sp) }
+        Text(title, color = rot().ink, fontSize = 32.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
+        if (subtitle != null) {
+            Text(subtitle, color = rot().muted, fontSize = 15.sp, modifier = Modifier.padding(top = 8.dp))
+        }
     }
 }
 
 @Composable
 private fun CardGroup(content: @Composable () -> Unit) {
-    Column(Modifier.padding(vertical = 6.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(rot().card)) { content() }
+    Column(Modifier.padding(vertical = 6.dp).fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(rot().card)) { content() }
+}
+
+@Composable
+private fun SettingsGroup(content: @Composable () -> Unit) {
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(rot().card)) { content() }
 }
 
 @Composable
@@ -675,11 +710,13 @@ private fun RowLink(
     val chrome = rot()
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
         if (icon != null) {
-            Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
+            Box(Modifier.size(28.dp), contentAlignment = Alignment.Center) {
+                Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(18.dp))
+            }
         }
-        Text(title, color = chrome.ink, modifier = Modifier.padding(start = if (icon != null) 12.dp else 0.dp).weight(1f), fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
-        if (value != null) Text(value, color = chrome.muted, fontSize = 15.sp)
-        Text("›", color = chrome.muted, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 6.dp))
+        Text(title, color = chrome.ink, modifier = Modifier.padding(start = if (icon != null) 12.dp else 0.dp).weight(1f), fontWeight = FontWeight.Bold, fontSize = 16.sp)
+        if (value != null) Text(value, color = chrome.muted, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+        Text("›", color = chrome.muted, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.padding(start = 6.dp))
     }
 }
 
@@ -700,7 +737,7 @@ private fun PremiumManage(state: SavedState, repo: RotRunRepository, onBack: () 
 private fun SubscriptionSection(state: SavedState, repo: RotRunRepository, onChangePlan: () -> Unit) {
     val context = LocalContext.current
     val chrome = rot()
-    val plan = if (state.premiumActive() && !state.productId.isNullOrBlank()) Products.planName(state.productId) else "No plan yet"
+    val plan = if (state.premiumActive() && !state.productId.isNullOrBlank()) Products.planName(state.productId) else "Not subscribed"
     val renews = when {
         state.lifetime && state.premiumActive() -> "Does not renew"
         state.premiumActive() && state.premiumUntil > System.currentTimeMillis() ->
@@ -708,19 +745,20 @@ private fun SubscriptionSection(state: SavedState, repo: RotRunRepository, onCha
         else -> "Prices come from Google Play"
     }
     Text(
-        if (state.premiumActive()) "Buy, restore, or manage your plan. RotRun stays open while your subscription is active."
-        else "You're not subscribed. Get Premium to start a plan, or Restore Purchases if you already bought one on this Google account.",
+        "Buy, restore, or manage your plan. RotRun stays open while your subscription is active.",
         color = chrome.muted,
+        fontSize = 15.sp,
         modifier = Modifier.padding(horizontal = 4.dp),
     )
-    Column(Modifier.padding(vertical = 12.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(chrome.card).padding(vertical = 18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(plan, color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 22.sp)
-        Text(renews, color = chrome.muted, modifier = Modifier.padding(top = 4.dp))
+    Column(Modifier.padding(vertical = 12.dp).fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(chrome.card).padding(vertical = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        CartoonBrain(BrainStyle.Meadow, Modifier.size(88.dp), animated = false)
+        Text(plan, color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 22.sp, modifier = Modifier.padding(top = 12.dp))
+        Text(renews, color = chrome.muted, fontSize = 15.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp, start = 16.dp, end = 16.dp))
     }
     CardGroup {
-        RowLink(if (state.premiumActive()) "Change Plan" else "Get Premium", icon = Icons.Default.CardGiftcard, tint = Melt.Orange, onClick = onChangePlan)
+        RowLink(if (state.premiumActive()) "Change Plan" else "Get Premium", icon = Icons.Default.Star, tint = Color(0xFFF2BF33), onClick = onChangePlan)
         Hairline()
-        RowLink("Manage Subscription", plan, icon = Icons.Default.GridView, tint = chrome.blue) {
+        RowLink("Manage Subscription", plan, icon = Icons.Default.Paid, tint = Color(0xFFF2BF33)) {
             val product = state.productId
             val uri = android.net.Uri.parse(
                 if (product.isNullOrBlank()) "https://play.google.com/store/account/subscriptions?package=${context.packageName}"
@@ -729,7 +767,15 @@ private fun SubscriptionSection(state: SavedState, repo: RotRunRepository, onCha
             runCatching { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, uri)) }
         }
         Hairline()
-        RowLink("Restore Purchases", icon = Icons.Default.Refresh, tint = chrome.blue, onClick = repo::restore)
+        RowLink("Restore Purchases", icon = Icons.Default.Refresh, tint = Color(0xFF598CF2), onClick = repo::restore)
+    }
+    if (!state.premiumActive()) {
+        Text(
+            "You're not subscribed. Get Premium to start a plan, or Restore Purchases if you already bought one on this Google account.",
+            color = chrome.muted,
+            fontSize = 14.sp,
+            modifier = Modifier.padding(horizontal = 4.dp),
+        )
     }
 }
 

@@ -91,7 +91,6 @@ object ShieldOverlay {
         packageName: String,
         label: String,
         onAsk: () -> Unit,
-        onCall: () -> Unit,
     ): View? {
         val copy = InterventionCopy.forPackage(packageName, label)
         val density = context.resources.displayMetrics.density
@@ -143,33 +142,10 @@ object ShieldOverlay {
                 onAsk()
             }
         }
-        val call = TextView(context).apply {
-            text = "FaceTime"
-            setTextColor(android.graphics.Color.WHITE)
-            textSize = 18f
-            gravity = Gravity.CENTER
-            background = GradientDrawable().apply {
-                cornerRadius = 28 * density
-                setColor(0xFF34C759.toInt())
-            }
-            val padH = (18 * density).toInt()
-            setPadding(padH, padH, padH, padH)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = (12 * density).toInt() }
-            setOnClickListener {
-                if (!AskLaunchPolicy.acceptTap(AskBrainLaunch.launching)) return@setOnClickListener
-                isEnabled = false
-                text = "Calling…"
-                onCall()
-            }
-        }
         root.addView(mascot)
         root.addView(title)
         root.addView(body)
         root.addView(button)
-        root.addView(call)
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,

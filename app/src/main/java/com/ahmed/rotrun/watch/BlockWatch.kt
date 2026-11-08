@@ -146,7 +146,6 @@ class BlockWatchService : Service() {
                     packageName = packageName,
                     label = label,
                     onAsk = { openAsk(packageName, label) },
-                    onCall = { AskBrainLaunch.open(this, packageName, label, com.ahmed.rotrun.logic.BrainCallPolicy.MODE) },
                 )
                 shownFor = if (overlay == null) null else packageName
             }

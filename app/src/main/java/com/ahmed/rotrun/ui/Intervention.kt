@@ -113,7 +113,6 @@ fun InterventionFlow(
                         AskBrainLaunch.open(context, packageName, name)
                         (context as? android.app.Activity)?.finish()
                     },
-                    onCall = { mode = BrainCallPolicy.MODE },
                     onBailOut = { ransom = true },
                 )
             }
@@ -159,7 +158,7 @@ fun InterventionFlow(
 }
 
 @Composable
-private fun ColumnScope.Shield(appName: String, packageName: String, accent: Color, onAsk: () -> Unit, onCall: () -> Unit, onBailOut: () -> Unit) {
+private fun ColumnScope.Shield(appName: String, packageName: String, accent: Color, onAsk: () -> Unit, onBailOut: () -> Unit) {
     var opening by remember { mutableStateOf(false) }
     val copy = InterventionCopy.forPackage(packageName, appName)
     Spacer(Modifier.weight(1f))
@@ -178,18 +177,6 @@ private fun ColumnScope.Shield(appName: String, packageName: String, accent: Col
             if (opening) return@clickable
             opening = true
             onAsk()
-        }.padding(vertical = 18.dp),
-    )
-    Text(
-        "FaceTime",
-        color = Color.White,
-        fontWeight = FontWeight.Bold,
-        fontSize = 18.sp,
-        textAlign = TextAlign.Center,
-        modifier = Modifier.padding(top = 12.dp).fillMaxWidth().clip(CircleShape).background(Color(0xFF34C759)).clickable(enabled = !opening) {
-            if (opening) return@clickable
-            opening = true
-            onCall()
         }.padding(vertical = 18.dp),
     )
     Text(
@@ -561,11 +548,11 @@ private fun BrainCall(friend: String?, onDecline: () -> Unit, onUnlock: (Int) ->
             } else {
                 Text("YOU", color = Color.White, fontWeight = FontWeight.Black)
                 if (step == 1) {
-                    Appear(0f) { Bubble("You really wanna keep scrolling?") }
+                    Appear(0f) { Bubble("🧠\nYou really wanna keep scrolling?") }
                     Appear(0.08f) { Pill("Nah, you're right") { onDecline() } }
                     Appear(0.16f) { Pill("Yes, I really do") { step = 2 } }
                 } else {
-                    Appear(0f) { Bubble("How long do you need?") }
+                    Appear(0f) { Bubble("🧠\nHow long do you need?") }
                     RiseIn(420) { DurationTiles(onUnlock, delays = listOf(0f, 0.05f, 0.10f)) }
                     Appear(0.16f) { Pill("Actually, never mind") { onDecline() } }
                 }
@@ -676,6 +663,7 @@ private fun Cameo(appName: String, friend: String, kind: String, onDismiss: () -
 @Composable
 private fun DurationTiles(onUnlock: (Int) -> Unit, delays: List<Float> = emptyList()) {
     data class Tile(val minutes: Int, val label: String)
+    Column(Modifier.fillMaxWidth()) {
     listOf(Tile(10, "Quick peek"), Tile(20, "A chapter"), Tile(30, "Long scroll")).forEachIndexed { index, tile ->
         val body = @Composable {
             Column(
@@ -687,6 +675,7 @@ private fun DurationTiles(onUnlock: (Int) -> Unit, delays: List<Float> = emptyLi
         }
         val delaySec = delays.getOrNull(index)
         if (delaySec == null) body() else Appear(delaySec) { body() }
+    }
     }
 }
 

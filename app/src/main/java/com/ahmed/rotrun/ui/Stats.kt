@@ -73,12 +73,14 @@ fun StatsScreen(
 ) {
     var page by remember { mutableStateOf("focus") }
     Column(Modifier.padding(bottom = 24.dp)) {
-        Row(
-            Modifier.padding(horizontal = 20.dp, vertical = 8.dp).fillMaxWidth().clip(CircleShape).background(rot().inset).padding(4.dp),
-        ) {
-            Toggle("Focus", page == "focus", Modifier.weight(1f)) { page = "focus" }
-            Toggle("Leaderboard", page == "board", Modifier.weight(1f)) { page = "board" }
-        }
+        Segment(
+            "Focus",
+            "Leaderboard",
+            page == "board",
+            { page = "focus" },
+            { page = "board" },
+            Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+        )
         if (page == "focus") FocusStats(state, health) else Leaderboard(state, screenMinutes, repo, onLeaderboard, onEditYou)
     }
 }
@@ -402,18 +404,39 @@ private fun ScoreCapsule(score: Int, you: Boolean) {
 
 @Composable
 private fun ScopeToggle(friends: Boolean, reduce: Boolean, onPick: (Boolean) -> Unit) {
-    val slide by androidx.compose.animation.core.animateFloatAsState(
-        if (friends) 1f else 0f,
-        if (reduce) androidx.compose.animation.core.tween(120, easing = androidx.compose.animation.core.EaseOut) else swiftSpring(0.32f, 0f),
-        label = "scope",
+    Segment(
+        "Daily XP",
+        "Friends",
+        friends,
+        { onPick(false) },
+        { onPick(true) },
+        Modifier.padding(vertical = 8.dp),
+        reduce,
     )
-    BoxWithConstraints(Modifier.padding(vertical = 8.dp).fillMaxWidth().clip(CircleShape).background(rot().inset).padding(4.dp)) {
+}
+
+@Composable
+private fun Segment(
+    left: String,
+    right: String,
+    rightOn: Boolean,
+    onLeft: () -> Unit,
+    onRight: () -> Unit,
+    modifier: Modifier = Modifier,
+    reduce: Boolean = reduceMotion(),
+) {
+    val slide by androidx.compose.animation.core.animateFloatAsState(
+        if (rightOn) 1f else 0f,
+        if (reduce) androidx.compose.animation.core.tween(120, easing = androidx.compose.animation.core.EaseOut) else swiftSpring(0.32f, 0f),
+        label = "segment",
+    )
+    BoxWithConstraints(modifier.fillMaxWidth().clip(CircleShape).background(rot().inset).padding(4.dp)) {
         Box(
             Modifier.fillMaxWidth(0.5f).offset(x = maxWidth * 0.5f * slide).height(36.dp).clip(CircleShape).background(rot().blue),
         )
         Row(Modifier.fillMaxWidth()) {
-            Toggle("Daily XP", !friends, Modifier.weight(1f)) { onPick(false) }
-            Toggle("Friends", friends, Modifier.weight(1f)) { onPick(true) }
+            Toggle(left, !rightOn, Modifier.weight(1f), onLeft)
+            Toggle(right, rightOn, Modifier.weight(1f), onRight)
         }
     }
 }
