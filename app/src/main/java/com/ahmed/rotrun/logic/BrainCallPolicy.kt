@@ -1,14 +1,16 @@
 package com.ahmed.rotrun.logic
 
-/** FaceTime-style brain call. Accept stays in the call. Decline goes back to the block screen. */
+/** FaceTime-style brain call. Accept stays in the call. Decline leaves without unlocking. */
 object BrainCallPolicy {
     const val MODE = "mirror"
-    const val BLOCK = "shield"
 
     fun isCall(mode: String): Boolean = mode == MODE
 
-    /** Decline and the question's "nah" return to the block screen. They do not open a second one. */
-    fun afterDecline(): String = BLOCK
+    /**
+     * Decline and "Nah, you're right" close the chat. They do not unlock the blocked app,
+     * and they do not turn RotRun's own screen into the shield.
+     */
+    fun afterDecline(): String = "dismiss"
 
     /** iOS Accept opens the mirror question. It does not start a Rot voice session. */
     fun answerStartsVoice(): Boolean = false

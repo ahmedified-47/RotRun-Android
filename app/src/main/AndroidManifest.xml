@@ -145,9 +145,11 @@
 
         <activity
             android:name=".InterventionActivity"
+            android:excludeFromRecents="true"
             android:exported="false"
             android:launchMode="singleTop"
             android:showWhenLocked="true"
+            android:taskAffinity="com.ahmed.rotrun.intervention"
             android:turnScreenOn="true" />
 
         <service

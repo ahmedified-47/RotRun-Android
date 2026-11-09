@@ -22,9 +22,15 @@ object ForegroundGate {
     /** Newest resume, including RotRun. Dropping RotRun is what made opening it look like the previous app. */
     fun latestResume(packagesNewestLast: List<String>): String? = packagesNewestLast.lastOrNull { it.isNotBlank() }
 
+    /** Android and System UI. ColorOS chrome is separate: its window events are overlay noise. */
+    fun systemChrome(packageName: String): Boolean {
+        val name = packageName.lowercase()
+        return name == "android" || name.startsWith("com.android.systemui")
+    }
+
     /**
      * The user left the blocked app for RotRun, the launcher, or another safety app.
-     * System UI is not that. It is noise from the overlay.
+     * System UI is judged from a real resume or window-state change, not from overlay noise.
      */
     fun userWentElsewhere(packageName: String, ownPackage: String, safety: Set<String>): Boolean {
         if (packageName.isBlank() || packageName == "android") return false
@@ -35,9 +41,9 @@ object ForegroundGate {
 
     /**
      * Usage poll. A blank reading must not drop a shield: usage access is often off,
-     * and that is what made every block disappear. RotRun hides the shield only when
-     * its resume is newer than the shield. An older RotRun resume is the app the user
-     * just left, and system UI never counts as leaving.
+     * and that is what made every block disappear. RotRun and System UI hide the shield
+     * only when their resume is newer than the shield. An older resume is the app the
+     * user just left. ColorOS usage stays up so an overlay event cannot uncover Calendar.
      */
     fun onUsage(
         packageName: String?,
@@ -54,6 +60,11 @@ object ForegroundGate {
             return ShieldStep.Hide
         }
         if (!userWentElsewhere(packageName, ownPackage, safety) && ignore(packageName, ownPackage)) {
+            val leftForSystemUi = systemChrome(packageName) &&
+                shownFor != null &&
+                resumedAtMillis > 0L &&
+                resumedAtMillis >= shownAtMillis
+            if (leftForSystemUi) return ShieldStep.Hide
             return if (shownFor != null) ShieldStep.Keep else ShieldStep.Leave
         }
         return if (shouldShowShield(packageName, ownPackage, safety, blocked)) ShieldStep.Show else ShieldStep.Hide
@@ -62,7 +73,8 @@ object ForegroundGate {
     /**
      * Accessibility window event. WINDOWS_CHANGED for RotRun or system chrome is the
      * shield itself. Hiding on that event is what removed the block a moment after it
-     * appeared. WINDOW_STATE_CHANGED for RotRun means the user opened RotRun.
+     * appeared. WINDOW_STATE_CHANGED for RotRun, the launcher, or System UI means the
+     * user left the blocked app.
      */
     fun onWindow(
         eventPackage: String,
@@ -75,8 +87,12 @@ object ForegroundGate {
         if (eventPackage.isBlank()) return if (shownFor != null) ShieldStep.Keep else ShieldStep.Leave
         val elsewhere = userWentElsewhere(eventPackage, ownPackage, safety)
         val noise = eventPackage != ownPackage && !elsewhere && ignore(eventPackage, ownPackage)
-        if (eventPackage == ownPackage || noise || elsewhere) {
-            if (windowStateChanged && (eventPackage == ownPackage || elsewhere)) return ShieldStep.Hide
+        if (eventPackage == ownPackage || elsewhere) {
+            if (windowStateChanged) return ShieldStep.Hide
+            return if (shownFor != null) ShieldStep.Keep else ShieldStep.Leave
+        }
+        if (noise) {
+            if (windowStateChanged && systemChrome(eventPackage)) return ShieldStep.Hide
             return if (shownFor != null) ShieldStep.Keep else ShieldStep.Leave
         }
         return if (shouldShowShield(eventPackage, ownPackage, safety, eventBlocked)) ShieldStep.Show else ShieldStep.Hide

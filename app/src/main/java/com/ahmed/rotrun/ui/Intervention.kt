@@ -15,6 +15,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -50,11 +51,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -64,6 +73,7 @@ import com.ahmed.rotrun.logic.BrainCallPolicy
 import com.ahmed.rotrun.logic.InterventionCopy
 import com.ahmed.rotrun.logic.ShieldPalette
 import com.ahmed.rotrun.watch.AskBrainLaunch
+import kotlin.math.sin
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -119,14 +129,23 @@ fun InterventionFlow(
         }
         androidx.compose.animation.AnimatedVisibility(
             visible = mode != "shield" && !pendingLeave,
+            modifier = Modifier.fillMaxSize(),
             enter = coverEnter(reduce),
             exit = coverExit(reduce),
         ) {
             val shown = coverMode
             if (BrainCallPolicy.isCall(shown)) {
-                BrainCall(friend = friend, onDecline = { mode = BrainCallPolicy.afterDecline() }, onUnlock = onUnlock)
+                BrainCall(
+                    friend = friend,
+                    onDecline = {
+                        if (BrainCallPolicy.afterDecline() == "dismiss") pendingLeave = true
+                    },
+                    onUnlock = onUnlock,
+                )
             } else if (shown == "standard") {
                 Standard(name, friend, state.cameoKind, onDismiss = retreat, onUnlock = onUnlock)
+            } else if (shown == "breathing") {
+                Breathing(friend, state.cameoKind, retreat, onUnlock)
             } else {
                 Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF8FDBFA), Color(0xFF66C785), Color(0xFF338C57))))) {
                     Column(
@@ -135,7 +154,6 @@ fun InterventionFlow(
                     ) {
                         when (shown) {
                             "quick" -> Quick(name, friend, retreat, onUnlock)
-                            "breathing" -> Breathing(friend, state.cameoKind, retreat, onUnlock)
                             "cameo" -> Cameo(name, friend ?: "a friend", state.cameoKind, retreat, onUnlock)
                             else -> Quick(name, friend, retreat, onUnlock)
                         }
@@ -466,52 +484,220 @@ private fun Breathing(friend: String?, kind: String, onDismiss: () -> Unit, onUn
         phase += 1
     }
     var ask by remember { mutableStateOf(true) }
+    val oneLiner = friend?.let { InterventionCopy.roast(kind, it) }?.takeIf { it.isNotBlank() }
     androidx.compose.animation.AnimatedContent(
         targetState = phase <= 2,
+        modifier = Modifier.fillMaxSize(),
         transitionSpec = {
             androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(450, easing = androidx.compose.animation.core.EaseInOut)) togetherWith
                 androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(450, easing = androidx.compose.animation.core.EaseInOut))
         },
         label = "breath-swap",
     ) { breathing ->
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            if (breathing) {
-                Box(Modifier.graphicsLayer { scaleX = breath.value; scaleY = breath.value }, contentAlignment = Alignment.Center) {
-                    androidx.compose.foundation.Canvas(Modifier.size(168.dp)) {
-                        drawCircle(color = Color.White, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 8.dp.toPx()))
+        if (breathing) {
+            BreathingCycle(left = left, scale = breath.value, title = labels[phase.coerceAtMost(2)], oneLiner = oneLiner)
+        } else {
+            BreathingGarden(asking = ask, onNah = onDismiss, onYes = { ask = false }, onUnlock = onUnlock, onNevermind = onDismiss)
+        }
+    }
+}
+
+private val BreathSerene = Color(0xFF8CC7EB)
+private val BreathNavy = Color(0xFF1F2E47)
+private val BreathSeconds = Color(0xFF386B9E)
+private val BreathSky = Color(0xFF9EDBFA)
+private val BreathGrass = Color(0xFF6BC761)
+private val BreathGrassDeep = Color(0xFF479E47)
+private val BreathBlue = Color(0xFF387AF5)
+
+@Composable
+private fun BreathingCycle(left: Int, scale: Float, title: String, oneLiner: String?) {
+    var waveTime by remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(16)
+            waveTime += 0.016f
+        }
+    }
+    val shift = sin(waveTime * (kotlin.math.PI.toFloat() / 6f)) * 18f
+    Box(Modifier.fillMaxSize().background(BreathSerene)) {
+        Column {
+            Box(Modifier.fillMaxWidth().height(120.dp).background(Color.White))
+            Canvas(Modifier.fillMaxWidth().height(72.dp).offset(y = (-8).dp)) {
+                val t = waveTime * 28f
+                breathWave(Color(0xFFD1EDFA), 14.dp.toPx(), t + shift, 0f)
+                breathWave(Color(0xFFB3E0F5), 18.dp.toPx(), t - shift * 0.7f, 10.dp.toPx())
+                breathWave(BreathSerene, 12.dp.toPx(), t + shift * 0.4f, 22.dp.toPx())
+            }
+        }
+        Column(Modifier.fillMaxSize().padding(horizontal = 28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Spacer(Modifier.height(160.dp))
+            CartoonBrain(
+                BrainStyle.Meditating,
+                Modifier.size(200.dp).graphicsLayer { scaleX = scale; scaleY = scale },
+                animated = false,
+            )
+            androidx.compose.animation.AnimatedContent(
+                title,
+                transitionSpec = { androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(350)) togetherWith androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(350)) },
+                label = "phase",
+            ) {
+                Text(it, color = BreathNavy, fontFamily = FontFamily.Default, fontSize = 32.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 18.dp))
+            }
+            Text(
+                "$left second${if (left == 1) "" else "s"}",
+                color = BreathSeconds,
+                fontFamily = FontFamily.Default,
+                fontSize = 18.sp,
+                modifier = Modifier.padding(top = 18.dp),
+            )
+            if (oneLiner != null) {
+                Text(
+                    oneLiner,
+                    color = BreathNavy.copy(alpha = 0.9f),
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 16.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = 18.dp),
+                )
+            }
+        }
+    }
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.breathWave(color: Color, amplitude: Float, phase: Float, yOffset: Float) {
+    val path = Path()
+    path.moveTo(0f, amplitude + 8f + yOffset)
+    var x = 0f
+    while (x <= size.width) {
+        path.lineTo(x, amplitude + sin((x + phase) / 42f) * amplitude + yOffset)
+        x += 8f
+    }
+    path.lineTo(size.width, size.height)
+    path.lineTo(0f, size.height)
+    path.close()
+    drawPath(path, color)
+}
+
+@Composable
+private fun BreathingGarden(
+    asking: Boolean,
+    onNah: () -> Unit,
+    onYes: () -> Unit,
+    onUnlock: (Int) -> Unit,
+    onNevermind: () -> Unit,
+) {
+    Box(Modifier.fillMaxSize()) {
+        Canvas(Modifier.fillMaxSize()) { zenGarden() }
+        Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+            Spacer(Modifier.height(48.dp))
+            Text(
+                if (asking) "Be honest. Do you actually want this right now?" else "How long do you need?",
+                color = Color(0xFF262626),
+                fontFamily = FontFamily.Default,
+                fontWeight = FontWeight.Bold,
+                fontSize = 20.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 28.dp).padding(bottom = 8.dp).shadow(8.dp, RoundedCornerShape(22.dp)).clip(RoundedCornerShape(22.dp)).background(Color.White).padding(horizontal = 22.dp, vertical = 16.dp),
+            )
+            CartoonBrain(BrainStyle.Meditating, Modifier.padding(top = 8.dp).size(168.dp))
+            Spacer(Modifier.weight(1f))
+            Column(Modifier.fillMaxWidth().padding(horizontal = 28.dp).padding(bottom = 40.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                if (asking) {
+                    GardenCapsule("Nah, you're right.", BreathBlue, Color.White, onNah)
+                    Spacer(Modifier.height(16.dp))
+                    GardenCapsule("Yes I really do", Color.White, BreathNavy, onYes)
+                } else {
+                    listOf(10, 20, 30).forEach { minutes ->
+                        Text(
+                            "$minutes min",
+                            color = Color.White,
+                            fontFamily = FontFamily.Default,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(bottom = 12.dp).fillMaxWidth().clip(CircleShape).background(BreathBlue).clickable { onUnlock(minutes) }.padding(vertical = 14.dp),
+                        )
                     }
-                    CartoonBrain(BrainStyle.Spa, Modifier.size(140.dp), animated = false)
-                }
-                androidx.compose.animation.AnimatedContent(
-                    labels[phase.coerceAtMost(2)],
-                    transitionSpec = { androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(350)) togetherWith androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(350)) },
-                    label = "phase",
-                ) { Text(it, fontSize = 28.sp, fontWeight = FontWeight.Bold) }
-                SnappyText("$left") { Text("$it ${if (it == "1") "second" else "seconds"}", color = Melt.Muted) }
-                if (friend != null) Text(InterventionCopy.roast(kind, friend), textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp))
-            } else {
-                androidx.compose.animation.AnimatedContent(
-                    ask,
-                    transitionSpec = {
-                        androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(350, easing = androidx.compose.animation.core.EaseOut)) togetherWith
-                            androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(350, easing = androidx.compose.animation.core.EaseOut))
-                    },
-                    label = "breath-yes",
-                ) { asking ->
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        if (asking) {
-                            Appear(0f) { Bubble("Be honest. Do you actually want this right now?") }
-                            Appear(0.08f) { Pill("Nah, you're right.") { onDismiss() } }
-                            Appear(0.16f) { Pill("Yes I really do") { ask = false } }
-                        } else {
-                            Appear(0f) { Bubble("How long do you need?") }
-                            RiseIn(350) { DurationTiles(onUnlock, delays = listOf(0f, 0.04f, 0.08f)) }
-                            Appear(0.16f) { Pill("Nah actually nevermind") { onDismiss() } }
-                        }
-                    }
+                    Text(
+                        "Nah actually nevermind",
+                        color = Color.White,
+                        fontFamily = FontFamily.Default,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 16.sp,
+                        modifier = Modifier.padding(top = 4.dp).clickable(onClick = onNevermind),
+                    )
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun GardenCapsule(label: String, fill: Color, ink: Color, onClick: () -> Unit) {
+    Text(
+        label,
+        color = ink,
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.Bold,
+        fontSize = 18.sp,
+        textAlign = TextAlign.Center,
+        modifier = Modifier.fillMaxWidth().clip(CircleShape).background(fill).clickable(onClick = onClick).padding(vertical = 16.dp),
+    )
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.zenGarden() {
+    drawRect(BreathSky)
+    val grassTop = size.height * 0.42f
+    drawRect(BreathGrass, topLeft = Offset(0f, grassTop), size = Size(size.width, size.height - grassTop))
+    gardenCloud(size.width * 0.18f, 72.dp.toPx(), 90.dp.toPx(), 36.dp.toPx(), 0.95f)
+    gardenCloud(size.width * 0.78f, 96.dp.toPx(), 70.dp.toPx(), 28.dp.toPx(), 0.90f)
+    gardenCloud(size.width * 0.52f, 58.dp.toPx(), 54.dp.toPx(), 22.dp.toPx(), 0.85f)
+    val ring = BreathGrassDeep.copy(alpha = 0.35f)
+    val ringCenter = Offset(size.width * 0.5f, size.height * 0.58f)
+    listOf(70, 110, 150, 190).forEach { radius ->
+        drawCircle(ring, radius = radius.dp.toPx(), center = ringCenter, style = Stroke(width = 3.dp.toPx()))
+    }
+    val treeX = size.width * 0.18f
+    val treeY = size.height * 0.42f
+    drawRoundRect(
+        Color(0xFF38241A),
+        topLeft = Offset(treeX - 9.dp.toPx(), treeY),
+        size = Size(18.dp.toPx(), 90.dp.toPx()),
+        cornerRadius = CornerRadius(9.dp.toPx()),
+    )
+    gardenFoliage(treeX, treeY - 78.dp.toPx(), 88.dp.toPx())
+    gardenFoliage(treeX, treeY - 54.dp.toPx(), 108.dp.toPx())
+    gardenFoliage(treeX, treeY - 28.dp.toPx(), 92.dp.toPx())
+    gardenRock(size.width * 0.82f, size.height * 0.55f, 86.dp.toPx(), 54.dp.toPx())
+    gardenRock(size.width * 0.72f, size.height * 0.62f, 52.dp.toPx(), 36.dp.toPx())
+    gardenRock(size.width * 0.50f, size.height * 0.72f, 120.dp.toPx(), 28.dp.toPx())
+    drawOval(Color(0xFF38943D), Offset(size.width * 0.38f - 18.dp.toPx(), size.height * 0.66f - 11.dp.toPx()), Size(36.dp.toPx(), 22.dp.toPx()))
+    drawOval(Color(0xFF38943D), Offset(size.width * 0.58f - 18.dp.toPx(), size.height * 0.68f - 11.dp.toPx()), Size(36.dp.toPx(), 22.dp.toPx()))
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.gardenCloud(cx: Float, cy: Float, width: Float, height: Float, alpha: Float) {
+    val color = Color.White.copy(alpha = alpha)
+    drawOval(color, Offset(cx - width / 2f, cy - height * 0.15f), Size(width * 0.55f, height * 0.7f))
+    drawOval(color, Offset(cx - width * 0.22f, cy - height * 0.5f), Size(width * 0.5f, height * 0.85f))
+    drawOval(color, Offset(cx, cy - height * 0.2f), Size(width * 0.48f, height * 0.65f))
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.gardenFoliage(cx: Float, cy: Float, width: Float) {
+    val height = width * 0.72f
+    val topLeft = Offset(cx - width / 2f, cy - height / 2f)
+    val oval = Size(width, height)
+    drawOval(Color(0xFF47B852), topLeft, oval)
+    drawOval(Color.Black.copy(alpha = 0.25f), topLeft, oval, style = Stroke(width = 1.5.dp.toPx()))
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.gardenRock(cx: Float, cy: Float, width: Float, height: Float) {
+    rotate(degrees = -8f, pivot = Offset(cx, cy)) {
+        val topLeft = Offset(cx - width / 2f, cy - height / 2f)
+        val rock = Size(width, height)
+        val radius = CornerRadius(8.dp.toPx())
+        drawRoundRect(Color(0xFF8C8C8C), topLeft, rock, radius)
+        drawRoundRect(Color.Black.copy(alpha = 0.35f), topLeft, rock, radius, style = Stroke(width = 1.5.dp.toPx()))
     }
 }
 
@@ -548,11 +734,11 @@ private fun BrainCall(friend: String?, onDecline: () -> Unit, onUnlock: (Int) ->
             } else {
                 Text("YOU", color = Color.White, fontWeight = FontWeight.Black)
                 if (step == 1) {
-                    Appear(0f) { Bubble("🧠\nYou really wanna keep scrolling?") }
+                    Appear(0f) { MirrorQuestion("You really wanna keep scrolling?") }
                     Appear(0.08f) { Pill("Nah, you're right") { onDecline() } }
                     Appear(0.16f) { Pill("Yes, I really do") { step = 2 } }
                 } else {
-                    Appear(0f) { Bubble("🧠\nHow long do you need?") }
+                    Appear(0f) { MirrorQuestion("How long do you need?") }
                     RiseIn(420) { DurationTiles(onUnlock, delays = listOf(0f, 0.05f, 0.10f)) }
                     Appear(0.16f) { Pill("Actually, never mind") { onDecline() } }
                 }
@@ -676,6 +862,27 @@ private fun DurationTiles(onUnlock: (Int) -> Unit, delays: List<Float> = emptyLi
         val delaySec = delays.getOrNull(index)
         if (delaySec == null) body() else Appear(delaySec) { body() }
     }
+    }
+}
+
+@Composable
+private fun MirrorQuestion(question: String) {
+    Box(Modifier.padding(vertical = 8.dp).fillMaxWidth()) {
+        Box(Modifier.matchParentSize().offset(y = 5.dp).clip(RoundedCornerShape(22.dp)).background(Color(0xFF295C38)))
+        Column(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Color.White).padding(horizontal = 18.dp, vertical = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text("🧠", fontFamily = FontFamily.Default, fontSize = 28.sp, textAlign = TextAlign.Center)
+            Text(
+                question,
+                color = Color(0xFF1F3329),
+                fontWeight = FontWeight.Black,
+                fontSize = 18.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
     }
 }
 

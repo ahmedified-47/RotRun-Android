@@ -17,12 +17,10 @@ import android.util.Log
 import android.view.View
 import android.view.WindowManager
 import androidx.core.app.NotificationCompat
-import com.ahmed.rotrun.InterventionActivity
 import com.ahmed.rotrun.R
 import com.ahmed.rotrun.data.RotRunGraph
 import com.ahmed.rotrun.data.SavedState
 import com.ahmed.rotrun.data.UsageReader
-import com.ahmed.rotrun.logic.InterventionCopy
 import com.ahmed.rotrun.widget.FocusWidgetProvider
 
 object WatchController {
@@ -39,7 +37,6 @@ object WatchController {
 
 class BlockWatchService : Service() {
     private val handler = Handler(Looper.getMainLooper())
-    private val shownAt = HashMap<String, Long>()
     private var lastForeground: String? = null
     private var overlay: View? = null
     private var shownFor: String? = null
@@ -170,26 +167,9 @@ class BlockWatchService : Service() {
                 shownFor = if (overlay == null) null else packageName
                 if (shownFor != null) overlayShownAt = System.currentTimeMillis()
             }
-            return
         }
-        val elapsed = now - (shownAt[packageName] ?: 0L)
-        if (!AskLaunchPolicy.raiseShieldActivity(InterventionActivity.showingPackage == packageName, elapsed)) return
-        shownAt[packageName] = now
-        val copy = InterventionCopy.forPackage(packageName, label)
-        val open = Intent(this, InterventionActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-            putExtra(InterventionActivity.EXTRA_APP, label)
-            putExtra(InterventionActivity.EXTRA_PACKAGE, packageName)
-            putExtra(InterventionActivity.EXTRA_MODE, "shield")
-        }
-        val pending = PendingIntent.getActivity(
-            this,
-            packageName.hashCode(),
-            open,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-        runCatching { startActivity(open) }
-        getSystemService(NotificationManager::class.java).notify(ALERT_ID, shieldNotification(copy.headline, pending))
+        // No draw-over permission here. The accessibility service covers the blocked app.
+        // An activity would be a second RotRun card in the switcher, beside that app.
     }
 
     private fun openAsk(packageName: String, label: String) {
@@ -215,23 +195,6 @@ class BlockWatchService : Service() {
             .build()
     }
 
-    private fun shieldNotification(text: String, tap: PendingIntent): Notification {
-        if (Build.VERSION.SDK_INT >= 26) {
-            val channel = NotificationChannel(ALERT_CHANNEL, "Rot shield", NotificationManager.IMPORTANCE_HIGH)
-            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
-        }
-        return NotificationCompat.Builder(this, ALERT_CHANNEL)
-            .setSmallIcon(R.drawable.ic_stat_rot)
-            .setContentTitle("RotRun")
-            .setContentText(text)
-            .setContentIntent(tap)
-            .setFullScreenIntent(tap, true)
-            .setCategory(NotificationCompat.CATEGORY_ALARM)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setAutoCancel(true)
-            .build()
-    }
-
     private fun ensureChannel() {
         if (Build.VERSION.SDK_INT < 26) return
         val manager = getSystemService(NotificationManager::class.java)
@@ -241,9 +204,7 @@ class BlockWatchService : Service() {
 
     companion object {
         private const val CHANNEL = "rotrun.watch"
-        private const val ALERT_CHANNEL = "rotrun.shield"
         private const val NOTIFICATION_ID = 42
-        private const val ALERT_ID = 43
 
         @Volatile
         private var live: BlockWatchService? = null

@@ -42,9 +42,15 @@ object AskLaunchPolicy {
     /** The first tap runs. Another tap while that launch is in flight does nothing. */
     fun acceptTap(inFlight: Boolean): Boolean = !inFlight
 
-    /** The fallback activity is raised once per open, not on every watch tick. */
-    fun raiseShieldActivity(alreadyShowing: Boolean, elapsedMs: Long): Boolean =
-        !alreadyShowing && elapsedMs >= 8_000
+    /**
+     * The shield is a window over the blocked app. A RotRun activity is a second
+     * card in the switcher, beside that app, so it is never the cover.
+     */
+    fun raiseShieldActivity(alreadyShowing: Boolean, elapsedMs: Long): Boolean = false
+
+    /** Overlay when accessibility or draw-over is allowed. Never an activity. */
+    fun shieldCover(accessibilityConnected: Boolean, canDrawOverlays: Boolean): String =
+        if (accessibilityConnected || canDrawOverlays) "overlay" else "none"
 
     /** Talk is open. Watchers must not paint the shield over the blocked app. */
     fun showShield(chatting: Boolean): Boolean = !chatting

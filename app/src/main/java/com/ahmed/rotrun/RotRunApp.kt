@@ -97,10 +97,14 @@ class MainActivity : ComponentActivity() {
 class InterventionActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val mode = intent.getStringExtra(EXTRA_MODE) ?: "style"
+        if (mode == "shield") {
+            finish()
+            return
+        }
         enableEdgeToEdge()
         val appName = intent.getStringExtra(EXTRA_APP) ?: "this app"
         val packageName = intent.getStringExtra(EXTRA_PACKAGE).orEmpty()
-        val mode = intent.getStringExtra(EXTRA_MODE) ?: "style"
         val token = intent.getLongExtra(EXTRA_TOKEN, 0L).takeIf { it != 0L } ?: System.currentTimeMillis().also {
             intent.putExtra(EXTRA_TOKEN, it)
         }
@@ -110,7 +114,7 @@ class InterventionActivity : ComponentActivity() {
             com.ahmed.rotrun.watch.BlockAccessibilityService.dismiss()
             com.ahmed.rotrun.watch.BlockWatchService.dismiss()
         }
-        if (mode != "shield") RotRunGraph.repo.chargeAskBrain(token)
+        RotRunGraph.repo.chargeAskBrain(token)
         setContent {
             RotRunTheme {
             androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
@@ -140,7 +144,17 @@ class InterventionActivity : ComponentActivity() {
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if ((intent.getStringExtra(EXTRA_MODE) ?: "style") == "shield") finish()
+    }
+
     override fun onDestroy() {
+        if ((intent.getStringExtra(EXTRA_MODE) ?: "style") == "shield") {
+            super.onDestroy()
+            return
+        }
         val packageName = intent.getStringExtra(EXTRA_PACKAGE).orEmpty()
         if (showingPackage == packageName) showingPackage = null
         if (!com.ahmed.rotrun.watch.ShieldSession.openedInto(packageName)) {

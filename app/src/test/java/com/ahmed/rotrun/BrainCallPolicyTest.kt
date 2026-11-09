@@ -11,7 +11,7 @@ class BrainCallPolicyTest {
     fun faceTimeDeclinesBackToTheBlockAndDoesNotStartVoice() {
         assertTrue(BrainCallPolicy.isCall("mirror"))
         assertFalse(BrainCallPolicy.isCall("standard"))
-        assertEquals("shield", BrainCallPolicy.afterDecline())
+        assertEquals("dismiss", BrainCallPolicy.afterDecline())
         assertFalse(BrainCallPolicy.answerStartsVoice())
     }
 

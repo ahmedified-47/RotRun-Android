@@ -77,7 +77,11 @@ class AskLaunchPolicyTest {
         assertTrue(AskLaunchPolicy.acceptTap(inFlight = false))
         assertFalse(AskLaunchPolicy.raiseShieldActivity(alreadyShowing = true, elapsedMs = 20_000))
         assertFalse(AskLaunchPolicy.raiseShieldActivity(alreadyShowing = false, elapsedMs = 1_000))
-        assertTrue(AskLaunchPolicy.raiseShieldActivity(alreadyShowing = false, elapsedMs = 8_000))
+        assertFalse(AskLaunchPolicy.raiseShieldActivity(alreadyShowing = false, elapsedMs = 8_000))
+        assertFalse(AskLaunchPolicy.raiseShieldActivity(alreadyShowing = false, elapsedMs = 60_000))
+        assertEquals("overlay", AskLaunchPolicy.shieldCover(accessibilityConnected = true, canDrawOverlays = false))
+        assertEquals("overlay", AskLaunchPolicy.shieldCover(accessibilityConnected = false, canDrawOverlays = true))
+        assertEquals("none", AskLaunchPolicy.shieldCover(accessibilityConnected = false, canDrawOverlays = false))
     }
 
     @Test
@@ -122,8 +126,32 @@ class AskLaunchPolicyTest {
             ForegroundGate.onWindow(own, windowStateChanged = false, shownFor = instagram, own, safety, eventBlocked = false),
         )
         assertEquals(
-            ShieldStep.Keep,
+            ShieldStep.Hide,
             ForegroundGate.onWindow("com.android.systemui", windowStateChanged = true, shownFor = instagram, own, safety, eventBlocked = false),
+        )
+        assertEquals(
+            ShieldStep.Keep,
+            ForegroundGate.onWindow("com.android.systemui", windowStateChanged = false, shownFor = instagram, own, safety, eventBlocked = false),
+        )
+        assertEquals(
+            ShieldStep.Hide,
+            ForegroundGate.onUsage("com.android.systemui", 6_000L, instagram, shownAt, own, safety, blocked = false),
+        )
+        assertEquals(
+            ShieldStep.Keep,
+            ForegroundGate.onUsage("com.android.systemui", 1_000L, instagram, shownAt, own, safety, blocked = false),
+        )
+        assertEquals(
+            ShieldStep.Show,
+            ForegroundGate.onUsage("com.google.android.calendar", 4_000L, null, 0L, own, safety, blocked = true),
+        )
+        assertEquals(
+            ShieldStep.Show,
+            ForegroundGate.onWindow("com.google.android.calendar", windowStateChanged = true, shownFor = null, own, safety, eventBlocked = true),
+        )
+        assertEquals(
+            ShieldStep.Hide,
+            ForegroundGate.onUsage(own, 6_000L, "com.google.android.calendar", shownAt, own, safety, blocked = true),
         )
         assertEquals(
             ShieldStep.Keep,
