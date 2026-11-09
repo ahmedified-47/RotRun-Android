@@ -43,6 +43,7 @@ class BlockWatchService : Service() {
     private var lastForeground: String? = null
     private var overlay: View? = null
     private var shownFor: String? = null
+    private var overlayShownAt = 0L
     private var lastFocusWidget = 0L
     private val tick = object : Runnable {
         override fun run() {
@@ -116,14 +117,29 @@ class BlockWatchService : Service() {
             hideOverlay()
             return
         }
-        val packageName = UsageReader.foreground(this) ?: run {
-            hideOverlay()
-            return
+        val reading = UsageReader.foregroundResume(this)
+        val safety = repo.safetyPackages()
+        val candidate = reading?.packageName
+        val blockedNow = candidate != null && repo.isBlocked(candidate, safety)
+        when (
+            ForegroundGate.onUsage(
+                packageName = candidate,
+                resumedAtMillis = reading?.atMillis ?: 0L,
+                shownFor = shownFor,
+                shownAtMillis = overlayShownAt,
+                ownPackage = packageName,
+                safety = safety,
+                blocked = blockedNow,
+            )
+        ) {
+            ShieldStep.Leave, ShieldStep.Keep -> return
+            ShieldStep.Hide -> {
+                hideOverlay()
+                return
+            }
+            ShieldStep.Show -> Unit
         }
-        if (ForegroundGate.ignore(packageName, this.packageName)) {
-            hideOverlay()
-            return
-        }
+        val packageName = candidate ?: return
         if (ShieldSession.blocks(packageName)) {
             hideOverlay()
             if (ShieldSession.openedInto(packageName) && !repo.isBlocked(packageName, repo.safetyPackages())) {
@@ -152,6 +168,7 @@ class BlockWatchService : Service() {
                     onAsk = { openAsk(packageName, label) },
                 )
                 shownFor = if (overlay == null) null else packageName
+                if (shownFor != null) overlayShownAt = System.currentTimeMillis()
             }
             return
         }
@@ -183,6 +200,7 @@ class BlockWatchService : Service() {
         ShieldOverlay.hide(this, overlay)
         overlay = null
         shownFor = null
+        overlayShownAt = 0L
     }
 
     private fun buildNotification(text: String, tap: PendingIntent? = null): Notification {

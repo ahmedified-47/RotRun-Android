@@ -157,8 +157,15 @@ data class SavedState(
     val lastAskToken: Long = 0L,
     val bailoutFrom: String = "",
 ) {
-    fun premiumActive(now: Long = System.currentTimeMillis()): Boolean =
-        premium && (lifetime || productId == Products.LIFETIME || premiumUntil <= 0L || premiumUntil > now)
+    fun premiumActive(now: Long = System.currentTimeMillis()): Boolean {
+        if (!premium) return false
+        if (lifetime || productId == Products.LIFETIME) return true
+        if (premiumUntil <= 0L || premiumUntil > now) return true
+        // The last known renewal can pass while Play still has the subscription.
+        // Billing setup failing, or sync-play-entitlements being undeployed, must not
+        // send that purchaser through checkout again. Play clears premium when the purchase is gone.
+        return productId in Products.subscriptions
+    }
 
     fun cameoToday(day: String = Scoring.dayKey()): Boolean = cameoName.isNotBlank() && cameoDay == day
 

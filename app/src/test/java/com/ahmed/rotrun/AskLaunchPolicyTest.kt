@@ -8,6 +8,7 @@ import com.ahmed.rotrun.data.GoogleSignInPolicy
 import com.ahmed.rotrun.watch.AskLaunchPolicy
 import com.ahmed.rotrun.watch.ForegroundGate
 import com.ahmed.rotrun.watch.ShieldSession
+import com.ahmed.rotrun.watch.ShieldStep
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -96,6 +97,78 @@ class AskLaunchPolicyTest {
         assertFalse(ForegroundGate.shouldShowShield("com.instagram.android", own, safety, blocked = false))
         assertTrue(ForegroundGate.shouldShowShield("com.instagram.android", own, safety, blocked = true))
         assertFalse(ForegroundGate.shouldShowShield(null, own, safety, blocked = true))
+    }
+
+    @Test
+    fun blockedAppStillGetsAShieldWhenRotRunAndSystemUiAreNoise() {
+        val own = "com.ahmed.rotrun"
+        val safety = setOf(own, "android", "com.android.systemui", "com.android.launcher3", "com.oppo.launcher")
+        val instagram = "com.instagram.android"
+        val shownAt = 5_000L
+        assertEquals(
+            ShieldStep.Show,
+            ForegroundGate.onUsage(instagram, 4_000L, null, 0L, own, safety, blocked = true),
+        )
+        assertEquals(
+            ShieldStep.Show,
+            ForegroundGate.onWindow(instagram, windowStateChanged = true, shownFor = null, own, safety, eventBlocked = true),
+        )
+        assertEquals(
+            ShieldStep.Leave,
+            ForegroundGate.onUsage(null, 0L, instagram, shownAt, own, safety, blocked = false),
+        )
+        assertEquals(
+            ShieldStep.Keep,
+            ForegroundGate.onWindow(own, windowStateChanged = false, shownFor = instagram, own, safety, eventBlocked = false),
+        )
+        assertEquals(
+            ShieldStep.Keep,
+            ForegroundGate.onWindow("com.android.systemui", windowStateChanged = true, shownFor = instagram, own, safety, eventBlocked = false),
+        )
+        assertEquals(
+            ShieldStep.Keep,
+            ForegroundGate.onWindow("com.coloros.oppoguardelf", windowStateChanged = false, shownFor = instagram, own, safety, eventBlocked = false),
+        )
+        assertEquals(
+            ShieldStep.Leave,
+            ForegroundGate.onUsage(own, 1_000L, instagram, shownAt, own, safety, blocked = false),
+        )
+        assertEquals(
+            ShieldStep.Hide,
+            ForegroundGate.onUsage(own, 6_000L, instagram, shownAt, own, safety, blocked = false),
+        )
+        assertEquals(
+            ShieldStep.Hide,
+            ForegroundGate.onWindow(own, windowStateChanged = true, shownFor = instagram, own, safety, eventBlocked = false),
+        )
+        assertEquals(
+            ShieldStep.Hide,
+            ForegroundGate.onUsage("com.oppo.launcher", 6_000L, instagram, shownAt, own, safety, blocked = true),
+        )
+        assertEquals(
+            ShieldStep.Hide,
+            ForegroundGate.onWindow("com.android.launcher3", windowStateChanged = true, shownFor = instagram, own, safety, eventBlocked = false),
+        )
+        assertEquals(
+            ShieldStep.Hide,
+            ForegroundGate.onUsage(own, 6_000L, null, 0L, own, safety, blocked = true),
+        )
+        assertFalse(ForegroundGate.shouldShowShield(own, own, safety, blocked = true))
+        assertFalse(ForegroundGate.shouldShowShield("com.android.systemui", own, safety, blocked = true))
+        assertFalse(ForegroundGate.shouldShowShield("com.oppo.launcher", own, safety, blocked = true))
+    }
+
+    @Test
+    fun nahEndsTheChatWithoutOpeningTheBlockedApp() {
+        ShieldSession.endChat()
+        ShieldSession.holdForChat("com.instagram.android", "Instagram")
+        ShieldSession.endChat()
+        assertFalse(ShieldSession.openedInto("com.instagram.android"))
+        assertFalse(ShieldSession.blocks("com.instagram.android"))
+        ShieldSession.hold("com.instagram.android")
+        assertFalse(ShieldSession.openedInto("com.instagram.android"))
+        assertTrue(ShieldSession.blocks("com.instagram.android"))
+        ShieldSession.release()
     }
 
     @Test

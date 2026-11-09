@@ -14,10 +14,34 @@ class BlockAccessibilityService : AccessibilityService() {
     private val handler = Handler(Looper.getMainLooper())
     private var overlay: View? = null
     private var shownFor: String? = null
+    private var shownAt = 0L
     private val poll = object : Runnable {
         override fun run() {
-            val current = UsageReader.foreground(this@BlockAccessibilityService)
-            if (current.isNullOrBlank()) hide() else consider(current)
+            if (!AskLaunchPolicy.leaveOverlayUp(AskBrainLaunch.launching)) {
+                if (!AskLaunchPolicy.showShield(ShieldSession.chatPackage() != null)) {
+                    hide()
+                } else if (RotRunGraph.ready()) {
+                    val reading = UsageReader.foregroundResume(this@BlockAccessibilityService)
+                    val repo = RotRunGraph.repo
+                    val safety = repo.safetyPackages()
+                    val blocked = reading != null && repo.isBlocked(reading.packageName, safety)
+                    when (
+                        ForegroundGate.onUsage(
+                            packageName = reading?.packageName,
+                            resumedAtMillis = reading?.atMillis ?: 0L,
+                            shownFor = shownFor,
+                            shownAtMillis = shownAt,
+                            ownPackage = packageName,
+                            safety = safety,
+                            blocked = blocked,
+                        )
+                    ) {
+                        ShieldStep.Show -> consider(reading!!.packageName)
+                        ShieldStep.Hide -> hide()
+                        ShieldStep.Keep, ShieldStep.Leave -> Unit
+                    }
+                }
+            }
             handler.postDelayed(this, 1_000)
         }
     }
@@ -31,28 +55,32 @@ class BlockAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        val fromEvent = event?.packageName?.toString()?.takeIf { it.isNotBlank() }
-        val packageName = when (event?.eventType) {
-            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> fromEvent ?: rootInActiveWindow?.packageName?.toString()
-            AccessibilityEvent.TYPE_WINDOWS_CHANGED -> fromEvent ?: rootInActiveWindow?.packageName?.toString()
-            else -> return
-        } ?: return
-        if (ForegroundGate.ignore(packageName, this.packageName)) {
-            val real = UsageReader.foreground(this)
-            val safety = if (RotRunGraph.ready()) RotRunGraph.repo.safetyPackages() else emptySet()
-            val blocked = real != null && repoReadyBlocked(real)
-            if (ForegroundGate.shouldShowShield(real, this.packageName, safety, blocked)) {
-                if (AskLaunchPolicy.keepShownShield(shownFor, packageName, this.packageName)) {
-                    covering = overlay != null
-                    return
-                }
-                consider(real!!)
-                return
-            }
+        val stateChanged = event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+        val windowsChanged = event?.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED
+        if (!stateChanged && !windowsChanged) return
+        val packageName = event?.packageName?.toString()?.takeIf { it.isNotBlank() }
+            ?: rootInActiveWindow?.packageName?.toString()
+            ?: return
+        if (AskLaunchPolicy.leaveOverlayUp(AskBrainLaunch.launching)) return
+        if (!AskLaunchPolicy.showShield(ShieldSession.chatPackage() != null)) {
             hide()
             return
         }
-        consider(packageName)
+        val safety = if (RotRunGraph.ready()) RotRunGraph.repo.safetyPackages() else emptySet()
+        when (
+            ForegroundGate.onWindow(
+                eventPackage = packageName,
+                windowStateChanged = stateChanged,
+                shownFor = shownFor,
+                ownPackage = this.packageName,
+                safety = safety,
+                eventBlocked = repoReadyBlocked(packageName),
+            )
+        ) {
+            ShieldStep.Show -> consider(packageName)
+            ShieldStep.Hide -> hide()
+            ShieldStep.Keep, ShieldStep.Leave -> Unit
+        }
     }
 
     private fun consider(packageName: String) {
@@ -63,6 +91,10 @@ class BlockAccessibilityService : AccessibilityService() {
             return
         }
         if (ForegroundGate.ignore(packageName, this.packageName)) {
+            if (AskLaunchPolicy.keepShownShield(shownFor, packageName, this.packageName)) {
+                covering = overlay != null
+                return
+            }
             hide()
             return
         }
@@ -94,6 +126,7 @@ class BlockAccessibilityService : AccessibilityService() {
             onAsk = { openAsk(packageName, label) },
         )
         shownFor = if (overlay == null) null else packageName
+        if (shownFor != null) shownAt = System.currentTimeMillis()
         covering = overlay != null
     }
 
@@ -123,6 +156,7 @@ class BlockAccessibilityService : AccessibilityService() {
         ShieldOverlay.hide(this, overlay)
         overlay = null
         shownFor = null
+        shownAt = 0L
         covering = false
     }
 

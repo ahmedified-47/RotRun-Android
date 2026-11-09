@@ -115,15 +115,24 @@ class BillingQuotesTest {
 
     @Test
     fun expiryComesFromTheServerNotAFakeWindow() {
+        val now = 1_750_000_000_000L
         val previous = 1_700_000_000_000L
+        val stillAhead = now + 86_400_000L
         val server = 1_800_000_000_000L
-        assertEquals(server, BillingQuotes.premiumUntilMillis(lifetime = false, serverExpiresAt = server, previous = previous))
-        assertEquals(previous, BillingQuotes.premiumUntilMillis(lifetime = false, serverExpiresAt = null, previous = previous))
-        assertTrue(BillingQuotes.premiumUntilMillis(lifetime = true, serverExpiresAt = null, previous = previous) > previous + 400L * 24 * 60 * 60 * 1000)
+        assertEquals(server, BillingQuotes.premiumUntilMillis(lifetime = false, serverExpiresAt = server, previous = previous, now = now))
+        assertEquals(stillAhead, BillingQuotes.premiumUntilMillis(lifetime = false, serverExpiresAt = null, previous = stillAhead, now = now))
+        assertEquals(0L, BillingQuotes.premiumUntilMillis(lifetime = false, serverExpiresAt = null, previous = previous, now = now))
+        assertEquals(stillAhead, BillingQuotes.premiumUntilMillis(lifetime = false, serverExpiresAt = previous, previous = stillAhead, now = now))
+        assertEquals(0L, BillingQuotes.premiumUntilMillis(lifetime = false, serverExpiresAt = previous, previous = previous, now = now))
+        assertTrue(BillingQuotes.premiumUntilMillis(lifetime = true, serverExpiresAt = null, previous = previous, now = now) > previous + 400L * 24 * 60 * 60 * 1000)
         val active = SavedState(premium = true, premiumUntil = 0L)
-        val expired = SavedState(premium = true, productId = Products.YEARLY, premiumUntil = 1L)
+        val renewed = SavedState(premium = true, productId = Products.MONTHLY, premiumUntil = 1L)
+        val cleared = SavedState(premium = false, productId = Products.MONTHLY, premiumUntil = 1L)
+        val noPurchase = SavedState(premium = true, productId = null, premiumUntil = 1L)
         assertTrue(active.premiumActive(now = 50_000L))
-        assertFalse(expired.premiumActive(now = 50_000L))
+        assertTrue(renewed.premiumActive(now = 50_000L))
+        assertFalse(cleared.premiumActive(now = 50_000L))
+        assertFalse(noPurchase.premiumActive(now = 50_000L))
     }
 
     @Test

@@ -120,7 +120,10 @@ object UsageReader {
      * The window is hours, not seconds: a block service often starts after the blocked app
      * is already open, and that resume event is older than a few seconds.
      */
-    fun foreground(context: Context): String? {
+    fun foreground(context: Context): String? = foregroundResume(context)?.packageName
+
+    /** Last resume and when it happened. Callers compare that time with the shield. */
+    fun foregroundResume(context: Context): ForegroundResume? {
         if (!hasAccess(context)) return null
         val manager = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager ?: return null
         val end = System.currentTimeMillis()
@@ -131,14 +134,15 @@ object UsageReader {
         var latestTime = 0L
         while (events.hasNextEvent()) {
             events.getNextEvent(event)
-            if (event.eventType == resume && event.timeStamp >= latestTime) {
+            if (event.eventType == resume && event.timeStamp >= latestTime && !event.packageName.isNullOrBlank()) {
                 latestTime = event.timeStamp
                 latest = event.packageName
             }
         }
-        if (latest != null) return latest
+        if (latest != null) return ForegroundResume(latest, latestTime)
         val stats = manager.queryUsageStats(UsageStatsManager.INTERVAL_BEST, end - 60 * 60_000L, end).orEmpty()
-        return stats.filter { it.lastTimeUsed > 0L }.maxByOrNull { it.lastTimeUsed }?.packageName
+        val stat = stats.filter { it.lastTimeUsed > 0L && it.packageName.isNotBlank() }.maxByOrNull { it.lastTimeUsed }
+        return stat?.let { ForegroundResume(it.packageName, it.lastTimeUsed) }
     }
 
     /**
@@ -329,6 +333,9 @@ internal fun countedSampleMillis(foreground: Long, visible: Long, windowMillis: 
 }
 
 internal data class ForegroundMark(val packageName: String, val timeMillis: Long, val resumed: Boolean)
+
+/** Last activity resume. [atMillis] is compared with the time a shield was shown. */
+data class ForegroundResume(val packageName: String, val atMillis: Long)
 
 /**
  * Foreground time inside the window. Only one package is in the foreground, so the

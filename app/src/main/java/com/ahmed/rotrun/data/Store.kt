@@ -288,7 +288,12 @@ class RotRunRepository(context: Context) {
             if (!active) {
                 current.copy(premium = false, lifetime = false, productId = null, premiumUntil = 0L)
             } else {
-                val until = com.ahmed.rotrun.logic.BillingQuotes.premiumUntilMillis(lifetime, expiresAtMillis, current.premiumUntil)
+                val until = com.ahmed.rotrun.logic.BillingQuotes.premiumUntilMillis(
+                    lifetime,
+                    expiresAtMillis,
+                    current.premiumUntil,
+                    System.currentTimeMillis(),
+                )
                 val next = current.copy(
                     premium = true,
                     lifetime = lifetime,

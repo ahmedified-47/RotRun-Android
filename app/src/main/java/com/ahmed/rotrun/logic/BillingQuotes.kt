@@ -229,11 +229,18 @@ object BillingQuotes {
         return digest.joinToString("") { "%02x".format(it.toInt() and 0xff) }
     }
 
-    /** A missing server date does not invent an expiry. Lifetime has no renewal. */
-    fun premiumUntilMillis(lifetime: Boolean, serverExpiresAt: Long?, previous: Long): Long = when {
+    /**
+     * A missing server date does not invent a renewal. Lifetime has no renewal.
+     * Play's purchase row has no expiry. sync-play-entitlements is a proposal and is not
+     * deployed, so it never replaces a stored date. Keeping a date that has already passed
+     * makes that active purchase look unpaid. 0 means the purchase is still active and the
+     * renewal date is unknown.
+     */
+    fun premiumUntilMillis(lifetime: Boolean, serverExpiresAt: Long?, previous: Long, now: Long): Long = when {
         lifetime -> Long.MAX_VALUE / 4
-        serverExpiresAt != null -> serverExpiresAt
-        else -> previous
+        serverExpiresAt != null && serverExpiresAt > now -> serverExpiresAt
+        previous > now -> previous
+        else -> 0L
     }
 
     private fun rank(productId: String): Int? = when (productId) {

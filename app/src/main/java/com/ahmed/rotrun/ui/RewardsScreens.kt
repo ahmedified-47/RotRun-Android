@@ -1,5 +1,6 @@
 package com.ahmed.rotrun.ui
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -30,12 +31,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -53,6 +58,7 @@ import com.ahmed.rotrun.logic.Scoring
 import com.ahmed.rotrun.logic.WidgetGlyph
 import com.ahmed.rotrun.logic.WidgetGlyphs
 import com.ahmed.rotrun.R
+import kotlin.math.roundToInt
 
 private val SkyTop = Color(0xFFBDE6FA)
 private val SkyBottom = Color(0xFFDBF2FC)
@@ -318,12 +324,15 @@ private fun OffenderMark(label: String, packageName: String) {
         WidgetGlyph.AppStore -> R.drawable.glyph_appstore
         WidgetGlyph.Screenshots, WidgetGlyph.Other -> R.drawable.glyph_other
     }
-    Image(
-        painterResource(background),
-        contentDescription = null,
-        contentScale = ContentScale.Crop,
-        modifier = Modifier.size(28.dp).clip(RoundedCornerShape(8.dp)),
-    )
+    // These files are <shape> gradients. painterResource only accepts vectors and bitmaps,
+    // and that throw is what closed Rewards as soon as an offender row was composed.
+    val context = LocalContext.current
+    val drawable = remember(background) { context.getDrawable(background)?.mutate() }
+    Canvas(Modifier.size(28.dp).clip(RoundedCornerShape(8.dp))) {
+        val mark = drawable ?: return@Canvas
+        mark.setBounds(0, 0, size.width.roundToInt(), size.height.roundToInt())
+        drawIntoCanvas { canvas -> mark.draw(canvas.nativeCanvas) }
+    }
 }
 
 @Composable

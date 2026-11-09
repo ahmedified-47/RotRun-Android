@@ -726,6 +726,7 @@ private fun SubscriptionSection(state: SavedState, repo: RotRunRepository, onCha
         state.lifetime && state.premiumActive() -> "Does not renew"
         state.premiumActive() && state.premiumUntil > System.currentTimeMillis() ->
             "Renews ${java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(java.util.Date(state.premiumUntil))}"
+        state.premiumActive() && !state.productId.isNullOrBlank() -> "Active on Google Play"
         else -> "Prices come from Google Play"
     }
     Text(
