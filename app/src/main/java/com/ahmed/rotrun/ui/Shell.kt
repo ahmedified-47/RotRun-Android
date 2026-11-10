@@ -179,11 +179,11 @@ private fun MainShell(repo: RotRunRepository, onOpenBoard: () -> Unit, onEditYou
     var plan by remember { mutableStateOf(Products.YEARLY) }
     val context = LocalContext.current
     val level = BrainHealthLevel.fromLabel(state.brainHealth)
-    val health = Scoring.shownHealth(usage.authorized, usage.drainSeconds, state.focusMinutesToday(), level)
+    val health = Scoring.shownHealth(usage.authorized, usage.todaySeconds, state.focusMinutesToday(), level)
     val screenMinutes = if (usage.authorized) (usage.todaySeconds / 60).toInt() else null
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         repo.onForeground()
-        if (PaywallGate.shows && !repo.state.value.premiumActive() && !PlayCatalog.purchasing.value) upgrade = true
+        if (PaywallGate.shows && !repo.state.value.premiumActive() && !PlayCatalog.purchasing.value && repo.askIntervention.value == null) upgrade = true
     }
     LaunchedEffect(Unit) {
         if (repo.takeChatRequest()) talk = true

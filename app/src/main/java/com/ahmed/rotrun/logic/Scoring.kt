@@ -93,12 +93,14 @@ object Scoring {
 
     /**
      * One Brain Health number for Home, Stats, and the widget.
+     * [todaySeconds] is total screen time, the same input as iOS
+     * `ScreenTimeFormatting.brainHealth(today:)`. The excluded-app drain is not used.
      * Missing usage access is unknown, not 0% and not 100%.
      * There is no minimum number of seconds before a real score is shown.
      */
-    fun shownHealth(authorized: Boolean, drainSeconds: Long, focusMinutes: Int, level: BrainHealthLevel): Int? {
+    fun shownHealth(authorized: Boolean, todaySeconds: Long, focusMinutes: Int, level: BrainHealthLevel): Int? {
         if (!authorized) return null
-        return displayedHealth(drainHealth(drainSeconds, level), focusMinutes, level.restoreMinutes)
+        return displayedHealth(drainHealth(todaySeconds, level), focusMinutes, level.restoreMinutes)
     }
 
     /** Streak after an open. Same calendar day keeps it. The next day adds one. A gap starts over. */

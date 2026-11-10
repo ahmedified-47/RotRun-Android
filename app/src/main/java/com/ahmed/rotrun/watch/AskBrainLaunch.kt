@@ -67,10 +67,14 @@ object AskBrainLaunch {
 
     private fun bringForward(context: Context, packageName: String, label: String): Boolean {
         val explicit = explicitIntent(context, packageName, label)
-        notify(context, label, pending(context, explicit))
+        val tap = pending(context, explicit)
+        notify(context, label, tap, fullScreen = false)
         val started = start(context, explicit)
-        val moved = if (started) false else bringExistingTaskForward(context)
-        return started || moved
+        if (started) return true
+        if (AskLaunchPolicy.fullScreenAfterStart(startSucceeded = false)) {
+            notify(context, label, tap, fullScreen = true)
+        }
+        return bringExistingTaskForward(context)
     }
 
     private fun launchIntent(context: Context, packageName: String, label: String): Intent {
@@ -138,7 +142,7 @@ object AskBrainLaunch {
         }.getOrDefault(false)
     }
 
-    private fun notify(context: Context, label: String, tap: PendingIntent) {
+    private fun notify(context: Context, label: String, tap: PendingIntent, fullScreen: Boolean) {
         val manager = context.getSystemService(NotificationManager::class.java)
         if (Build.VERSION.SDK_INT >= 26) {
             val channel = NotificationChannel(
@@ -160,7 +164,7 @@ object AskBrainLaunch {
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setAutoCancel(true)
-        if (BrainCallPolicy.postFullScreenIntent(Build.VERSION.SDK_INT, fullScreenAllowed(context), alreadyPosted = false)) {
+        if (fullScreen && BrainCallPolicy.postFullScreenIntent(Build.VERSION.SDK_INT, fullScreenAllowed(context), alreadyPosted = false)) {
             notification.setFullScreenIntent(tap, true)
         }
         manager.notify(NOTIFICATION_ID, notification.build())

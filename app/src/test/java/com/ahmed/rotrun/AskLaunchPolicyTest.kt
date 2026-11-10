@@ -126,7 +126,7 @@ class AskLaunchPolicyTest {
             ForegroundGate.onWindow(own, windowStateChanged = false, shownFor = instagram, own, safety, eventBlocked = false),
         )
         assertEquals(
-            ShieldStep.Hide,
+            ShieldStep.Keep,
             ForegroundGate.onWindow("com.android.systemui", windowStateChanged = true, shownFor = instagram, own, safety, eventBlocked = false),
         )
         assertEquals(
@@ -166,9 +166,15 @@ class AskLaunchPolicyTest {
             ForegroundGate.onUsage(own, 6_000L, instagram, shownAt, own, safety, blocked = false),
         )
         assertEquals(
-            ShieldStep.Hide,
+            ShieldStep.Keep,
             ForegroundGate.onWindow(own, windowStateChanged = true, shownFor = instagram, own, safety, eventBlocked = false),
         )
+        assertEquals(
+            ShieldStep.Keep,
+            ForegroundGate.onWindow("com.google.android.calendar", windowStateChanged = true, shownFor = "com.google.android.calendar", own, safety, eventBlocked = true),
+        )
+        assertFalse(AskLaunchPolicy.fullScreenAfterStart(startSucceeded = true))
+        assertTrue(AskLaunchPolicy.fullScreenAfterStart(startSucceeded = false))
         assertEquals(
             ShieldStep.Hide,
             ForegroundGate.onUsage("com.oppo.launcher", 6_000L, instagram, shownAt, own, safety, blocked = true),

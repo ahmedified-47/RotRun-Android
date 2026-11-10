@@ -54,6 +54,15 @@ class ScoringTest {
     }
 
     @Test
+    fun brainHealthMatchesIosTotalScreenTime() {
+        val today = (1.5 * 3600).toLong()
+        assertEquals(75, Scoring.drainHealth(today, BrainHealthLevel.Medium))
+        assertEquals(83, Scoring.shownHealth(true, today, 48, BrainHealthLevel.Medium))
+        assertEquals(100, Scoring.shownHealth(true, 30, 0, BrainHealthLevel.Easy))
+        assertEquals(0, Scoring.drainHealth(BrainHealthLevel.Hard.goalMinutes * 60L * 2, BrainHealthLevel.Hard))
+    }
+
+    @Test
     fun oneAndAHalfHoursAtMediumIsSeventyFive() {
         assertEquals(75, Scoring.drainHealth((1.5 * 3600).toLong(), BrainHealthLevel.Medium))
         assertEquals("Holding steady", Scoring.caption(75))

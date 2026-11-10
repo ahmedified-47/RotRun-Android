@@ -48,7 +48,15 @@ data class PlaySyncResult(
 class PlayBilling(
     context: Context,
     private val accountId: () -> String?,
-    private val onEntitlement: (productId: String?, lifetime: Boolean, active: Boolean, expiresAtMillis: Long?) -> Unit,
+    private val onEntitlement: (
+        productId: String?,
+        lifetime: Boolean,
+        active: Boolean,
+        expiresAtMillis: Long?,
+        purchaseToken: String?,
+        playReportedGone: Boolean,
+    ) -> Unit,
+    private val storedGrant: () -> Pair<String?, String>,
     private val onMessage: (String) -> Unit,
     private val onPurchased: () -> Unit,
     private val sync: (List<PlayPurchaseUpload>) -> PlaySyncResult,
@@ -141,15 +149,18 @@ class PlayBilling(
     }
 
     override fun onPurchasesUpdated(result: BillingResult, purchases: MutableList<Purchase>?) {
-        PlayCatalog.purchasing.value = false
         when (result.responseCode) {
-            BillingClient.BillingResponseCode.USER_CANCELED -> return
-            BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED -> {
-                queryOwned(announce = true)
+            BillingClient.BillingResponseCode.USER_CANCELED -> {
+                PlayCatalog.purchasing.value = false
                 return
             }
-            BillingClient.BillingResponseCode.OK -> handle(purchases.orEmpty(), fromPurchase = true)
+            BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED -> {
+                queryOwned(announce = true, finishPurchase = true)
+                return
+            }
+            BillingClient.BillingResponseCode.OK -> handle(purchases.orEmpty(), fromPurchase = true, finishPurchase = true)
             else -> {
+                PlayCatalog.purchasing.value = false
                 Log.w(TAG, "purchase ${result.responseCode} ${result.debugMessage}")
                 onMessage("Google Play couldn’t finish that purchase.")
             }
@@ -238,7 +249,7 @@ class PlayBilling(
         return Quadruple(chosen.purchaseOptionId, chosen.formattedPrice, chosen.priceAmountMicros, chosen.offerToken.orEmpty())
     }
 
-    private fun queryOwned(announce: Boolean) {
+    private fun queryOwned(announce: Boolean, finishPurchase: Boolean = false) {
         client.queryPurchasesAsync(
             QueryPurchasesParams.newBuilder().setProductType(BillingClient.ProductType.SUBS).build(),
         ) { subsResult, subs ->
@@ -251,20 +262,18 @@ class PlayBilling(
                     Log.w(TAG, "query ${subsResult.responseCode} ${inAppResult.responseCode}")
                     return@queryPurchasesAsync
                 }
-                handle(subs + inApp, fromPurchase = false, announce = announce)
+                handle(subs + inApp, fromPurchase = false, announce = announce, finishPurchase = finishPurchase)
             }
         }
     }
 
-    private fun handle(purchases: List<Purchase>, fromPurchase: Boolean, announce: Boolean = false) {
+    private fun handle(purchases: List<Purchase>, fromPurchase: Boolean, announce: Boolean = false, finishPurchase: Boolean = false) {
         val known = purchases.filter { purchase -> purchase.products.any { it in Products.all } }
         val pending = known.filter { it.purchaseState == Purchase.PurchaseState.PENDING }
         val purchased = known.filter { it.purchaseState == Purchase.PurchaseState.PURCHASED }
         if (pending.isNotEmpty()) onMessage(BillingQuotes.PENDING_MESSAGE)
         val lifetime = purchased.firstOrNull { Products.LIFETIME in it.products }
         val subscription = purchased.firstOrNull { purchase -> purchase.products.any { it in Products.subscriptions } }
-        ownedSubscriptionToken = subscription?.purchaseToken
-        ownedSubscriptionProduct = subscription?.products?.firstOrNull { it in Products.subscriptions }
         val active = lifetime ?: subscription
         val productId = when {
             lifetime != null -> Products.LIFETIME
@@ -272,11 +281,25 @@ class PlayBilling(
             else -> null
         }
         val isLifetime = lifetime != null
-        if (!BillingQuotes.keepLocalPlayGrant(active != null)) {
-            onEntitlement(null, false, false, null)
-        } else {
-            onEntitlement(productId, isLifetime, true, null)
+        val reportedGone = BillingQuotes.playReportedPurchaseGone(
+            purchased = active != null,
+            pending = pending.isNotEmpty(),
+            sawKnownPurchase = known.isNotEmpty(),
+        )
+        val (storedProduct, storedToken) = storedGrant()
+        if (active != null) {
+            ownedSubscriptionToken = subscription?.purchaseToken
+            ownedSubscriptionProduct = subscription?.products?.firstOrNull { it in Products.subscriptions }
+            onEntitlement(productId, isLifetime, true, null, active.purchaseToken, false)
+        } else if (!BillingQuotes.keepLocalPlayGrant(playPurchased = false, storedProduct, reportedGone)) {
+            ownedSubscriptionToken = null
+            ownedSubscriptionProduct = null
+            onEntitlement(null, false, false, null, null, true)
+        } else if (storedToken.isNotBlank()) {
+            ownedSubscriptionToken = storedToken
+            ownedSubscriptionProduct = storedProduct
         }
+        if (finishPurchase) PlayCatalog.purchasing.value = false
         val uploads = purchased.mapNotNull { purchase ->
             val id = purchase.products.firstOrNull { it in Products.all } ?: return@mapNotNull null
             if (BillingQuotes.mayConsume(id)) {
@@ -295,11 +318,19 @@ class PlayBilling(
             } else {
                 withContext(Dispatchers.IO) { runCatching { sync(uploads) }.getOrNull() }?.entitlements
             }
-            if (rows != null && BillingQuotes.keepLocalPlayGrant(active != null)) {
+            val owned = active
+            if (rows != null && owned != null && BillingQuotes.keepLocalPlayGrant(playPurchased = true)) {
                 val row = rows.firstOrNull { it.productId == productId && it.active }
                     ?: rows.firstOrNull { it.active }
                 if (row != null && BillingQuotes.applyServerEntitlement(true, row.active)) {
-                    onEntitlement(row.productId, row.lifetime || row.productId == Products.LIFETIME, true, row.expiresAtMillis)
+                    onEntitlement(
+                        row.productId,
+                        row.lifetime || row.productId == Products.LIFETIME,
+                        true,
+                        row.expiresAtMillis,
+                        owned.purchaseToken,
+                        false,
+                    )
                 }
             }
             purchased.filter {
@@ -335,7 +366,7 @@ class PlayBilling(
         val result = withContext(Dispatchers.IO) { sync(uploads) }
         val row = result.entitlements?.firstOrNull { it.active }
         if (row != null) {
-            onEntitlement(row.productId, row.lifetime || row.productId == Products.LIFETIME, true, row.expiresAtMillis)
+            onEntitlement(row.productId, row.lifetime || row.productId == Products.LIFETIME, true, row.expiresAtMillis, null, false)
         }
         return result
     }

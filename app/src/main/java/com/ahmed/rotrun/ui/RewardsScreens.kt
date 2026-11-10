@@ -233,7 +233,7 @@ private fun WorldPhoneCard(
 private fun WorldPhoneScreen(look: HomeLook, usage: UsageSnapshot, state: SavedState) {
     val scene = RewardSceneTint.resolve(look.id)
     val level = BrainHealthLevel.fromLabel(state.brainHealth)
-    val health = Scoring.shownHealth(usage.authorized, usage.drainSeconds, state.focusMinutesToday(), level)
+    val health = Scoring.shownHealth(usage.authorized, usage.todaySeconds, state.focusMinutesToday(), level)
     val known = if (usage.todaySeconds >= 60L) health else null
     val screen = if (known == null) "—" else Scoring.formatDuration(usage.todaySeconds)
     val pickups = if (usage.pickups > 0) usage.pickups.toString() else "—"

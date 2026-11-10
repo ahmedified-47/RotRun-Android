@@ -138,7 +138,6 @@ object ShieldOverlay {
             setOnClickListener {
                 if (!AskLaunchPolicy.acceptTap(AskBrainLaunch.launching)) return@setOnClickListener
                 isEnabled = false
-                text = "Opening…"
                 onAsk()
             }
         }

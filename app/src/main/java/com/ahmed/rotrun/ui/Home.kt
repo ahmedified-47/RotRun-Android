@@ -65,7 +65,7 @@ fun HomeScreen(state: SavedState, usage: UsageSnapshot, refreshing: Boolean, onR
     val scene = RewardSceneTint.resolve(state.theme)
     val scenic = !scene.system
     val level = BrainHealthLevel.fromLabel(state.brainHealth)
-    val health = Scoring.shownHealth(usage.authorized, usage.drainSeconds, state.focusMinutesToday(), level)
+    val health = Scoring.shownHealth(usage.authorized, usage.todaySeconds, state.focusMinutesToday(), level)
     val shownLabel = health?.let { "$it%" } ?: "—"
     val style = when {
         health == null || health >= 65 -> look.brain

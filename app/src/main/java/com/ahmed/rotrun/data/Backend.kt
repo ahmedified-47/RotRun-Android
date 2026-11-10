@@ -1055,7 +1055,7 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
     private fun context(state: SavedState): JSONObject {
         val usage = repo.usage.value
         val level = com.ahmed.rotrun.logic.BrainHealthLevel.fromLabel(state.brainHealth)
-        val health = Scoring.shownHealth(usage.authorized, usage.drainSeconds, state.focusMinutesToday(), level)
+        val health = Scoring.shownHealth(usage.authorized, usage.todaySeconds, state.focusMinutesToday(), level)
         val objectJson = JSONObject()
             .put("local_time", ZonedDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME))
             .put("timezone", ZoneId.systemDefault().id)

@@ -76,6 +76,7 @@ class RotRunRepository(context: Context) {
         app,
         accountId = { backend.userId },
         onEntitlement = ::applyEntitlement,
+        storedGrant = { _state.value.productId to _state.value.purchaseToken },
         onMessage = ::toast,
         onPurchased = { _pulses.tryEmit(UiPulse.ClosePaywall) },
         sync = { purchases -> backend.syncPlayPurchases(purchases) },
@@ -202,14 +203,14 @@ class RotRunRepository(context: Context) {
         }
     }
 
-    fun update(block: (SavedState) -> SavedState) {
+    fun update(commit: Boolean = false, block: (SavedState) -> SavedState) {
         val previous: SavedState
         val next: SavedState
         synchronized(lock) {
             previous = _state.value
             next = block(previous)
             _state.value = next
-            persist(next)
+            persist(next, commit)
         }
         publishWidget()
         WatchController.sync(app, next)
@@ -283,31 +284,43 @@ class RotRunRepository(context: Context) {
 
     fun refreshBilling() = billing.start()
 
-    private fun applyEntitlement(productId: String?, lifetime: Boolean, active: Boolean, expiresAtMillis: Long?) {
-        update { current ->
-            if (!active) {
-                current.copy(premium = false, lifetime = false, productId = null, premiumUntil = 0L)
-            } else {
-                val until = com.ahmed.rotrun.logic.BillingQuotes.premiumUntilMillis(
-                    lifetime,
-                    expiresAtMillis,
-                    current.premiumUntil,
-                    System.currentTimeMillis(),
-                )
-                val next = current.copy(
-                    premium = true,
-                    lifetime = lifetime,
-                    productId = productId,
-                    premiumUntil = until,
-                )
-                if (!next.onboardingCompleted && OnboardingStep.fromRaw(next.onboardingStep).let {
-                        it == OnboardingStep.GetAccess || it == OnboardingStep.OneTimeOffer || it == OnboardingStep.PurchaseComplete
-                    }
-                ) {
-                    stepForward(next.copy(onboardingStep = OnboardingStep.PurchaseComplete.raw - 1))
-                } else {
-                    next
+    private fun applyEntitlement(
+        productId: String?,
+        lifetime: Boolean,
+        active: Boolean,
+        expiresAtMillis: Long?,
+        purchaseToken: String?,
+        playReportedGone: Boolean,
+    ) {
+        update(commit = true) { current ->
+            val grant = com.ahmed.rotrun.logic.BillingQuotes.grantAfterQuery(
+                storedPremium = current.premium,
+                storedProductId = current.productId,
+                storedToken = current.purchaseToken,
+                storedLifetime = current.lifetime,
+                storedUntil = current.premiumUntil,
+                playActive = active,
+                playReportedGone = playReportedGone,
+                playProductId = productId,
+                playToken = purchaseToken,
+                playLifetime = lifetime,
+                serverExpiresAt = expiresAtMillis,
+                now = System.currentTimeMillis(),
+            )
+            val next = current.copy(
+                premium = grant.premium,
+                lifetime = grant.lifetime,
+                productId = grant.productId,
+                premiumUntil = grant.premiumUntil,
+                purchaseToken = grant.token,
+            )
+            if (grant.premium && !next.onboardingCompleted && OnboardingStep.fromRaw(next.onboardingStep).let {
+                    it == OnboardingStep.GetAccess || it == OnboardingStep.OneTimeOffer || it == OnboardingStep.PurchaseComplete
                 }
+            ) {
+                stepForward(next.copy(onboardingStep = OnboardingStep.PurchaseComplete.raw - 1))
+            } else {
+                next
             }
         }
     }
@@ -682,7 +695,7 @@ class RotRunRepository(context: Context) {
     private fun publishWidget() {
         val current = _state.value
         val level = com.ahmed.rotrun.logic.BrainHealthLevel.fromLabel(current.brainHealth)
-        val health = Scoring.shownHealth(_usage.value.authorized, _usage.value.drainSeconds, current.focusMinutesToday(), level)
+        val health = Scoring.shownHealth(_usage.value.authorized, _usage.value.todaySeconds, current.focusMinutesToday(), level)
         val known = health != null
         val shown = health ?: 0
         val offenders = if (!known) {
@@ -712,8 +725,9 @@ class RotRunRepository(context: Context) {
         return runCatching { decode(JSONObject(raw)) }.getOrElse { freshState() }
     }
 
-    private fun persist(state: SavedState) {
-        prefs.edit().putString("state", encode(state).toString()).apply()
+    private fun persist(state: SavedState, commit: Boolean = false) {
+        val editor = prefs.edit().putString("state", encode(state).toString())
+        if (commit) editor.commit() else editor.apply()
     }
 
     private fun encode(state: SavedState): JSONObject = JSONObject().apply {
@@ -724,6 +738,7 @@ class RotRunRepository(context: Context) {
         put("productId", state.productId ?: "")
         put("premiumUntil", state.premiumUntil)
         put("lifetime", state.lifetime)
+        put("purchaseToken", state.purchaseToken)
         put("introUsed", state.introUsed)
         put("declinedGetAccess", state.declinedGetAccess)
         put("skippedOneTimeOffer", state.skippedOneTimeOffer)
@@ -785,6 +800,7 @@ class RotRunRepository(context: Context) {
             productId = json.optString("productId").ifBlank { null },
             premiumUntil = json.optLong("premiumUntil"),
             lifetime = json.optBoolean("lifetime") || json.optString("productId") == Products.LIFETIME,
+            purchaseToken = json.optString("purchaseToken"),
             introUsed = json.optBoolean("introUsed"),
             declinedGetAccess = json.optBoolean("declinedGetAccess"),
             skippedOneTimeOffer = json.optBoolean("skippedOneTimeOffer"),

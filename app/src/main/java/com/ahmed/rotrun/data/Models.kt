@@ -110,6 +110,7 @@ data class SavedState(
     val productId: String? = null,
     val premiumUntil: Long = 0L,
     val lifetime: Boolean = false,
+    val purchaseToken: String = "",
     val introUsed: Boolean = false,
     val declinedGetAccess: Boolean = false,
     val skippedOneTimeOffer: Boolean = false,

@@ -71,10 +71,10 @@ object ForegroundGate {
     }
 
     /**
-     * Accessibility window event. WINDOWS_CHANGED for RotRun or system chrome is the
-     * shield itself. Hiding on that event is what removed the block a moment after it
-     * appeared. WINDOW_STATE_CHANGED for RotRun, the launcher, or System UI means the
-     * user left the blocked app.
+     * Accessibility window event. The overlay's own window is reported as RotRun or
+     * System UI, including WINDOW_STATE_CHANGED. Hiding on that event removes the
+     * cover and the next poll adds it again, which is the Ask my brain flicker.
+     * A real leave is a usage resume of RotRun or System UI, or the launcher.
      */
     fun onWindow(
         eventPackage: String,
@@ -85,14 +85,14 @@ object ForegroundGate {
         eventBlocked: Boolean,
     ): ShieldStep {
         if (eventPackage.isBlank()) return if (shownFor != null) ShieldStep.Keep else ShieldStep.Leave
+        if (shownFor != null && eventPackage == shownFor) return ShieldStep.Keep
         val elsewhere = userWentElsewhere(eventPackage, ownPackage, safety)
         val noise = eventPackage != ownPackage && !elsewhere && ignore(eventPackage, ownPackage)
-        if (eventPackage == ownPackage || elsewhere) {
-            if (windowStateChanged) return ShieldStep.Hide
+        if (eventPackage == ownPackage || noise) {
             return if (shownFor != null) ShieldStep.Keep else ShieldStep.Leave
         }
-        if (noise) {
-            if (windowStateChanged && systemChrome(eventPackage)) return ShieldStep.Hide
+        if (elsewhere) {
+            if (windowStateChanged) return ShieldStep.Hide
             return if (shownFor != null) ShieldStep.Keep else ShieldStep.Leave
         }
         return if (shouldShowShield(eventPackage, ownPackage, safety, eventBlocked)) ShieldStep.Show else ShieldStep.Hide

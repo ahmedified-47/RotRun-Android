@@ -136,6 +136,67 @@ class BillingQuotesTest {
     }
 
     @Test
+    fun successfulPurchaseIsStillProAfterReloadWithNoServerRow() {
+        val now = 1_700_000_000_000L
+        val granted = BillingQuotes.grantAfterQuery(
+            storedPremium = false,
+            storedProductId = null,
+            storedToken = "",
+            storedLifetime = false,
+            storedUntil = 0L,
+            playActive = true,
+            playReportedGone = false,
+            playProductId = Products.MONTHLY,
+            playToken = "purchase-token",
+            playLifetime = false,
+            serverExpiresAt = null,
+            now = now,
+        )
+        val later = now + 40L * 24 * 60 * 60 * 1000
+        val reloaded = BillingQuotes.grantAfterQuery(
+            storedPremium = granted.premium,
+            storedProductId = granted.productId,
+            storedToken = granted.token,
+            storedLifetime = granted.lifetime,
+            storedUntil = granted.premiumUntil,
+            playActive = false,
+            playReportedGone = false,
+            playProductId = null,
+            playToken = null,
+            playLifetime = false,
+            serverExpiresAt = null,
+            now = later,
+        )
+        val state = SavedState(
+            premium = reloaded.premium,
+            productId = reloaded.productId,
+            premiumUntil = reloaded.premiumUntil,
+            lifetime = reloaded.lifetime,
+            purchaseToken = reloaded.token,
+        )
+        assertTrue(state.premiumActive(now = later))
+        assertEquals(Products.MONTHLY, state.productId)
+        assertEquals("purchase-token", state.purchaseToken)
+        assertEquals(0L, state.premiumUntil)
+        val gone = BillingQuotes.grantAfterQuery(
+            storedPremium = state.premium,
+            storedProductId = state.productId,
+            storedToken = state.purchaseToken,
+            storedLifetime = state.lifetime,
+            storedUntil = state.premiumUntil,
+            playActive = false,
+            playReportedGone = true,
+            playProductId = null,
+            playToken = null,
+            playLifetime = false,
+            serverExpiresAt = null,
+            now = later,
+        )
+        assertFalse(SavedState(premium = gone.premium, productId = gone.productId, premiumUntil = gone.premiumUntil).premiumActive(now = later))
+        assertEquals("", gone.token)
+    }
+
+    @Test
     fun accountIdIsASha256Hex() {
         val id = "11111111-2222-3333-4444-555555555555"
         val hash = BillingQuotes.obfuscatedAccountId(id)
@@ -159,6 +220,10 @@ class BillingQuotesTest {
         assertFalse(BillingQuotes.applyServerEntitlement(playPurchased = true, serverActive = false))
         assertTrue(BillingQuotes.applyServerEntitlement(playPurchased = true, serverActive = true))
         assertFalse(BillingQuotes.keepLocalPlayGrant(playPurchased = false))
+        assertTrue(BillingQuotes.keepLocalPlayGrant(playPurchased = false, storedProductId = Products.MONTHLY))
+        assertFalse(BillingQuotes.keepLocalPlayGrant(playPurchased = false, storedProductId = Products.MONTHLY, playReportedGone = true))
+        assertFalse(BillingQuotes.playReportedPurchaseGone(purchased = false, pending = false, sawKnownPurchase = false))
+        assertTrue(BillingQuotes.playReportedPurchaseGone(purchased = false, pending = false, sawKnownPurchase = true))
         assertTrue(BillingQuotes.shouldAcknowledge(purchased = true, alreadyAcknowledged = false))
         assertFalse(BillingQuotes.shouldAcknowledge(purchased = false, alreadyAcknowledged = false))
         assertFalse(BillingQuotes.shouldAcknowledge(purchased = true, alreadyAcknowledged = true))

@@ -30,6 +30,14 @@ object BillingQuotes {
         val offerToken: String,
     )
 
+    data class LocalGrant(
+        val premium: Boolean,
+        val productId: String?,
+        val token: String,
+        val lifetime: Boolean,
+        val premiumUntil: Long,
+    )
+
     enum class PurchaseDecision { Grant, Pending, Ignore }
 
     enum class PlanChange { None, UpgradeImmediate, DowngradeDeferred }
@@ -174,8 +182,59 @@ object BillingQuotes {
         else -> PurchaseDecision.Ignore
     }
 
-    /** A Play PURCHASED row stays Pro even when sync-play-entitlements is down or returns nothing. */
-    fun keepLocalPlayGrant(playPurchased: Boolean): Boolean = playPurchased
+    /**
+     * A stored subscription or lifetime stays Pro when Play's query is empty, slow, or not ready.
+     * Play clears it only by returning that purchase in a state that is not owned.
+     * An empty list is not that report. sync-play-entitlements returning nothing is not that report.
+     */
+    fun keepLocalPlayGrant(
+        playPurchased: Boolean,
+        storedProductId: String? = null,
+        playReportedGone: Boolean = false,
+    ): Boolean {
+        if (playReportedGone) return false
+        if (playPurchased) return true
+        return storedProductId in Products.subscriptions || storedProductId == Products.LIFETIME
+    }
+
+    /** Play listed one of our products and none of them are purchased or pending. */
+    fun playReportedPurchaseGone(purchased: Boolean, pending: Boolean, sawKnownPurchase: Boolean): Boolean =
+        sawKnownPurchase && !purchased && !pending
+
+    /**
+     * Write a Play purchase before any later query or server row can drop it.
+     * A fresh load with no server row and no Play row keeps the stored grant.
+     */
+    fun grantAfterQuery(
+        storedPremium: Boolean,
+        storedProductId: String?,
+        storedToken: String,
+        storedLifetime: Boolean,
+        storedUntil: Long,
+        playActive: Boolean,
+        playReportedGone: Boolean,
+        playProductId: String?,
+        playToken: String?,
+        playLifetime: Boolean,
+        serverExpiresAt: Long?,
+        now: Long,
+    ): LocalGrant {
+        val productFromPlay = playProductId?.takeIf { it.isNotBlank() }
+        if (!playActive || productFromPlay == null) {
+            if (keepLocalPlayGrant(playPurchased = false, storedProductId, playReportedGone)) {
+                return LocalGrant(storedPremium, storedProductId, storedToken, storedLifetime, storedUntil)
+            }
+            return LocalGrant(premium = false, productId = null, token = "", lifetime = false, premiumUntil = 0L)
+        }
+        val lifetime = playLifetime || productFromPlay == Products.LIFETIME
+        return LocalGrant(
+            premium = true,
+            productId = productFromPlay,
+            token = playToken?.takeIf { it.isNotBlank() } ?: storedToken,
+            lifetime = lifetime,
+            premiumUntil = premiumUntilMillis(lifetime, serverExpiresAt, storedUntil, now),
+        )
+    }
 
     /** Apply a server expiry only when that same purchase is still active. Never let an empty sync clear it. */
     fun applyServerEntitlement(playPurchased: Boolean, serverActive: Boolean): Boolean = playPurchased && serverActive

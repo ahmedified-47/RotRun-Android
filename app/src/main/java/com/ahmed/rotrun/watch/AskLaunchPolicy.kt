@@ -52,6 +52,12 @@ object AskLaunchPolicy {
     fun shieldCover(accessibilityConnected: Boolean, canDrawOverlays: Boolean): String =
         if (accessibilityConnected || canDrawOverlays) "overlay" else "none"
 
+    /**
+     * startActivity already opened RotRun. A full-screen intent on top of that
+     * launches the activity again and recreates the Ask my brain screen.
+     */
+    fun fullScreenAfterStart(startSucceeded: Boolean): Boolean = !startSucceeded
+
     /** Talk is open. Watchers must not paint the shield over the blocked app. */
     fun showShield(chatting: Boolean): Boolean = !chatting
 
