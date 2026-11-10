@@ -6,6 +6,7 @@ import android.os.Looper
 import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityWindowInfo
 import com.ahmed.rotrun.data.RotRunGraph
 import com.ahmed.rotrun.data.UsageReader
 
@@ -24,10 +25,11 @@ class BlockAccessibilityService : AccessibilityService() {
                     val reading = UsageReader.foregroundResume(this@BlockAccessibilityService)
                     val repo = RotRunGraph.repo
                     val safety = repo.safetyPackages()
-                    val blocked = reading != null && repo.isBlocked(reading.packageName, safety)
+                    val judged = judgePackage(reading?.packageName, safety)
+                    val blocked = judged != null && repo.isBlocked(judged, safety)
                     when (
                         ForegroundGate.onUsage(
-                            packageName = reading?.packageName,
+                            packageName = judged,
                             resumedAtMillis = reading?.atMillis ?: 0L,
                             shownFor = shownFor,
                             shownAtMillis = shownAt,
@@ -36,7 +38,7 @@ class BlockAccessibilityService : AccessibilityService() {
                             blocked = blocked,
                         )
                     ) {
-                        ShieldStep.Show -> consider(reading!!.packageName)
+                        ShieldStep.Show -> judged?.let(::consider)
                         ShieldStep.Hide -> hide()
                         ShieldStep.Keep, ShieldStep.Leave -> Unit
                     }
@@ -58,15 +60,14 @@ class BlockAccessibilityService : AccessibilityService() {
         val stateChanged = event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
         val windowsChanged = event?.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED
         if (!stateChanged && !windowsChanged) return
-        val packageName = event?.packageName?.toString()?.takeIf { it.isNotBlank() }
-            ?: rootInActiveWindow?.packageName?.toString()
-            ?: return
         if (AskLaunchPolicy.leaveOverlayUp(AskBrainLaunch.launching)) return
         if (!AskLaunchPolicy.showShield(ShieldSession.chatPackage() != null)) {
             hide()
             return
         }
+        val reported = event?.packageName?.toString()?.takeIf { it.isNotBlank() }
         val safety = if (RotRunGraph.ready()) RotRunGraph.repo.safetyPackages() else emptySet()
+        val packageName = judgePackage(reported, safety) ?: return
         when (
             ForegroundGate.onWindow(
                 eventPackage = packageName,
@@ -80,6 +81,44 @@ class BlockAccessibilityService : AccessibilityService() {
             ShieldStep.Show -> consider(packageName)
             ShieldStep.Hide -> hide()
             ShieldStep.Keep, ShieldStep.Leave -> Unit
+        }
+    }
+
+    /**
+     * System UI and ColorOS report themselves while Calendar is the app in front.
+     * A blank usage row does the same. The focused application window is Calendar.
+     * RotRun and the launcher are not replaced, so opening them still drops the shield.
+     */
+    private fun judgePackage(reported: String?, safety: Set<String>): String? {
+        val own = packageName
+        val noise = reported.isNullOrBlank() ||
+            (reported != own && !ForegroundGate.userWentElsewhere(reported, own, safety) && ForegroundGate.ignore(reported, own))
+        val alternate = if (noise) applicationInFront() else null
+        return ForegroundGate.packageToCover(reported, alternate, own, safety)
+    }
+
+    private fun applicationInFront(): String? {
+        val listed = runCatching { windows }.getOrNull()
+        if (listed != null) {
+            try {
+                val apps = listed.filter { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
+                val chosen = apps.firstOrNull { it.isFocused } ?: apps.firstOrNull { it.isActive }
+                val root = runCatching { chosen?.root }.getOrNull()
+                try {
+                    val name = root?.packageName?.toString()?.takeIf { it.isNotBlank() }
+                    if (name != null) return name
+                } finally {
+                    runCatching { root?.recycle() }
+                }
+            } finally {
+                listed.forEach { runCatching { it.recycle() } }
+            }
+        }
+        val root = rootInActiveWindow ?: return null
+        return try {
+            root.packageName?.toString()?.takeIf { it.isNotBlank() }
+        } finally {
+            runCatching { root.recycle() }
         }
     }
 

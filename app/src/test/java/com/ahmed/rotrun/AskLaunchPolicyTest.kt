@@ -118,8 +118,50 @@ class AskLaunchPolicyTest {
             ForegroundGate.onWindow(instagram, windowStateChanged = true, shownFor = null, own, safety, eventBlocked = true),
         )
         assertEquals(
-            ShieldStep.Leave,
+            ShieldStep.Keep,
             ForegroundGate.onUsage(null, 0L, instagram, shownAt, own, safety, blocked = false),
+        )
+        assertEquals(
+            ShieldStep.Leave,
+            ForegroundGate.onUsage(null, 0L, null, 0L, own, safety, blocked = true),
+        )
+        val calendar = "com.google.android.calendar"
+        assertEquals(calendar, ForegroundGate.packageToCover("com.android.systemui", calendar, own, safety))
+        assertEquals(calendar, ForegroundGate.packageToCover(null, calendar, own, safety))
+        assertEquals(calendar, ForegroundGate.packageToCover("com.coloros.oppoguardelf", calendar, own, safety))
+        assertEquals(
+            ShieldStep.Show,
+            ForegroundGate.onWindow(
+                ForegroundGate.packageToCover("com.android.systemui", calendar, own, safety).orEmpty(),
+                windowStateChanged = false,
+                shownFor = null,
+                own,
+                safety,
+                eventBlocked = true,
+            ),
+        )
+        assertEquals(
+            ShieldStep.Show,
+            ForegroundGate.onUsage(
+                ForegroundGate.packageToCover(null, calendar, own, safety),
+                0L,
+                null,
+                0L,
+                own,
+                safety,
+                blocked = true,
+            ),
+        )
+        assertEquals(own, ForegroundGate.packageToCover(own, calendar, own, safety))
+        assertEquals("com.android.launcher3", ForegroundGate.packageToCover("com.android.launcher3", calendar, own, safety))
+        assertEquals("com.android.systemui", ForegroundGate.packageToCover("com.android.systemui", null, own, safety))
+        assertEquals(
+            ShieldStep.Leave,
+            ForegroundGate.onWindow(own, windowStateChanged = true, shownFor = null, own, safety, eventBlocked = true),
+        )
+        assertEquals(
+            ShieldStep.Leave,
+            ForegroundGate.onWindow("com.android.systemui", windowStateChanged = true, shownFor = null, own, safety, eventBlocked = true),
         )
         assertEquals(
             ShieldStep.Keep,
