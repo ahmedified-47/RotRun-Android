@@ -150,6 +150,7 @@ fun OnboardingScreen(repo: RotRunRepository) {
         when {
             legal != null -> legal = null
             upgrade -> upgrade = false
+            step == OnboardingStep.GetAccess -> Unit
             step == OnboardingStep.OneTimeOffer -> repo.leaveOffer()
             else -> repo.back()
         }
@@ -196,19 +197,23 @@ fun OnboardingScreen(repo: RotRunRepository) {
                 if (Build.VERSION.SDK_INT >= 33) askNotify.launch(Manifest.permission.POST_NOTIFICATIONS) else repo.advance()
             }
             OnboardingStep.RulePreview -> RulePreview(state, repo)
-            OnboardingStep.GetAccess -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-                GetAccessPaywall(
-                    state = state,
-                    showClose = true,
-                    onClose = repo::declineAccess,
-                    onPurchase = repo::purchase,
-                    onRestore = repo::restore,
-                    onRetry = repo::refreshBilling,
-                    selected = plan,
-                    onSelect = { plan = it },
-                    onboarding = true,
-                    onContinue = repo::advance,
-                )
+            OnboardingStep.GetAccess -> {
+                val notice by repo.purchaseError.collectAsState()
+                PaywallPopup(onDismiss = repo::declineAccess) {
+                    GetAccessPaywall(
+                        state = state,
+                        showClose = true,
+                        onClose = repo::declineAccess,
+                        onPurchase = repo::purchase,
+                        onRestore = repo::restore,
+                        onRetry = repo::refreshBilling,
+                        selected = plan,
+                        onSelect = { plan = it },
+                        onboarding = true,
+                        onContinue = repo::advance,
+                        notice = notice,
+                    )
+                }
             }
             OnboardingStep.OneTimeOffer -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
                 OneTimeOffer(
@@ -234,7 +239,8 @@ fun OnboardingScreen(repo: RotRunRepository) {
         }
         val plansAlreadyShowing = step == OnboardingStep.GetAccess || step == OnboardingStep.OneTimeOffer
         if (upgrade && PaywallGate.shows && !state.premiumActive() && !plansAlreadyShowing) {
-            Column(Modifier.fillMaxSize().background(rot().page).verticalScroll(rememberScrollState())) {
+            val notice by repo.purchaseError.collectAsState()
+            PaywallPopup(onDismiss = { upgrade = false }) {
                 GetAccessPaywall(
                     state = state,
                     showClose = true,
@@ -244,6 +250,7 @@ fun OnboardingScreen(repo: RotRunRepository) {
                     onRetry = repo::refreshBilling,
                     selected = plan,
                     onSelect = { plan = it },
+                    notice = notice,
                 )
             }
         }

@@ -148,7 +148,8 @@ fun RotRunRoot(repo: RotRunRepository) {
 private fun Gate(repo: RotRunRepository) {
     val state by repo.state.collectAsState()
     var plan by remember { mutableStateOf(Products.YEARLY) }
-    Column(Modifier.fillMaxSize().background(rot().page).verticalScroll(rememberScrollState())) {
+    val notice by repo.purchaseError.collectAsState()
+    PaywallPopup(onDismiss = {}) {
         GetAccessPaywall(
             state = state,
             showClose = true,
@@ -158,6 +159,7 @@ private fun Gate(repo: RotRunRepository) {
             onRetry = repo::refreshBilling,
             selected = plan,
             onSelect = { plan = it },
+            notice = notice,
         )
     }
 }
@@ -259,7 +261,8 @@ private fun MainShell(repo: RotRunRepository, onOpenBoard: () -> Unit, onEditYou
             ShieldSession.endChat()
         }
         if (upgrade && PaywallGate.shows && !state.premiumActive()) {
-            Box(Modifier.fillMaxSize().background(rot().page).statusBarsPadding().verticalScroll(rememberScrollState())) {
+            val notice by repo.purchaseError.collectAsState()
+            PaywallPopup(onDismiss = { upgrade = false }) {
                 GetAccessPaywall(
                     state = state,
                     showClose = true,
@@ -269,6 +272,7 @@ private fun MainShell(repo: RotRunRepository, onOpenBoard: () -> Unit, onEditYou
                     onRetry = repo::refreshBilling,
                     selected = plan,
                     onSelect = { plan = it },
+                    notice = notice,
                 )
             }
         }

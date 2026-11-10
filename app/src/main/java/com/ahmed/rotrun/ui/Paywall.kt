@@ -1,5 +1,7 @@
 package com.ahmed.rotrun.ui
 
+import android.graphics.drawable.ColorDrawable
+import android.view.WindowManager
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.EaseInOut
 import androidx.compose.animation.core.animateFloatAsState
@@ -10,12 +12,16 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -25,11 +31,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.rotate
@@ -40,6 +48,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
 import com.ahmed.rotrun.data.SavedState
 import androidx.compose.material3.CircularProgressIndicator
 import com.ahmed.rotrun.logic.BillingQuotes
@@ -59,6 +70,7 @@ fun GetAccessPaywall(
     onSelect: (String) -> Unit,
     onboarding: Boolean = false,
     onContinue: () -> Unit = {},
+    notice: String? = null,
 ) {
     val chrome = rot()
     val catalog by PlayCatalog.status.collectAsState()
@@ -96,6 +108,9 @@ fun GetAccessPaywall(
         } else {
             titleCopy()
             subtitle()
+        }
+        if (!notice.isNullOrBlank()) {
+            Text(notice, color = chrome.danger, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 10.dp, start = 12.dp, end = 12.dp))
         }
         Spacer(Modifier.height(12.dp))
         if (catalog == CatalogStatus.Unavailable) {
@@ -144,6 +159,47 @@ fun GetAccessPaywall(
         }
         if (onboarding) Appear(0.14f) { footer() } else footer()
         Spacer(Modifier.height(12.dp))
+    }
+}
+
+@Composable
+fun PaywallPopup(onDismiss: () -> Unit, content: @Composable () -> Unit) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            dismissOnBackPress = true,
+            dismissOnClickOutside = false,
+            decorFitsSystemWindows = false,
+        ),
+    ) {
+        val view = LocalView.current
+        SideEffect {
+            val window = (view.parent as? DialogWindowProvider)?.window ?: return@SideEffect
+            window.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
+            window.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
+            window.setDimAmount(0f)
+        }
+        Box(Modifier.fillMaxSize()) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.45f))
+                    .clickable(onClick = onDismiss),
+            )
+            Box(
+                Modifier
+                    .align(Alignment.Center)
+                    .padding(horizontal = 16.dp, vertical = 28.dp)
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.86f)
+                    .clip(RoundedCornerShape(36.dp))
+                    .background(rot().page)
+                    .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) {},
+            ) {
+                Column(Modifier.verticalScroll(rememberScrollState())) { content() }
+            }
+        }
     }
 }
 

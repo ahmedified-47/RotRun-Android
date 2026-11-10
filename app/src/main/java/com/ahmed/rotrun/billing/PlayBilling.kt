@@ -113,7 +113,7 @@ class PlayBilling(
             .build()
         val userId = accountId()?.takeIf { it.isNotBlank() }
         if (userId == null) {
-            onMessage("Sign in with Google before buying, so voice can verify Premium.")
+            onMessage("Google sign-in didn’t finish.")
             return
         }
         val flow = BillingFlowParams.newBuilder()

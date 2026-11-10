@@ -86,6 +86,7 @@ import kotlinx.coroutines.withContext
 @Composable
 fun SettingsScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunRepository) {
     var page by rememberSaveable { mutableStateOf("root") }
+    var showPlans by rememberSaveable { mutableStateOf(false) }
     var plan by remember { mutableStateOf(state.productId ?: Products.YEARLY) }
     var authError by remember { mutableStateOf(false) }
     var showDisclosure by remember { mutableStateOf(false) }
@@ -94,12 +95,11 @@ fun SettingsScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunR
     val askNotify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         repo.refreshAccess()
     }
-    BackHandler(enabled = page != "root" || showDisclosure || authError) {
+    BackHandler(enabled = !showPlans && (page != "root" || showDisclosure || authError)) {
         when {
             authError -> authError = false
             showDisclosure -> showDisclosure = false
             page == "help" || page == "feedback" || page == "contact" || page == "subscription" -> page = "support"
-            page == "plans" -> page = "subscription"
             else -> page = "root"
         }
     }
@@ -113,15 +113,7 @@ fun SettingsScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunR
         "contact" -> ContactPage { page = "support" }
         "widget" -> WidgetPage { page = "root" }
         "memory" -> MemoryPage(repo) { page = "root" }
-        "subscription" -> PremiumManage(state, repo, onBack = { page = "support" }, onChangePlan = { page = "plans" })
-        "plans" -> Column(Modifier.padding(bottom = 12.dp)) {
-            BackHeader("RotRun Premium", { page = "subscription" })
-            GetAccessPaywall(
-                state, showClose = false, onClose = {},
-                onPurchase = repo::purchase, onRestore = repo::restore, onRetry = repo::refreshBilling,
-                selected = plan, onSelect = { plan = it },
-            )
-        }
+        "subscription" -> PremiumManage(state, repo, onBack = { page = "support" }, onChangePlan = { showPlans = true })
         else -> RootSettings(
             state = state,
             access = access,
@@ -136,6 +128,16 @@ fun SettingsScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunR
             onOverlay = { DeviceAccessReader.open(context, DeviceAccessReader.overlayIntent(context)) },
             onBattery = { DeviceAccessReader.open(context, DeviceAccessReader.batteryIntent(context)) },
         )
+    }
+    if (showPlans) {
+        val notice by repo.purchaseError.collectAsState()
+        PaywallPopup(onDismiss = { showPlans = false }) {
+            GetAccessPaywall(
+                state, showClose = true, onClose = { showPlans = false },
+                onPurchase = repo::purchase, onRestore = repo::restore, onRetry = repo::refreshBilling,
+                selected = plan, onSelect = { plan = it }, notice = notice,
+            )
+        }
     }
     if (page == "brain") BrainHealthPage(state, repo) { page = "root" }
     if (page == "excluded") ExcludedPage(state, installed, repo) { page = "root" }

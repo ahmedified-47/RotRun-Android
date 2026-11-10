@@ -8,6 +8,7 @@ import com.ahmed.rotrun.logic.BlockRules
 import com.ahmed.rotrun.logic.withoutAppList
 import com.ahmed.rotrun.logic.PaywallGate
 import com.ahmed.rotrun.logic.Products
+import com.ahmed.rotrun.logic.PurchaseSignIn
 import com.ahmed.rotrun.logic.Scoring
 import com.ahmed.rotrun.watch.BlockScheduler
 import com.ahmed.rotrun.watch.WatchController
@@ -55,6 +56,8 @@ class RotRunRepository(context: Context) {
 
     private val _toast = MutableStateFlow<String?>(null)
     val toast: StateFlow<String?> = _toast.asStateFlow()
+    private val _purchaseError = MutableStateFlow<String?>(null)
+    val purchaseError: StateFlow<String?> = _purchaseError.asStateFlow()
 
     private val _refreshing = MutableStateFlow(false)
     val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
@@ -77,7 +80,7 @@ class RotRunRepository(context: Context) {
         accountId = { backend.userId },
         onEntitlement = ::applyEntitlement,
         storedGrant = { _state.value.productId to _state.value.purchaseToken },
-        onMessage = ::toast,
+        onMessage = ::note,
         onPurchased = { _pulses.tryEmit(UiPulse.ClosePaywall) },
         sync = { purchases -> backend.syncPlayPurchases(purchases) },
     )
@@ -103,6 +106,11 @@ class RotRunRepository(context: Context) {
 
     fun toast(message: String) {
         _toast.value = message
+    }
+
+    private fun note(message: String) {
+        _purchaseError.value = message
+        toast(message)
     }
 
     fun onLaunch() {
@@ -268,16 +276,22 @@ class RotRunRepository(context: Context) {
     fun dismissYearly70() = update { it.copy(yearly70Dismissed = true, skippedOneTimeOffer = true) }
 
     fun purchase(productId: String) {
-        if (!backend.signedIn) {
-            toast("Sign in with Google before buying, so voice can verify Premium.")
-            return
-        }
         val activity = host?.get()
         if (activity == null) {
-            toast("Open RotRun and try that purchase again.")
+            note("Open RotRun and try that purchase again.")
             return
         }
-        billing.buy(activity, productId)
+        _purchaseError.value = null
+        when (PurchaseSignIn.beforeBilling(backend.userId)) {
+            PurchaseSignIn.Next.LaunchBilling -> billing.buy(activity, productId)
+            PurchaseSignIn.Next.StartSignIn -> backend.signIn(activity) { error ->
+                when (PurchaseSignIn.afterSignIn(backend.userId, error)) {
+                    PurchaseSignIn.Next.LaunchBilling -> billing.buy(activity, productId)
+                    else -> note(error?.takeIf { it.isNotBlank() } ?: "Google sign-in didn’t finish.")
+                }
+            }
+            PurchaseSignIn.Next.StayOnPaywall -> note("Google sign-in didn’t finish.")
+        }
     }
 
     fun restore() = billing.restore()
