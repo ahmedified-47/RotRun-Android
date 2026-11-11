@@ -51,7 +51,7 @@ private val photoClient = OkHttpClient()
 
 @Composable
 fun ProfilePrompt(repo: RotRunRepository, editing: Boolean, onDismiss: () -> Unit) {
-    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)).clickable(onClick = onDismiss), contentAlignment = Alignment.Center) {
+    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)).rotInsets().clickable(onClick = onDismiss), contentAlignment = Alignment.Center) {
         Column(
             Modifier.padding(24.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(24.dp)).background(rot().page).clickable(enabled = false) {}.padding(20.dp),
         ) {

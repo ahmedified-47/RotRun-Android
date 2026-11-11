@@ -182,7 +182,7 @@ fun PaywallPopup(onDismiss: () -> Unit, content: @Composable () -> Unit) {
             window.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
             window.setDimAmount(0f)
         }
-        Box(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize().rotInsets()) {
             Box(
                 Modifier
                     .fillMaxSize()

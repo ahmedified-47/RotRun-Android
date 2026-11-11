@@ -241,12 +241,12 @@ class BlockRulesTest {
     }
 
     @Test
-    fun askBrainChatLeavesThatPackageUnblocked() {
+    fun askBrainChatDoesNotUncoverThatPackage() {
         val window = BlockRules.Window(setOf("com.instagram.android", "com.whatsapp"), "allDay", allDays, 0, 24, 30)
-        assertFalse(blocked("com.instagram.android", listOf(window), tuesdayMorning, 0, chatPackage = "com.instagram.android"))
+        assertTrue(blocked("com.instagram.android", listOf(window), tuesdayMorning, 0, chatPackage = "com.instagram.android"))
         assertTrue(blocked("com.whatsapp", listOf(window), tuesdayMorning, 0, chatPackage = "com.instagram.android"))
         assertTrue(blocked("com.instagram.android", listOf(window), tuesdayMorning, 0))
-        assertFalse(
+        assertTrue(
             BlockRules.isBlocked(
                 packageName = "com.instagram.android",
                 safety = emptySet(),

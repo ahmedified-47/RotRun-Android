@@ -41,6 +41,7 @@ class BlockWatchService : Service() {
     private var overlay: View? = null
     private var shownFor: String? = null
     private var overlayShownAt = 0L
+    private var showingChat = false
     private var lastFocusWidget = 0L
     private val tick = object : Runnable {
         override fun run() {
@@ -137,11 +138,9 @@ class BlockWatchService : Service() {
             ShieldStep.Show -> Unit
         }
         val target = choice.packageName ?: return
-        if (ShieldSession.blocks(target)) {
+        if (ShieldSession.openedInto(target)) {
             hideOverlay()
-            if (ShieldSession.openedInto(target) && !repo.isBlocked(target, repo.safetyPackages())) {
-                ShieldSession.release()
-            }
+            if (!repo.isBlocked(target, repo.safetyPackages())) ShieldSession.release()
             return
         }
         val blocked = repo.isBlocked(target, repo.safetyPackages())
@@ -155,15 +154,37 @@ class BlockWatchService : Service() {
         }
         val label = UsageReader.label(this, target)
         if (Settings.canDrawOverlays(this)) {
-            if (shownFor != target || overlay == null) {
+            val ask = repo.askIntervention.value
+            val wantChat = ask?.packageName == target
+            if (shownFor != target || overlay == null || showingChat != wantChat) {
                 hideOverlay()
-                overlay = ShieldOverlay.show(
+                overlay = ShieldOverlay.cover(
                     context = this,
                     type = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                     packageName = target,
                     label = label,
+                    ask = if (wantChat) ask else null,
                     onAsk = { openAsk(target, label) },
+                    onNah = {
+                        repo.clearAskIntervention()
+                        shownFor = null
+                        checkForeground()
+                    },
+                    onUnlock = { minutes ->
+                        if (!repo.grantUnlock(minutes)) {
+                            repo.toast("Unlock waits until Focus ends")
+                        } else {
+                            ShieldSession.markOpened(target)
+                            repo.clearAskIntervention()
+                            hideOverlay()
+                            packageManager.getLaunchIntentForPackage(target)?.let { launch ->
+                                launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                runCatching { startActivity(launch) }
+                            }
+                        }
+                    },
                 )
+                showingChat = wantChat && overlay != null
                 shownFor = if (overlay == null) null else target
                 if (shownFor != null) overlayShownAt = System.currentTimeMillis()
             }
@@ -173,7 +194,10 @@ class BlockWatchService : Service() {
     }
 
     private fun openAsk(packageName: String, label: String) {
-        AskBrainLaunch.open(this, packageName, label)
+        if (!RotRunGraph.ready()) return
+        RotRunGraph.repo.requestAskIntervention(packageName, label)
+        shownFor = null
+        checkForeground()
     }
 
     private fun hideOverlay() {
@@ -181,6 +205,7 @@ class BlockWatchService : Service() {
         overlay = null
         shownFor = null
         overlayShownAt = 0L
+        showingChat = false
     }
 
     private fun buildNotification(text: String, tap: PendingIntent? = null): Notification {

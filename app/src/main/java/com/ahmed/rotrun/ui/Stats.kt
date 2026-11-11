@@ -234,7 +234,6 @@ private fun LeaderboardBody(
     onOpen: () -> Unit,
     onEditYou: () -> Unit,
 ) {
-    var friends by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val xp = screenMinutes?.let { Scoring.dailyXp(it, Scoring.goalMinutes(state.goalHours), state.askBrainCount, state.ransomDebit) }
     var board by remember { mutableStateOf(BoardSnapshot()) }
@@ -267,11 +266,9 @@ private fun LeaderboardBody(
         }
     }
     Appear(0.06f) { Text("See how your Daily XP stacks up.", color = chrome.muted, fontFamily = Nunito, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) }
-    Appear(0.10f) { ScopeToggle(friends, reduce) { friends = it } }
     PullToRefreshBox(isRefreshing = refreshing, onRefresh = { repo.refreshUsage(); reload() }) {
         Column(Modifier.fillMaxWidth()) {
             when {
-                friends -> Appear(0f) { FriendsSoon() }
                 !repo.backend.signedIn || board.signedOut -> Appear(0f) { SignInBoard(context, repo) { reload() } }
                 xp == null -> Appear(0.08f) { UsageBoard() }
                 board.rows.isEmpty() && board.pinned == null -> Appear(0.12f) { EmptyBoard() }
@@ -288,14 +285,6 @@ private fun LeaderboardBody(
                 Text(it, color = chrome.muted, fontSize = 13.sp, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), textAlign = TextAlign.Center)
             }
         }
-    }
-}
-
-@Composable
-private fun FriendsSoon() {
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(rot().card).padding(16.dp)) {
-        Text("Friends", color = rot().ink, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-        Text("Friends coming soon. Daily XP is ranked across all RotRun users.", color = rot().muted, modifier = Modifier.padding(top = 4.dp))
     }
 }
 
@@ -401,19 +390,6 @@ private fun ScoreCapsule(score: Int, you: Boolean) {
     Box(Modifier.clip(RoundedCornerShape(12.dp)).background(if (you) Color(0xFFFF8C2E) else rot().inset).padding(horizontal = 10.dp, vertical = 6.dp)) {
         Text("$score", color = if (you) Color.White else rot().muted, fontWeight = FontWeight.Bold, fontSize = if (score > 999) 11.sp else 13.sp, maxLines = 1)
     }
-}
-
-@Composable
-private fun ScopeToggle(friends: Boolean, reduce: Boolean, onPick: (Boolean) -> Unit) {
-    Segment(
-        "Daily XP",
-        "Friends",
-        friends,
-        { onPick(false) },
-        { onPick(true) },
-        Modifier.padding(vertical = 8.dp),
-        reduce,
-    )
 }
 
 @Composable

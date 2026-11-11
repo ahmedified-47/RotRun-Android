@@ -18,13 +18,13 @@ import org.junit.Test
 
 class AskLaunchPolicyTest {
     @Test
-    fun failedStartDismissesTheShieldAndDoesNotRedrawIt() {
+    fun failedStartKeepsTheShieldUp() {
         val failed = AskLaunchPolicy.shieldAfterAttempt(startFailed = true)
-        assertTrue(failed.dismiss)
-        assertFalse(failed.redraw)
+        assertFalse(failed.dismiss)
+        assertTrue(failed.redraw)
         assertFalse(failed.releaseHold)
         assertFalse(AskLaunchPolicy.releaseHold(startFailed = true))
-        assertFalse(AskLaunchPolicy.showShield(chatting = true))
+        assertTrue(AskLaunchPolicy.showShield(chatting = true))
         assertTrue(AskLaunchPolicy.showShield(chatting = false))
         assertTrue(AskLaunchPolicy.leaveOverlayUp(launching = true))
         assertFalse(AskLaunchPolicy.leaveOverlayUp(launching = false))
@@ -42,7 +42,7 @@ class AskLaunchPolicyTest {
         ShieldSession.release()
         assertEquals("com.instagram.android", ShieldSession.chatPackage())
         assertTrue(ShieldSession.blocks("com.instagram.android"))
-        assertFalse(AskLaunchPolicy.showShield(ShieldSession.chatPackage() != null))
+        assertTrue(AskLaunchPolicy.showShield(ShieldSession.chatPackage() != null))
         ShieldSession.endChat()
         assertNull(ShieldSession.chatPackage())
         assertFalse(ShieldSession.blocks("com.instagram.android"))
@@ -60,7 +60,7 @@ class AskLaunchPolicyTest {
         ShieldSession.endChat()
         ShieldSession.holdForChat("com.instagram.android", "Instagram")
         assertEquals("Instagram", ShieldSession.chatLabel())
-        assertFalse(AskLaunchPolicy.showShield(ShieldSession.chatPackage() != null))
+        assertTrue(AskLaunchPolicy.showShield(ShieldSession.chatPackage() != null))
         ShieldSession.endChat()
         assertEquals("", ShieldSession.chatLabel())
     }

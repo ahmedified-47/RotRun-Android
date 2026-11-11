@@ -108,7 +108,7 @@ fun InterventionFlow(
         onDismiss()
     }
     val shield = shieldColors(shieldCopy.id)
-    Box(Modifier.fillMaxSize()) {
+    Box(Modifier.fillMaxSize().rotInsets()) {
         if (shieldUnderneath && !pendingLeave) {
             val context = LocalContext.current
             Column(
@@ -214,7 +214,8 @@ private fun Standard(appName: String, friend: String?, kind: String, onDismiss: 
     var minutes by remember { mutableIntStateOf(10) }
     val stamp = remember { SimpleDateFormat("h:mm a", Locale.US).format(Date()).lowercase() }
     val blue = Color(0xFF007AFF)
-    val question = if (friend != null) "$friend left a note." else "you really gotta open this?"
+    val note = friend?.let { "$it left a note." }
+    val question = if (friend != null) "Opening $appName anyway?" else "you really gotta open this?"
     val scroll = rememberScrollState()
     LaunchedEffect(beat) {
         when (beat) {
@@ -238,7 +239,7 @@ private fun Standard(appName: String, friend: String?, kind: String, onDismiss: 
         }
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
             Box(Modifier.size(78.dp).clip(CircleShape).background(Color(0xFFB8E0FA)), contentAlignment = Alignment.Center) {
-                CartoonBrain(BrainStyle.Sleeping, Modifier.size(72.dp).offset(y = 4.dp), animated = false)
+                CartoonBrain(BrainStyle.Meadow, Modifier.size(72.dp).offset(y = 4.dp), animated = false)
             }
             Text(
                 "Your Brain ›",
@@ -250,8 +251,8 @@ private fun Standard(appName: String, friend: String?, kind: String, onDismiss: 
         Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(scroll).padding(horizontal = 16.dp, vertical = 8.dp)) {
             Text("Today $stamp", color = Color(0xFFC7C7CC), fontSize = 12.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp))
             if (beat >= 1) ChatBubble("yo it's me. brain", true, blue)
-            if (beat >= 2) ChatBubble(question, true, blue)
-            if (beat >= 3 && friend != null) ChatBubble(InterventionCopy.roast(kind, friend), true, blue)
+            if (beat >= 2 && note != null) ChatBubble(note, true, blue)
+            if (beat >= 3 || (beat >= 2 && note == null)) ChatBubble(question, true, blue)
             if (beat in 5..6) ChatBubble("nah, you're right", false, blue)
             if (beat >= 6 && beat < 7) ChatBubble("bet. go live.", true, blue)
             if (beat in 7..13) ChatBubble("yes i really do", false, blue)

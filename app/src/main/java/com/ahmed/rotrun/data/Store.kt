@@ -374,6 +374,10 @@ class RotRunRepository(context: Context) {
     }
 
     fun saveBlocker(blocker: Blocker): Boolean {
+        if (!armingReady()) {
+            toast("Turn on every block permission first")
+            return false
+        }
         val current = _state.value
         val previous = current.blockers.firstOrNull { it.id == blocker.id }?.packageOrder().orEmpty()
         val (kept, trimmed) = com.ahmed.rotrun.logic.BillingQuotes.keepingFirst(
@@ -404,6 +408,7 @@ class RotRunRepository(context: Context) {
         } else {
             toast("Saved ${blocker.name}")
         }
+        com.ahmed.rotrun.watch.BlockScheduler.scheduleNext(app, _state.value)
         return true
     }
 
@@ -473,6 +478,10 @@ class RotRunRepository(context: Context) {
     }
 
     fun startFocus(targetMinutes: Int?, legendary: Boolean, scopeName: String) {
+        if (!armingReady()) {
+            toast("Turn on every block permission first")
+            return
+        }
         val session = FocusSession(
             startedAt = System.currentTimeMillis(),
             targetMinutes = if (legendary) null else targetMinutes,
@@ -515,6 +524,7 @@ class RotRunRepository(context: Context) {
         update(commit = true) { current ->
             current.withLedger(InterventionXp.unlock(current.dayLedger(), minutes)).copy(unlockUntil = until)
         }
+        com.ahmed.rotrun.watch.BlockScheduler.scheduleNext(app, _state.value)
         return true
     }
 
@@ -681,6 +691,24 @@ class RotRunRepository(context: Context) {
         if (DeviceAccessReader.read(app).batteryUnrestricted) return
         _batteryAsk.value = true
     }
+
+    fun armingSteps(): List<com.ahmed.rotrun.logic.BlockArming.Step> {
+        val access = DeviceAccessReader.read(app)
+        val alarm = app.getSystemService(android.app.AlarmManager::class.java)
+        val exact = android.os.Build.VERSION.SDK_INT < 31 || alarm.canScheduleExactAlarms()
+        return com.ahmed.rotrun.logic.BlockArming.steps(
+            usage = access.usage,
+            accessibilityEnabled = access.accessibility,
+            accessibilityBound = com.ahmed.rotrun.watch.BlockAccessibilityService.connected,
+            overlay = access.overlay,
+            notificationsGranted = access.notifications,
+            needsNotifications = android.os.Build.VERSION.SDK_INT >= 33,
+            batteryUnrestricted = access.batteryUnrestricted,
+            exactAlarms = exact,
+        )
+    }
+
+    private fun armingReady(): Boolean = com.ahmed.rotrun.logic.BlockArming.canArm(armingSteps())
 
     fun safetyPackages(): Set<String> = UsageReader.safetyPackages(app)
 

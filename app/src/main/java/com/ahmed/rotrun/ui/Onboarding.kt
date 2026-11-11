@@ -108,7 +108,7 @@ import kotlinx.coroutines.launch
 @Composable
 private fun AccountSignup(repo: RotRunRepository, onLater: () -> Unit) {
     val context = LocalContext.current
-    Column(Modifier.fillMaxSize().background(rot().page).statusBarsPadding().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(Modifier.fillMaxSize().background(rot().page).rotInsets().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Spacer(Modifier.weight(1f))
         Text("Sign in with Google", color = rot().ink, fontFamily = Nunito, fontWeight = FontWeight.Bold, fontSize = 28.sp, textAlign = TextAlign.Center)
         Text("Then add the name and photo that show on Daily XP.", color = rot().muted, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp, bottom = 24.dp))
@@ -159,7 +159,7 @@ fun OnboardingScreen(repo: RotRunRepository) {
         if (step.skipped(repo.state.value, repo.backend.userId)) repo.advance()
     }
     LegalDialog(legal) { legal = null }
-    Box(Modifier.fillMaxSize().statusBarsPadding()) {
+    Box(Modifier.fillMaxSize().rotInsets()) {
         OnboardingBackdrop(step)
         val reduce = reduceMotion()
         AnimatedContent(
@@ -314,7 +314,7 @@ private fun ScreenFrame(footer: @Composable () -> Unit, content: @Composable () 
             Modifier.weight(1f).fillMaxWidth().offset(y = (-16).dp).verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) { content() }
-        Column(Modifier.padding(horizontal = 20.dp).navigationBarsPadding().padding(bottom = 8.dp)) { footer() }
+        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 8.dp)) { footer() }
     }
 }
 

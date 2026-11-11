@@ -1,0 +1,74 @@
+package com.ahmed.rotrun.ui
+
+import android.app.AlarmManager
+import android.content.Intent
+import android.os.Build
+import android.provider.Settings
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.ahmed.rotrun.data.DeviceAccessReader
+import com.ahmed.rotrun.logic.BlockArming
+
+/** One missing grant at a time. The next step appears only after this one is on. */
+@Composable
+fun PermissionGate(step: BlockArming.Step, onOpen: () -> Unit) {
+    Column(
+        Modifier.fillMaxSize().background(rot().page).rotInsets().padding(horizontal = 28.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Spacer(Modifier.height(48.dp))
+        Text(step.title, color = rot().ink, fontWeight = FontWeight.Bold, fontSize = 28.sp, textAlign = TextAlign.Center)
+        Text(
+            step.body,
+            color = rot().muted,
+            fontSize = 16.sp,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 16.dp),
+        )
+        Text(
+            "Blocking stays off until this is on. RotRun checks again when you come back.",
+            color = rot().muted,
+            fontSize = 14.sp,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 12.dp),
+        )
+        Spacer(Modifier.weight(1f))
+        PrimaryButton("Open settings", onClick = onOpen)
+        Spacer(Modifier.height(12.dp))
+    }
+}
+
+fun openArmingStep(context: android.content.Context, id: String, onNotify: () -> Unit) {
+    when (id) {
+        "usage" -> DeviceAccessReader.open(context, DeviceAccessReader.usageIntent(context))
+        "accessibility" -> DeviceAccessReader.open(context, DeviceAccessReader.accessibilityIntent())
+        "overlay" -> DeviceAccessReader.open(context, DeviceAccessReader.overlayIntent(context))
+        "notifications" -> onNotify()
+        "battery" -> DeviceAccessReader.open(context, DeviceAccessReader.batteryIntent(context))
+        "alarms" -> {
+            if (Build.VERSION.SDK_INT >= 31) {
+                val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                runCatching { context.startActivity(intent) }
+            }
+        }
+    }
+}
+
+fun exactAlarmsAllowed(context: android.content.Context): Boolean {
+    if (Build.VERSION.SDK_INT < 31) return true
+    val alarm = context.getSystemService(AlarmManager::class.java)
+    return alarm.canScheduleExactAlarms()
+}

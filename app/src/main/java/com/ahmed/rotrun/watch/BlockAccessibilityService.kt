@@ -17,6 +17,7 @@ class BlockAccessibilityService : AccessibilityService() {
     private var shownFor: String? = null
     private var shownAt = 0L
     private var adding = false
+    private var showingChat = false
     private val poll = object : Runnable {
         override fun run() {
             if (!adding && !AskLaunchPolicy.leaveOverlayUp(AskBrainLaunch.launching)) {
@@ -127,17 +128,17 @@ class BlockAccessibilityService : AccessibilityService() {
             hide()
             return
         }
+        if (ShieldSession.openedInto(packageName)) {
+            hide()
+            if (!repoReadyBlocked(packageName)) ShieldSession.release()
+            return
+        }
         if (ForegroundGate.ignore(packageName, this.packageName)) {
             if (AskLaunchPolicy.keepShownShield(shownFor, packageName, this.packageName)) {
                 covering = overlay != null
                 return
             }
             hide()
-            return
-        }
-        if (ShieldSession.blocks(packageName)) {
-            hide()
-            if (ShieldSession.openedInto(packageName) && !repoReadyBlocked(packageName)) ShieldSession.release()
             return
         }
         if (AskLaunchPolicy.keepShownShield(shownFor, packageName, this.packageName)) {
@@ -149,19 +150,25 @@ class BlockAccessibilityService : AccessibilityService() {
             hide()
             return
         }
-        if (shownFor == packageName && overlay != null) {
+        val label = UsageReader.label(this, packageName)
+        val ask = RotRunGraph.repo.askIntervention.value
+        val wantChat = ask?.packageName == packageName
+        if (shownFor == packageName && overlay != null && showingChat == wantChat) {
             covering = true
             return
         }
-        val label = UsageReader.label(this, packageName)
         hide()
-        overlay = ShieldOverlay.show(
+        overlay = ShieldOverlay.cover(
             context = this,
             type = WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
             packageName = packageName,
             label = label,
+            ask = if (wantChat) ask else null,
             onAsk = { openAsk(packageName, label) },
+            onNah = { RotRunGraph.repo.clearAskIntervention(); shownFor = null; considerNow(packageName) },
+            onUnlock = { minutes -> unlock(packageName, minutes) },
         )
+        showingChat = wantChat && overlay != null
         shownFor = if (overlay == null) null else packageName
         if (shownFor != null) shownAt = System.currentTimeMillis()
         covering = overlay != null
@@ -186,7 +193,25 @@ class BlockAccessibilityService : AccessibilityService() {
     }
 
     private fun openAsk(packageName: String, label: String) {
-        AskBrainLaunch.open(this, packageName, label)
+        if (!RotRunGraph.ready()) return
+        RotRunGraph.repo.requestAskIntervention(packageName, label)
+        shownFor = null
+        considerNow(packageName)
+    }
+
+    private fun unlock(packageName: String, minutes: Int) {
+        val repo = RotRunGraph.repo
+        if (!repo.grantUnlock(minutes)) {
+            repo.toast("Unlock waits until Focus ends")
+            return
+        }
+        ShieldSession.markOpened(packageName)
+        repo.clearAskIntervention()
+        hide()
+        packageManager.getLaunchIntentForPackage(packageName)?.let { launch ->
+            launch.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            runCatching { startActivity(launch) }
+        }
     }
 
     private fun hide() {
@@ -194,6 +219,7 @@ class BlockAccessibilityService : AccessibilityService() {
         overlay = null
         shownFor = null
         shownAt = 0L
+        showingChat = false
         covering = false
     }
 
@@ -209,6 +235,15 @@ class BlockAccessibilityService : AccessibilityService() {
 
         fun dismiss() {
             live?.hide()
+        }
+
+        fun recheck() {
+            val service = live ?: return
+            service.handler.post {
+                if (!RotRunGraph.ready()) return@post
+                val reading = UsageReader.foregroundResume(service)
+                service.route(reading?.packageName, reading?.packageName, reading?.atMillis ?: 0L, windowStateChanged = false)
+            }
         }
     }
 }

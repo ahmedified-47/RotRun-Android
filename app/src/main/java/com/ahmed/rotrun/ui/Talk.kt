@@ -171,7 +171,7 @@ fun TalkSheet(repo: RotRunRepository, onClose: () -> Unit) {
             seeded = true
         }
     }
-    Column(Modifier.fillMaxSize().background(page).statusBarsPadding().navigationBarsPadding()) {
+    Column(Modifier.fillMaxSize().background(page).rotInsets()) {
         TalkBar(
             ink = ink,
             secondary = secondary,

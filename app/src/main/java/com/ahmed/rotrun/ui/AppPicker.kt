@@ -74,7 +74,7 @@ fun FullScreenDialog(onDismiss: () -> Unit, content: @Composable () -> Unit) {
             window.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
             window.setBackgroundDrawable(ColorDrawable(android.graphics.Color.WHITE))
         }
-        Box(Modifier.fillMaxSize().background(Color.White)) { content() }
+        Box(Modifier.fillMaxSize().background(Color.White).rotInsets()) { content() }
     }
 }
 
@@ -104,7 +104,7 @@ fun BottomSheet(onDismiss: () -> Unit, content: @Composable () -> Unit) {
                     .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
                     .background(rot().sheet)
                     .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) {}
-                    .navigationBarsPadding(),
+                    .rotBottomInsets(),
             ) {
                 Box(Modifier.padding(top = 8.dp).align(Alignment.CenterHorizontally).width(36.dp).height(5.dp).clip(CircleShape).background(rot().muted.copy(alpha = 0.45f)))
                 content()
@@ -130,7 +130,7 @@ fun ModalPopup(onDismiss: () -> Unit, content: @Composable () -> Unit) {
             window.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
         }
         Box(
-            Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)),
+            Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)).rotInsets(),
             contentAlignment = Alignment.Center,
         ) {
             Box(
@@ -188,7 +188,7 @@ fun AppPickerDialog(
             window.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
             window.setBackgroundDrawable(ColorDrawable(if (chrome.dark) android.graphics.Color.BLACK else android.graphics.Color.WHITE))
         }
-        Column(Modifier.fillMaxSize().background(chrome.page).statusBarsPadding().navigationBarsPadding()) {
+        Column(Modifier.fillMaxSize().background(chrome.page).rotInsets()) {
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,

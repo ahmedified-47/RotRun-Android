@@ -1,7 +1,12 @@
 package com.ahmed.rotrun.ui
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import androidx.compose.animation.AnimatedVisibility
@@ -16,9 +21,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -187,13 +198,21 @@ private fun MainShell(repo: RotRunRepository, onOpenBoard: () -> Unit, onEditYou
     var upgrade by rememberSaveable { mutableStateOf(false) }
     var plan by remember { mutableStateOf(Products.YEARLY) }
     val context = LocalContext.current
+    var arming by remember { mutableStateOf(repo.armingSteps()) }
+    val askNotify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        repo.refreshAccess()
+        arming = repo.armingSteps()
+    }
     val level = BrainHealthLevel.fromLabel(state.brainHealth)
     val health = Scoring.shownHealth(usage.authorized, usage.todaySeconds, state.focusMinutesToday(), level)
     val screenMinutes = Scoring.scoredMinutes(usage.todaySeconds, usage.authorized)
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         repo.onForeground()
+        arming = repo.armingSteps()
         val now = repo.access.value
-        if (AccessPrompt.shouldPrompt(now.usage, now.accessibility, now.overlay)) {
+        if (arming.isNotEmpty()) {
+            accessAsk = false
+        } else if (AccessPrompt.shouldPrompt(now.usage, now.accessibility, now.overlay)) {
             accessAsk = true
         } else if (PaywallGate.shows && !repo.state.value.proFor(repo.backend.userId) && !PlayCatalog.purchasing.value && repo.askIntervention.value == null) {
             accessAsk = false
@@ -237,7 +256,17 @@ private fun MainShell(repo: RotRunRepository, onOpenBoard: () -> Unit, onEditYou
     }
     Box(Modifier.fillMaxSize().background(canvas)) {
         CompositionLocalProvider(LocalContentColor provides contentInk) {
-        Column(Modifier.fillMaxSize().statusBarsPadding().verticalScroll(scroll).padding(bottom = tabClearance)) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .windowInsetsPadding(
+                    WindowInsets.statusBars
+                        .union(WindowInsets.systemBars.only(WindowInsetsSides.Top))
+                        .union(WindowInsets.ime),
+                )
+                .verticalScroll(scroll)
+                .padding(bottom = tabClearance),
+        ) {
             when (tab) {
                 Tab.Home -> HomeScreen(state, usage, access, refreshing, repo::refreshUsage, { talk = true }, { accessAsk = true }) {
                     context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
@@ -339,43 +368,24 @@ private fun MainShell(repo: RotRunRepository, onOpenBoard: () -> Unit, onEditYou
             )
         }
         AnimatedVisibility(visible = audio, modifier = Modifier.fillMaxSize(), enter = coverEnter(reduceMotion()), exit = coverExit(reduceMotion())) {
-            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.55f)), contentAlignment = Alignment.Center) {
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.55f)).rotInsets(), contentAlignment = Alignment.Center) {
                 AudioSlap(state.cameoName.ifBlank { "a friend" }) { audio = false }
             }
         }
-        ask?.let { pending ->
-            InterventionFlow(
-                appName = pending.label,
-                startMode = pending.mode,
-                packageName = pending.packageName,
-                repo = repo,
-                onDismiss = {
-                    repo.clearAskIntervention()
-                    ShieldSession.endChat()
-                },
-                onUnlock = { minutes ->
-                    if (!repo.grantUnlock(minutes)) {
-                        repo.toast("Unlock waits until Focus ends")
-                    } else {
-                        ShieldSession.markOpened(pending.packageName)
-                        com.ahmed.rotrun.watch.BlockAccessibilityService.dismiss()
-                        com.ahmed.rotrun.watch.BlockWatchService.dismiss()
-                        context.packageManager.getLaunchIntentForPackage(pending.packageName)?.let { launch ->
-                            launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            runCatching { context.startActivity(launch) }
-                        }
-                        repo.clearAskIntervention()
+        if (arming.isNotEmpty()) {
+            val step = arming.first()
+            PermissionGate(step) {
+                if (step.id == "accessibility") accessDisclosure = true
+                else openArmingStep(context, step.id) {
+                    if (Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                        askNotify.launch(Manifest.permission.POST_NOTIFICATIONS)
                     }
-                },
-            )
+                }
+            }
         }
         val upgradeUp = upgrade && PaywallGate.shows && !state.proFor(repo.backend.userId)
-        BackHandler(enabled = ask != null || audio || upgradeUp || talk || focusSheet || state.focus != null) {
+        BackHandler(enabled = audio || upgradeUp || talk || focusSheet || state.focus != null) {
             when {
-                ask != null -> {
-                    repo.clearAskIntervention()
-                    ShieldSession.endChat()
-                }
                 audio -> audio = false
                 upgradeUp -> upgrade = false
                 talk -> {
@@ -427,7 +437,7 @@ private fun TabBar(
     onFocus: () -> Unit,
     modifier: Modifier,
 ) {
-    val nav = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val nav = WindowInsets.navigationBars.union(WindowInsets.systemBars).asPaddingValues().calculateBottomPadding()
     val item = if (light) Melt.Muted else Color.White.copy(alpha = 0.72f)
     val glyph = if (light) Color(0xFFF2F2F7) else Color.White.copy(alpha = 0.12f)
     Box(modifier.fillMaxWidth().height(36.dp + 88.dp + nav)) {

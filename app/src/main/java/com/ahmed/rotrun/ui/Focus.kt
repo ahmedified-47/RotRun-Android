@@ -84,7 +84,7 @@ fun FocusChooser(onClose: () -> Unit, repo: RotRunRepository) {
     var appsOpen by remember { mutableStateOf(false) }
     Box(Modifier.fillMaxSize()) {
         FocusGarden()
-        Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
+        Column(Modifier.fillMaxSize().rotInsets()) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp)) {
                 Spacer(Modifier.weight(1f))
                 Box(Modifier.size(36.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.92f)).clickable(onClick = onClose), contentAlignment = Alignment.Center) {
@@ -178,7 +178,7 @@ fun FocusOverlay(session: FocusSession, repo: RotRunRepository) {
     val unlimited = session.targetMinutes == null || session.legendary
     val remaining = session.targetMinutes?.let { (it * 60 - elapsed).coerceAtLeast(0) }
     val clock = Scoring.formatClock(if (unlimited) elapsed else (remaining ?: elapsed))
-    Box(Modifier.fillMaxSize()) {
+    Box(Modifier.fillMaxSize().rotInsets()) {
         FocusGarden()
         Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
             Spacer(Modifier.heightIn(min = 12.dp).weight(1f))

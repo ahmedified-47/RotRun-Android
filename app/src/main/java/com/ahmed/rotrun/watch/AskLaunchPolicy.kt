@@ -58,14 +58,17 @@ object AskLaunchPolicy {
      */
     fun fullScreenAfterStart(startSucceeded: Boolean): Boolean = !startSucceeded
 
-    /** Talk is open. Watchers must not paint the shield over the blocked app. */
-    fun showShield(chatting: Boolean): Boolean = !chatting
+    /**
+     * A chat does not uncover the blocked app. The shield stays until an unlock.
+     * Leaving via recents or home and coming back still draws it.
+     */
+    fun showShield(chatting: Boolean): Boolean = true
 
     /** A failed start never drops the hold. Dropping it is what paints the shield again. */
     fun releaseHold(startFailed: Boolean): Boolean = false
 
     fun shieldAfterAttempt(startFailed: Boolean): ShieldDecision = ShieldDecision(
-        dismiss = true,
+        dismiss = false,
         redraw = showShield(chatting = true),
         releaseHold = releaseHold(startFailed),
     )
