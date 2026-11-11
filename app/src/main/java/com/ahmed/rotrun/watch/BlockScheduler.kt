@@ -42,7 +42,7 @@ class ScheduleTickReceiver : BroadcastReceiver() {
         val repo = RotRunGraph.repo
         repo.refreshUsage()
         BlockScheduler.scheduleNext(context, repo.state.value)
-        WatchController.sync(context, repo.state.value)
+        WatchController.sync(context, repo.state.value, repo.armingReady())
         BlockAccessibilityService.recheck()
     }
 }

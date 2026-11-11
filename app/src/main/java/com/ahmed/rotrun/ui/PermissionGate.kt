@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -22,9 +23,9 @@ import androidx.compose.ui.unit.sp
 import com.ahmed.rotrun.data.DeviceAccessReader
 import com.ahmed.rotrun.logic.BlockArming
 
-/** One missing grant at a time. The next step appears only after this one is on. */
+/** One missing grant at a time. Not now leaves the gate and leaves blocking disarmed. */
 @Composable
-fun PermissionGate(step: BlockArming.Step, onOpen: () -> Unit) {
+fun PermissionGate(step: BlockArming.Step, onOpen: () -> Unit, onLeave: () -> Unit) {
     Column(
         Modifier.fillMaxSize().background(rot().page).rotInsets().padding(horizontal = 28.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -47,6 +48,7 @@ fun PermissionGate(step: BlockArming.Step, onOpen: () -> Unit) {
         )
         Spacer(Modifier.weight(1f))
         PrimaryButton("Open settings", onClick = onOpen)
+        TextButton(onClick = onLeave, modifier = Modifier.fillMaxWidth()) { Text("Not now") }
         Spacer(Modifier.height(12.dp))
     }
 }

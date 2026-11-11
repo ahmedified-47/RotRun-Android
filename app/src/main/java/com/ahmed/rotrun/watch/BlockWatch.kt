@@ -19,13 +19,19 @@ import android.view.WindowManager
 import androidx.core.app.NotificationCompat
 import com.ahmed.rotrun.R
 import com.ahmed.rotrun.data.RotRunGraph
+import com.ahmed.rotrun.logic.BlockArming
 import com.ahmed.rotrun.data.SavedState
 import com.ahmed.rotrun.data.UsageReader
 import com.ahmed.rotrun.widget.FocusWidgetProvider
 
 object WatchController {
-    fun sync(context: Context, state: SavedState) {
-        val watching = state.focus != null || state.blockers.any { it.apps.isNotEmpty() } || state.appLists.any { it.apps.isNotEmpty() }
+    fun sync(context: Context, state: SavedState, armed: Boolean) {
+        val watching = BlockArming.shouldWatch(
+            armed,
+            state.focus != null,
+            state.blockers.any { it.apps.isNotEmpty() },
+            state.appLists.any { it.apps.isNotEmpty() },
+        )
         val intent = Intent(context, BlockWatchService::class.java)
         if (watching) {
             if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(intent) else context.startService(intent)
@@ -53,6 +59,11 @@ class BlockWatchService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (RotRunGraph.ready() && !RotRunGraph.repo.armingReady()) {
+            startInForeground("Blocking is paused.")
+            stopSelf()
+            return START_NOT_STICKY
+        }
         live = this
         startInForeground("RotRun is watching the apps you chose.")
         handler.removeCallbacks(tick)
@@ -71,6 +82,10 @@ class BlockWatchService : Service() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
+        if (RotRunGraph.ready() && !RotRunGraph.repo.armingReady()) {
+            super.onTaskRemoved(rootIntent)
+            return
+        }
         val restart = Intent(applicationContext, BlockWatchService::class.java)
         runCatching {
             if (Build.VERSION.SDK_INT >= 26) applicationContext.startForegroundService(restart)
@@ -91,6 +106,11 @@ class BlockWatchService : Service() {
     private fun checkForeground() {
         if (!RotRunGraph.ready()) return
         val repo = RotRunGraph.repo
+        if (!repo.armingReady()) {
+            hideOverlay()
+            stopSelf()
+            return
+        }
         repo.maybeExpireFocus()
         val focus = repo.state.value.focus
         val watching = if (focus == null) {

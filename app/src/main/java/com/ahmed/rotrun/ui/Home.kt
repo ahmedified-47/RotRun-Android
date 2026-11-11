@@ -56,6 +56,7 @@ import com.ahmed.rotrun.data.DeviceAccess
 import com.ahmed.rotrun.data.SavedState
 import com.ahmed.rotrun.data.UsageSnapshot
 import com.ahmed.rotrun.logic.AccessPrompt
+import com.ahmed.rotrun.logic.BlockArming
 import com.ahmed.rotrun.logic.BrainHealthLevel
 import com.ahmed.rotrun.logic.RewardSceneTint
 import com.ahmed.rotrun.logic.Scoring
@@ -71,6 +72,8 @@ fun HomeScreen(
     onTalk: () -> Unit,
     onFixAccess: () -> Unit,
     onConnect: () -> Unit,
+    pausedGrant: String? = null,
+    onOpenGate: () -> Unit = {},
 ) {
     val look = Looks.byId(state.theme)
     val scene = RewardSceneTint.resolve(state.theme)
@@ -89,6 +92,7 @@ fun HomeScreen(
     val short = LocalConfiguration.current.screenHeightDp < 500
     val brainSize = if (short) 56.dp else 136.dp
     Column(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(if (short) 4.dp else 18.dp)) {
+        if (pausedGrant != null) PausedBanner(pausedGrant, onOpenGate, paint)
         if (AccessPrompt.shouldPrompt(access.usage, access.accessibility, access.overlay)) {
             BlockingOffCard(access, onFixAccess, paint)
         } else if (!usage.authorized) {
@@ -203,6 +207,24 @@ fun HomeScreen(
                     WeekBars(usage, paint.onCard, Modifier.fillMaxWidth().height(148.dp))
                 }
             }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PausedBanner(grant: String, onOpen: () -> Unit, paint: ScenePaint) {
+    Row(
+        Modifier.padding(horizontal = 16.dp).fillMaxWidth().clickable(onClick = onOpen),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RaisedCard(Modifier.fillMaxWidth(), paint) {
+            Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(BlockArming.pausedLine(grant), color = paint.onCard, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text("Blocking stays off until this is on.", color = paint.onCardSoft, fontSize = 13.sp)
+                }
+                Text("›", color = paint.onCardSoft, fontWeight = FontWeight.Bold, fontSize = 18.sp)
             }
         }
     }

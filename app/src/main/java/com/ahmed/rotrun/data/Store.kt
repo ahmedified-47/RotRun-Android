@@ -123,10 +123,15 @@ class RotRunRepository(context: Context) {
             next
         }
         val state = _state.value
-        val watching = state.focus != null || state.blockers.any { it.apps.isNotEmpty() } || state.appLists.any { it.apps.isNotEmpty() }
+        val startWatcher = com.ahmed.rotrun.logic.BlockArming.shouldWatch(
+            armingReady(),
+            state.focus != null,
+            state.blockers.any { it.apps.isNotEmpty() },
+            state.appLists.any { it.apps.isNotEmpty() },
+        )
         // When the watcher starts, it calls finishLaunch after startForeground.
         // Doing that work here first blows the foreground-service deadline.
-        if (!watching) finishLaunch()
+        if (!startWatcher) finishLaunch()
     }
 
     fun finishLaunch() {
@@ -159,6 +164,7 @@ class RotRunRepository(context: Context) {
 
     fun refreshAccess() {
         _access.value = DeviceAccessReader.read(app)
+        com.ahmed.rotrun.watch.WatchController.sync(app, _state.value, armingReady())
     }
 
     fun dismissBatteryAsk() {
@@ -228,7 +234,7 @@ class RotRunRepository(context: Context) {
             persist(next, commit)
         }
         publishWidget()
-        WatchController.sync(app, next)
+        WatchController.sync(app, next, armingReady())
         if (previous.appIcon != next.appIcon) LauncherIcons.apply(app, next.appIcon)
         if (previous.blockers != next.blockers || previous.appLists != next.appLists) {
             considerBatteryPrompt(next)
@@ -653,7 +659,9 @@ class RotRunRepository(context: Context) {
         } else {
             0L
         }
-        return BlockRules.isBlocked(
+        return com.ahmed.rotrun.logic.BlockArming.enforced(
+            armingReady(),
+            BlockRules.isBlocked(
             packageName = packageName,
             safety = safety,
             excluded = excluded,
@@ -664,6 +672,7 @@ class RotRunRepository(context: Context) {
             usageSeconds = seconds,
             windows = windows,
             chatPackage = com.ahmed.rotrun.watch.ShieldSession.chatPackage(),
+            ),
         )
     }
 
@@ -708,7 +717,7 @@ class RotRunRepository(context: Context) {
         )
     }
 
-    private fun armingReady(): Boolean = com.ahmed.rotrun.logic.BlockArming.canArm(armingSteps())
+    fun armingReady(): Boolean = com.ahmed.rotrun.logic.BlockArming.canArm(armingSteps())
 
     fun safetyPackages(): Set<String> = UsageReader.safetyPackages(app)
 
@@ -732,7 +741,7 @@ class RotRunRepository(context: Context) {
         }
         if (changed) {
             publishWidget()
-            WatchController.sync(app, _state.value)
+            WatchController.sync(app, _state.value, armingReady())
         }
     }
 

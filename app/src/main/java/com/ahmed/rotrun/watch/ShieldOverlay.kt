@@ -28,6 +28,7 @@ import com.ahmed.rotrun.R
 import com.ahmed.rotrun.data.AskIntervention
 import com.ahmed.rotrun.data.RotRunGraph
 import com.ahmed.rotrun.logic.InterventionCopy
+import com.ahmed.rotrun.logic.OverlayInsetTypes
 import com.ahmed.rotrun.logic.ShieldPalette
 import com.ahmed.rotrun.ui.InterventionFlow
 import com.ahmed.rotrun.ui.RotRunTheme
@@ -279,16 +280,29 @@ object ShieldOverlay {
 
     private fun barPadding(context: Context): IntArray {
         if (Build.VERSION.SDK_INT >= 30) {
-            val manager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-            val insets = manager.currentWindowMetrics.windowInsets.getInsetsIgnoringVisibility(
-                android.view.WindowInsets.Type.systemBars() or
-                    android.view.WindowInsets.Type.navigationBars() or
-                    android.view.WindowInsets.Type.ime(),
-            )
-            return intArrayOf(insets.left, insets.top, insets.right, insets.bottom)
+            val measured = runCatching { measuredBars(context) }.getOrNull()
+            if (measured != null) return measured
         }
         val density = context.resources.displayMetrics.density
         return intArrayOf(0, (24 * density).toInt(), 0, (48 * density).toInt())
+    }
+
+    @androidx.annotation.RequiresApi(30)
+    private fun measuredBars(context: Context): IntArray {
+        val manager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        val windowInsets = manager.currentWindowMetrics.windowInsets
+        val stableMask = OverlayInsetTypes.ignoringVisibility(
+            android.view.WindowInsets.Type.systemBars(),
+            android.view.WindowInsets.Type.displayCutout(),
+        )
+        val stable = windowInsets.getInsetsIgnoringVisibility(stableMask)
+        val ime = windowInsets.getInsets(android.view.WindowInsets.Type.ime())
+        return intArrayOf(
+            maxOf(stable.left, ime.left),
+            maxOf(stable.top, ime.top),
+            maxOf(stable.right, ime.right),
+            maxOf(stable.bottom, ime.bottom),
+        )
     }
 
     const val TAG = "RotShield"

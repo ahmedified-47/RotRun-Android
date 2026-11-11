@@ -10,7 +10,7 @@ class BootReceiver : BroadcastReceiver() {
         if (intent?.action != Intent.ACTION_BOOT_COMPLETED) return
         if (!RotRunGraph.ready()) return
         val state = RotRunGraph.repo.state.value
-        WatchController.sync(context, state)
+        WatchController.sync(context, state, RotRunGraph.repo.armingReady())
         BlockScheduler.scheduleNext(context, state)
         RefreshWork.enqueue(context)
     }

@@ -1,6 +1,7 @@
 package com.ahmed.rotrun.ui
 
 import android.Manifest
+import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
@@ -77,6 +78,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.ahmed.rotrun.R
 import com.ahmed.rotrun.data.DeviceAccessReader
+import com.ahmed.rotrun.logic.NotificationPrompt
 import com.ahmed.rotrun.data.RotRunRepository
 import com.ahmed.rotrun.data.UiPulse
 import com.ahmed.rotrun.watch.ShieldSession
@@ -199,9 +201,28 @@ private fun MainShell(repo: RotRunRepository, onOpenBoard: () -> Unit, onEditYou
     var plan by remember { mutableStateOf(Products.YEARLY) }
     val context = LocalContext.current
     var arming by remember { mutableStateOf(repo.armingSteps()) }
-    val askNotify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+    var gateUp by rememberSaveable { mutableStateOf(true) }
+    var askedNotifications by rememberSaveable { mutableStateOf(false) }
+    val askNotify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        askedNotifications = true
         repo.refreshAccess()
         arming = repo.armingSteps()
+        val rationale = (context as? Activity)?.shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS) == true
+        if (!granted && NotificationPrompt.afterDenial(rationale) == NotificationPrompt.SETTINGS) {
+            DeviceAccessReader.open(context, DeviceAccessReader.notificationIntent(context))
+        }
+    }
+    fun openNotificationGrant() {
+        val granted = Build.VERSION.SDK_INT < 33 ||
+            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        val rationale = (context as? Activity)?.shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS) == true
+        when (NotificationPrompt.next(granted, rationale, askedNotifications)) {
+            NotificationPrompt.REQUEST -> {
+                askedNotifications = true
+                askNotify.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+            NotificationPrompt.SETTINGS -> DeviceAccessReader.open(context, DeviceAccessReader.notificationIntent(context))
+        }
     }
     val level = BrainHealthLevel.fromLabel(state.brainHealth)
     val health = Scoring.shownHealth(usage.authorized, usage.todaySeconds, state.focusMinutesToday(), level)
@@ -268,14 +289,37 @@ private fun MainShell(repo: RotRunRepository, onOpenBoard: () -> Unit, onEditYou
                 .padding(bottom = tabClearance),
         ) {
             when (tab) {
-                Tab.Home -> HomeScreen(state, usage, access, refreshing, repo::refreshUsage, { talk = true }, { accessAsk = true }) {
-                    context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
-                }
+                Tab.Home -> HomeScreen(
+                    state,
+                    usage,
+                    access,
+                    refreshing,
+                    repo::refreshUsage,
+                    onTalk = { talk = true },
+                    onFixAccess = { accessAsk = true },
+                    onConnect = { context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) },
+                    pausedGrant = arming.firstOrNull()?.title,
+                    onOpenGate = { gateUp = true },
+                )
                 Tab.Block -> BlockScreen(state, installed, repo)
                 Tab.Stats -> StatsScreen(state, health, screenMinutes, repo, onLeaderboard = onOpenBoard, onEditYou = onEditYou)
                 Tab.Settings -> SettingsScreen(state, installed, repo)
             }
         }
+        }
+        if (arming.isNotEmpty() && gateUp && tab == Tab.Home) {
+            val step = arming.first()
+            Box(Modifier.fillMaxSize().padding(bottom = tabClearance)) {
+                PermissionGate(
+                    step,
+                    onOpen = {
+                        if (step.id == "accessibility") accessDisclosure = true
+                        else if (step.id == "notifications") openNotificationGrant()
+                        else openArmingStep(context, step.id) {}
+                    },
+                    onLeave = { gateUp = false },
+                )
+            }
         }
         TabBar(
             tab = tab,
@@ -372,19 +416,9 @@ private fun MainShell(repo: RotRunRepository, onOpenBoard: () -> Unit, onEditYou
                 AudioSlap(state.cameoName.ifBlank { "a friend" }) { audio = false }
             }
         }
-        if (arming.isNotEmpty()) {
-            val step = arming.first()
-            PermissionGate(step) {
-                if (step.id == "accessibility") accessDisclosure = true
-                else openArmingStep(context, step.id) {
-                    if (Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                        askNotify.launch(Manifest.permission.POST_NOTIFICATIONS)
-                    }
-                }
-            }
-        }
         val upgradeUp = upgrade && PaywallGate.shows && !state.proFor(repo.backend.userId)
-        BackHandler(enabled = audio || upgradeUp || talk || focusSheet || state.focus != null) {
+        val gateShowing = arming.isNotEmpty() && gateUp && tab == Tab.Home
+        BackHandler(enabled = audio || upgradeUp || talk || focusSheet || state.focus != null || gateShowing) {
             when {
                 audio -> audio = false
                 upgradeUp -> upgrade = false
@@ -393,6 +427,7 @@ private fun MainShell(repo: RotRunRepository, onOpenBoard: () -> Unit, onEditYou
                     ShieldSession.endChat()
                 }
                 focusSheet -> focusSheet = false
+                gateShowing -> gateUp = false
                 else -> Unit
             }
         }

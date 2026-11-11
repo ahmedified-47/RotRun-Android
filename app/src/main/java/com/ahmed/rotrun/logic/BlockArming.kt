@@ -51,4 +51,30 @@ object BlockArming {
     }
 
     fun canArm(steps: List<Step>): Boolean = steps.isEmpty()
+
+    /** Saved blockers stay saved. Enforcement waits until every grant is on. */
+    fun enforced(armed: Boolean, blocked: Boolean): Boolean = armed && blocked
+
+    fun shouldWatch(armed: Boolean, focusRunning: Boolean, blockerHasApps: Boolean, listHasApps: Boolean): Boolean =
+        enforced(armed, focusRunning || blockerHasApps || listHasApps)
+
+    fun pausedLine(grantTitle: String): String = "Blocking paused: grant $grantTitle"
+}
+
+/**
+ * The first notification ask uses the system dialog.
+ * After a denial, a false rationale means Android will not show that dialog again, so the next step is the app notification settings page.
+ */
+object NotificationPrompt {
+    const val REQUEST = "request"
+    const val SETTINGS = "settings"
+
+    fun next(granted: Boolean, shouldShowRationale: Boolean, alreadyAsked: Boolean): String? {
+        if (granted) return null
+        if (!alreadyAsked || shouldShowRationale) return REQUEST
+        return SETTINGS
+    }
+
+    fun afterDenial(shouldShowRationale: Boolean): String =
+        if (shouldShowRationale) REQUEST else SETTINGS
 }
