@@ -271,6 +271,17 @@ class PlayBilling(
         val known = purchases.filter { purchase -> purchase.products.any { it in Products.all } }
         val pending = known.filter { it.purchaseState == Purchase.PurchaseState.PENDING }
         val purchased = known.filter { it.purchaseState == Purchase.PurchaseState.PURCHASED }
+        if (!BillingQuotes.acceptDevicePurchase(accountId())) {
+            if (finishPurchase) PlayCatalog.purchasing.value = false
+            if (announce) onMessage(BillingQuotes.SIGN_IN_MESSAGE)
+            purchased.filter {
+                BillingQuotes.shouldAcknowledge(
+                    purchased = it.purchaseState == Purchase.PurchaseState.PURCHASED,
+                    alreadyAcknowledged = it.isAcknowledged,
+                )
+            }.forEach { acknowledge(it) }
+            return
+        }
         if (pending.isNotEmpty()) onMessage(BillingQuotes.PENDING_MESSAGE)
         val lifetime = purchased.firstOrNull { Products.LIFETIME in it.products }
         val subscription = purchased.firstOrNull { purchase -> purchase.products.any { it in Products.subscriptions } }

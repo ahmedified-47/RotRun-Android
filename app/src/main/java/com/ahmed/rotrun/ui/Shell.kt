@@ -48,6 +48,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Size
@@ -63,10 +64,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
+import com.ahmed.rotrun.R
 import com.ahmed.rotrun.data.DeviceAccessReader
 import com.ahmed.rotrun.data.RotRunRepository
 import com.ahmed.rotrun.data.UiPulse
 import com.ahmed.rotrun.watch.ShieldSession
+import com.ahmed.rotrun.logic.AccessPrompt
 import com.ahmed.rotrun.logic.BrainHealthLevel
 import com.ahmed.rotrun.logic.PaywallGate
 import com.ahmed.rotrun.logic.PlayCatalog
@@ -172,7 +175,10 @@ private fun MainShell(repo: RotRunRepository, onOpenBoard: () -> Unit, onEditYou
     val refreshing by repo.refreshing.collectAsState()
     val installed by repo.installed.collectAsState()
     val batteryAsk by repo.batteryAsk.collectAsState()
+    val access by repo.access.collectAsState()
     val ask by repo.askIntervention.collectAsState()
+    var accessAsk by rememberSaveable { mutableStateOf(false) }
+    var accessDisclosure by rememberSaveable { mutableStateOf(false) }
     var tabName by rememberSaveable { mutableStateOf(Tab.Home.name) }
     val tab = runCatching { Tab.valueOf(tabName) }.getOrDefault(Tab.Home)
     var focusSheet by rememberSaveable { mutableStateOf(false) }
@@ -186,7 +192,13 @@ private fun MainShell(repo: RotRunRepository, onOpenBoard: () -> Unit, onEditYou
     val screenMinutes = Scoring.scoredMinutes(usage.todaySeconds, usage.authorized)
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         repo.onForeground()
-        if (PaywallGate.shows && !repo.state.value.proFor(repo.backend.userId) && !PlayCatalog.purchasing.value && repo.askIntervention.value == null) upgrade = true
+        val now = repo.access.value
+        if (AccessPrompt.shouldPrompt(now.usage, now.accessibility, now.overlay)) {
+            accessAsk = true
+        } else if (PaywallGate.shows && !repo.state.value.proFor(repo.backend.userId) && !PlayCatalog.purchasing.value && repo.askIntervention.value == null) {
+            accessAsk = false
+            upgrade = true
+        }
     }
     LaunchedEffect(Unit) {
         if (repo.takeChatRequest()) talk = true
@@ -227,7 +239,7 @@ private fun MainShell(repo: RotRunRepository, onOpenBoard: () -> Unit, onEditYou
         CompositionLocalProvider(LocalContentColor provides contentInk) {
         Column(Modifier.fillMaxSize().statusBarsPadding().verticalScroll(scroll).padding(bottom = tabClearance)) {
             when (tab) {
-                Tab.Home -> HomeScreen(state, usage, refreshing, repo::refreshUsage, { talk = true }) {
+                Tab.Home -> HomeScreen(state, usage, access, refreshing, repo::refreshUsage, { talk = true }, { accessAsk = true }) {
                     context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
                 }
                 Tab.Block -> BlockScreen(state, installed, repo)
@@ -256,6 +268,40 @@ private fun MainShell(repo: RotRunRepository, onOpenBoard: () -> Unit, onEditYou
         }
         AnimatedVisibility(visible = focusSheet, modifier = Modifier.fillMaxSize(), enter = focusFadeIn(), exit = focusFadeOut()) {
             FocusChooser(onClose = { focusSheet = false }, repo = repo)
+        }
+        if (accessAsk && AccessPrompt.shouldPrompt(access.usage, access.accessibility, access.overlay)) {
+            AlertDialog(
+                onDismissRequest = { accessAsk = false },
+                title = { Text("Blocking is off") },
+                text = { Text(AccessPrompt.message(access.usage, access.accessibility, access.overlay, access.batteryUnrestricted)) },
+                confirmButton = {
+                    TextButton(onClick = {
+                        accessAsk = false
+                        when (AccessPrompt.firstMissing(access.usage, access.accessibility, access.overlay)) {
+                            "usage" -> DeviceAccessReader.open(context, DeviceAccessReader.usageIntent(context))
+                            "accessibility" -> accessDisclosure = true
+                            "overlay" -> DeviceAccessReader.open(context, DeviceAccessReader.overlayIntent(context))
+                        }
+                    }) { Text("Turn on") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { accessAsk = false }) { Text("Not now") }
+                },
+            )
+        }
+        if (accessDisclosure) {
+            AlertDialog(
+                onDismissRequest = { accessDisclosure = false },
+                title = { Text("Accessibility") },
+                text = { Text(stringResource(R.string.accessibility_disclosure)) },
+                confirmButton = {
+                    TextButton(onClick = {
+                        accessDisclosure = false
+                        DeviceAccessReader.open(context, DeviceAccessReader.accessibilityIntent())
+                    }) { Text("Open settings") }
+                },
+                dismissButton = { TextButton(onClick = { accessDisclosure = false }) { Text("Not now") } },
+            )
         }
         if (talk) TalkSheet(repo) {
             talk = false

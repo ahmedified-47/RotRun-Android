@@ -295,6 +295,54 @@ class BillingQuotesTest {
     }
 
     @Test
+    fun signedOutPlayPurchaseIsNotProAndASignedInEmptyQueryStaysPro() {
+        val buyer = "11111111-2222-3333-4444-555555555555"
+        val now = 1_700_000_000_000L
+        assertFalse(BillingQuotes.acceptDevicePurchase(null))
+        assertFalse(BillingQuotes.acceptDevicePurchase("  "))
+        assertTrue(BillingQuotes.acceptDevicePurchase(buyer))
+        val restored = SavedState(
+            premium = true,
+            productId = Products.MONTHLY,
+            purchaseToken = "purchase-token",
+            grantUserId = buyer,
+        )
+        assertTrue(restored.premiumActive(now))
+        assertFalse(restored.proFor(null))
+        assertEquals("Not subscribed", BillingQuotes.planTitle(restored.proFor(null), restored.productId))
+        val hidden = BillingQuotes.statusLine(false, lifetime = false, now + 86_400_000L, now, Products.MONTHLY, "Renews later")
+        assertEquals("Prices come from Google Play", hidden)
+        assertFalse(hidden.contains("Active on Google Play"))
+        assertFalse(hidden.contains("Monthly"))
+        val kept = BillingQuotes.grantAfterQuery(
+            storedPremium = true,
+            storedProductId = Products.MONTHLY,
+            storedToken = "purchase-token",
+            storedLifetime = false,
+            storedUntil = 0L,
+            playActive = false,
+            playReportedGone = false,
+            playProductId = null,
+            playToken = null,
+            playLifetime = false,
+            serverExpiresAt = null,
+            now = now,
+        )
+        val owner = BillingQuotes.grantOwner(buyer, buyer, kept.premium, playConfirmed = false, playReportedGone = false)
+        val signedIn = SavedState(
+            premium = kept.premium,
+            productId = kept.productId,
+            premiumUntil = kept.premiumUntil,
+            purchaseToken = kept.token,
+            grantUserId = owner,
+        )
+        assertTrue(signedIn.premiumActive(now))
+        assertTrue(signedIn.proFor(buyer))
+        assertEquals("Monthly", BillingQuotes.planTitle(signedIn.proFor(buyer), signedIn.productId))
+        assertEquals("purchase-token", kept.token)
+    }
+
+    @Test
     fun upgradesChargeImmediatelyAndDowngradesWait() {
         assertEquals(BillingQuotes.PlanChange.UpgradeImmediate, BillingQuotes.planChange(Products.MONTHLY, Products.YEARLY))
         assertEquals(BillingQuotes.PlanChange.DowngradeDeferred, BillingQuotes.planChange(Products.YEARLY, Products.MONTHLY))

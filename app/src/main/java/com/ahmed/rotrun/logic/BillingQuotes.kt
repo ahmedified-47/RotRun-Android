@@ -237,6 +237,14 @@ object BillingQuotes {
     }
 
     /**
+     * queryPurchasesAsync returns the phone's Google account purchases even when
+     * RotRun is signed out. That list must not become Pro by itself.
+     * Restore, after sign-in, is what links it. A signed-in user still goes through
+     * [grantAfterQuery], so an empty query does not clear their grant.
+     */
+    fun acceptDevicePurchase(signedInUserId: String?): Boolean = !signedInUserId.isNullOrBlank()
+
+    /**
      * Monthly is for the signed-in user whose grant this is.
      * A blank user, a blank owner, or a different user is not that plan.
      * [premiumActive] is the stored grant. It is not enough on its own.

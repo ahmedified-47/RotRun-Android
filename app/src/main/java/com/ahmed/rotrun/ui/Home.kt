@@ -52,15 +52,26 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ahmed.rotrun.data.DeviceAccess
 import com.ahmed.rotrun.data.SavedState
 import com.ahmed.rotrun.data.UsageSnapshot
+import com.ahmed.rotrun.logic.AccessPrompt
 import com.ahmed.rotrun.logic.BrainHealthLevel
 import com.ahmed.rotrun.logic.RewardSceneTint
 import com.ahmed.rotrun.logic.Scoring
 import java.time.LocalTime
 
 @Composable
-fun HomeScreen(state: SavedState, usage: UsageSnapshot, refreshing: Boolean, onRefresh: () -> Unit, onTalk: () -> Unit, onConnect: () -> Unit) {
+fun HomeScreen(
+    state: SavedState,
+    usage: UsageSnapshot,
+    access: DeviceAccess,
+    refreshing: Boolean,
+    onRefresh: () -> Unit,
+    onTalk: () -> Unit,
+    onFixAccess: () -> Unit,
+    onConnect: () -> Unit,
+) {
     val look = Looks.byId(state.theme)
     val scene = RewardSceneTint.resolve(state.theme)
     val scenic = !scene.system
@@ -78,7 +89,11 @@ fun HomeScreen(state: SavedState, usage: UsageSnapshot, refreshing: Boolean, onR
     val short = LocalConfiguration.current.screenHeightDp < 500
     val brainSize = if (short) 56.dp else 136.dp
     Column(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(if (short) 4.dp else 18.dp)) {
-        if (!usage.authorized) ConnectUsageCard(onConnect, paint)
+        if (AccessPrompt.shouldPrompt(access.usage, access.accessibility, access.overlay)) {
+            BlockingOffCard(access, onFixAccess, paint)
+        } else if (!usage.authorized) {
+            ConnectUsageCard(onConnect, paint)
+        }
         Box(Modifier.fillMaxWidth().height(if (short) 118.dp else brainSize + 78.dp)) {
             if (scenic) HeroBackdrop(state.theme, Modifier.fillMaxWidth().fillMaxHeight())
             Column(Modifier.fillMaxWidth()) {
@@ -188,6 +203,28 @@ fun HomeScreen(state: SavedState, usage: UsageSnapshot, refreshing: Boolean, onR
                     WeekBars(usage, paint.onCard, Modifier.fillMaxWidth().height(148.dp))
                 }
             }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BlockingOffCard(access: DeviceAccess, onFix: () -> Unit, paint: ScenePaint) {
+    val detail = AccessPrompt.message(access.usage, access.accessibility, access.overlay, access.batteryUnrestricted)
+    Row(
+        Modifier.padding(horizontal = 16.dp).fillMaxWidth().clickable(onClick = onFix),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RaisedCard(Modifier.fillMaxWidth(), paint) {
+            Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(36.dp).clip(CircleShape).background(paint.onCard.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
+                    Text("!", color = paint.onCard, fontWeight = FontWeight.Black, fontSize = 18.sp)
+                }
+                Column(Modifier.padding(start = 12.dp).weight(1f)) {
+                    Text("Blocking is off", color = paint.onCard, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text(detail, color = paint.onCardSoft, fontSize = 13.sp)
+                }
+                Text("›", color = paint.onCardSoft, fontWeight = FontWeight.Bold, fontSize = 18.sp)
             }
         }
     }

@@ -89,6 +89,7 @@ class RotRunRepository(context: Context) {
     init {
         backend.bindPlaySync { billing.uploadOwned() }
         backend.onSignedIn = { billing.start() }
+        refreshAccess()
     }
     private val launchFinished = AtomicBoolean(false)
     private var usageGeneration = 0
@@ -300,7 +301,24 @@ class RotRunRepository(context: Context) {
         }
     }
 
-    fun restore() = billing.restore()
+    fun restore() {
+        val activity = host?.get()
+        if (!com.ahmed.rotrun.logic.BillingQuotes.acceptDevicePurchase(backend.userId)) {
+            if (activity == null) {
+                note(com.ahmed.rotrun.logic.BillingQuotes.SIGN_IN_MESSAGE)
+                return
+            }
+            backend.signIn(activity) { error ->
+                if (!com.ahmed.rotrun.logic.BillingQuotes.acceptDevicePurchase(backend.userId)) {
+                    note(error?.takeIf { it.isNotBlank() } ?: com.ahmed.rotrun.logic.BillingQuotes.SIGN_IN_MESSAGE)
+                } else {
+                    billing.restore()
+                }
+            }
+            return
+        }
+        billing.restore()
+    }
 
     fun refreshBilling() = billing.start()
 
@@ -312,6 +330,7 @@ class RotRunRepository(context: Context) {
         purchaseToken: String?,
         playReportedGone: Boolean,
     ) {
+        if (!com.ahmed.rotrun.logic.BillingQuotes.acceptDevicePurchase(backend.userId)) return
         update(commit = true) { current ->
             val grant = com.ahmed.rotrun.logic.BillingQuotes.grantAfterQuery(
                 storedPremium = current.premium,
