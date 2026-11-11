@@ -117,10 +117,25 @@ object Scoring {
         else -> "Time to unplug"
     }
 
+    /** Floor of seconds, the same minutes the Home card prints once it has a minute to show. */
+    fun screenMinutes(seconds: Long): Int = (seconds.coerceAtLeast(0) / 60L).toInt()
+
+    /**
+     * Minutes the Home card is actually showing. Under a minute the card says
+     * "Not in yet", and that is not scored as zero use.
+     */
+    fun scoredMinutes(seconds: Long, authorized: Boolean): Int? {
+        if (!authorized || seconds < 60L) return null
+        return screenMinutes(seconds)
+    }
+
+    /** Stored goal hours times 60. A missing goal is 4 hours. */
+    fun goalMinutes(storedHours: Int): Int = (if (storedHours > 0) storedHours else 4) * 60
+
     fun dailyXp(screenMinutes: Int, goalMinutes: Int, askBrainCount: Int, ransomDebit: Int = 0): Int {
         val delta = goalMinutes.coerceAtLeast(0) - screenMinutes.coerceAtLeast(0)
         val screenXp = if (delta >= 0) delta * 10 else delta * 15
-        return (screenXp - 20 * askBrainCount.coerceAtLeast(0) - ransomDebit.coerceAtLeast(0)).coerceAtLeast(0)
+        return (screenXp - InterventionXp.ASK_XP * askBrainCount.coerceAtLeast(0) - ransomDebit.coerceAtLeast(0)).coerceAtLeast(0)
     }
 
     fun rank(score: Int): BrainRank = when (score.coerceAtLeast(0)) {
@@ -131,7 +146,7 @@ object Scoring {
     }
 
     fun formatDuration(seconds: Long): String {
-        val minutesTotal = (seconds.coerceAtLeast(0) / 60.0).roundToInt()
+        val minutesTotal = screenMinutes(seconds)
         val hours = minutesTotal / 60
         val minutes = minutesTotal % 60
         return when {

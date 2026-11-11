@@ -236,13 +236,14 @@ private fun LeaderboardBody(
 ) {
     var friends by remember { mutableStateOf(false) }
     val context = LocalContext.current
-    val xp = screenMinutes?.let { Scoring.dailyXp(it, state.goalHours * 60, state.askBrainCount, state.ransomDebit) }
+    val xp = screenMinutes?.let { Scoring.dailyXp(it, Scoring.goalMinutes(state.goalHours), state.askBrainCount, state.ransomDebit) }
     var board by remember { mutableStateOf(BoardSnapshot()) }
     var refreshing by remember { mutableStateOf(false) }
     val day = Scoring.dayKey()
     fun reload() {
         refreshing = true
         CoroutineScope(Dispatchers.IO).launch {
+            repo.syncDailyXp()
             val snapshot = repo.backend.loadDailyBoard(xp)
             withContext(Dispatchers.Main) {
                 board = snapshot

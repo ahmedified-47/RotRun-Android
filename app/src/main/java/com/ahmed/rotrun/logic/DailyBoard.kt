@@ -103,17 +103,29 @@ object DailyBoard {
         }
     }
 
-    /** Same xp shares one displayed rank. Input is already xp desc, updated_at asc. */
+    /**
+     * Place is the row index plus one, matching iOS `loadSupabaseBoard`.
+     * Input stays in fetch order: xp descending, updated_at ascending.
+     * Equal scores do not share a place.
+     */
     fun withRanks(rows: List<XpRow>, youId: String): List<RankedXp> {
         val ordered = dedupe(rows)
-        var lastXp = Int.MIN_VALUE
-        var lastRank = 0
         return ordered.mapIndexed { index, row ->
-            val rank = if (row.xp == lastXp) lastRank else index + 1
-            lastXp = row.xp
-            lastRank = rank
-            RankedXp(row.userId, row.name, row.xp, rank, youId.isNotBlank() && row.userId == youId, row.avatarUrl)
+            RankedXp(row.userId, row.name, row.xp, index + 1, youId.isNotBlank() && row.userId == youId, row.avatarUrl)
         }
+    }
+
+    /** Daily XP upsert. `avatar_url` is omitted when there is no URL, matching iOS `DailyXPSync.publish`. */
+    fun xpUploadBody(id: String, day: String, xp: Int, name: String, avatar: String?, updatedAt: String): org.json.JSONObject {
+        val body = org.json.JSONObject()
+            .put("user_id", id)
+            .put("day", day)
+            .put("xp", xp.coerceAtLeast(0))
+            .put("display_name", name)
+            .put("updated_at", updatedAt)
+        val column = avatar?.trim()?.takeIf { it.isNotEmpty() }
+        if (column != null) body.put("avatar_url", column)
+        return body
     }
 
     fun countFromContentRange(header: String?): Int? {

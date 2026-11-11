@@ -36,9 +36,19 @@ class ScoringTest {
         assertEquals(2400, Scoring.dailyXp(0, 240, 0))
         assertEquals(BrainRank.Active, Scoring.rank(2400))
         assertEquals(80, Scoring.dailyXp(230, 240, 1))
+        assertEquals(2380, Scoring.dailyXp(0, 240, 1))
+        assertEquals(2300, Scoring.dailyXp(0, 240, 0, 100))
         assertEquals(0, Scoring.dailyXp(260, 240, 0))
+        assertEquals(0, Scoring.dailyXp(0, 240, 0, 9_999))
         assertEquals(BrainRank.Rotter, Scoring.rank(0))
         assertEquals(BrainRank.CosmicMind, Scoring.rank(3000))
+        assertEquals(240, Scoring.goalMinutes(4))
+        assertEquals(240, Scoring.goalMinutes(0))
+        assertEquals(1, Scoring.screenMinutes(90))
+        assertEquals(1, Scoring.screenMinutes(119))
+        assertEquals(1, Scoring.scoredMinutes(90, authorized = true))
+        assertEquals(null, Scoring.scoredMinutes(59, authorized = true))
+        assertEquals(null, Scoring.scoredMinutes(3_600, authorized = false))
     }
 
     @Test
@@ -93,5 +103,7 @@ class ScoringTest {
         assertEquals("5m", Scoring.formatDuration(5 * 60L))
         assertEquals("2h", Scoring.formatDuration(2 * 3600L))
         assertEquals("2h 1m", Scoring.formatDuration(2 * 3600L + 60L))
+        assertEquals("1m", Scoring.formatDuration(90))
+        assertEquals("1m", Scoring.formatDuration(119))
     }
 }

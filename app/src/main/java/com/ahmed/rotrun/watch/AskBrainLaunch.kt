@@ -56,9 +56,6 @@ object AskBrainLaunch {
         } finally {
             launching = false
         }
-        if (RotRunGraph.ready()) {
-            RotRunGraph.repo.chargeAskBrain(System.currentTimeMillis())
-        }
     }
 
     fun cancel(context: Context) {

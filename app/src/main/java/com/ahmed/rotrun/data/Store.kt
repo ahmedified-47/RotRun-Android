@@ -5,6 +5,7 @@ import android.content.Context
 import com.ahmed.rotrun.billing.PlayBilling
 import com.ahmed.rotrun.icon.LauncherIcons
 import com.ahmed.rotrun.logic.BlockRules
+import com.ahmed.rotrun.logic.InterventionXp
 import com.ahmed.rotrun.logic.withoutAppList
 import com.ahmed.rotrun.logic.PaywallGate
 import com.ahmed.rotrun.logic.Products
@@ -192,16 +193,21 @@ class RotRunRepository(context: Context) {
         }
     }
 
-    private fun publishCurrentXp(hasReading: Boolean) {
-        if (!hasReading) return
-        val usage = _usage.value
+    /** Upsert today's score when Home has minutes to show. Unchanged fingerprints are skipped inside publishXp. */
+    fun syncDailyXp() {
+        val minutes = Scoring.scoredMinutes(_usage.value.todaySeconds, _usage.value.authorized) ?: return
         val xp = Scoring.dailyXp(
-            (usage.todaySeconds / 60).toInt(),
-            _state.value.goalHours * 60,
+            minutes,
+            Scoring.goalMinutes(_state.value.goalHours),
             _state.value.askBrainCount,
             _state.value.ransomDebit,
         )
-        scope.launch(Dispatchers.IO) { backend.publishXp(xp, hasReading = true) }
+        backend.publishXp(xp, hasReading = true)
+    }
+
+    private fun publishCurrentXp(hasReading: Boolean) {
+        if (!hasReading) return
+        scope.launch(Dispatchers.IO) { syncDailyXp() }
     }
 
     fun loadInstalled() {
@@ -464,15 +470,13 @@ class RotRunRepository(context: Context) {
 
     fun chargeAskBrain(token: Long) {
         var charged = false
-        update { current ->
-            if (token == current.lastAskToken) current
-            else {
-                charged = true
-                current.copy(askBrainCount = current.askBrainCount + 1, lastAskToken = token)
-            }
+        update(commit = true) { current ->
+            val ledger = InterventionXp.presentAsk(current.dayLedger(), token, Scoring.dayKey())
+            charged = ledger.askBrainCount > (if (current.xpDay == ledger.xpDay) current.askBrainCount else 0)
+            current.withLedger(ledger)
         }
         if (charged) {
-            toast("−20 XP · caught rotting")
+            toast("−${InterventionXp.ASK_XP} XP · caught rotting")
             publishCurrentXp(_usage.value.authorized)
         }
     }
@@ -480,13 +484,17 @@ class RotRunRepository(context: Context) {
     fun grantUnlock(minutes: Int): Boolean {
         if (_state.value.focus != null) return false
         val until = System.currentTimeMillis() + minutes * 60_000L
-        update { it.copy(unlockUntil = until) }
+        update(commit = true) { current ->
+            current.withLedger(InterventionXp.unlock(current.dayLedger(), minutes)).copy(unlockUntil = until)
+        }
         return true
     }
 
     fun payRansom() {
-        update { it.copy(ransomDebit = it.ransomDebit + 100) }
-        toast("−100 XP · ransom paid")
+        update(commit = true) { current ->
+            current.withLedger(InterventionXp.payRansom(current.dayLedger(), Scoring.dayKey()))
+        }
+        toast("−${InterventionXp.RANSOM_XP} XP · ransom paid")
         publishCurrentXp(_usage.value.authorized)
     }
 
@@ -549,10 +557,14 @@ class RotRunRepository(context: Context) {
             label = label.ifBlank { "this app" },
             mode = mode,
         )
+        chargeAskBrain(System.currentTimeMillis())
     }
 
     fun clearAskIntervention() {
         _askIntervention.value = null
+        if (_state.value.askOpen) {
+            update(commit = true) { current -> current.withLedger(InterventionXp.dismiss(current.dayLedger())) }
+        }
     }
 
     fun takeChatRequest(): Boolean {
@@ -668,14 +680,29 @@ class RotRunRepository(context: Context) {
         }
     }
 
+    private fun SavedState.dayLedger() = InterventionXp.DayLedger(
+        xpDay = xpDay,
+        askBrainCount = askBrainCount,
+        ransomDebit = ransomDebit,
+        askOpen = askOpen,
+        lastAskToken = lastAskToken,
+    )
+
+    private fun SavedState.withLedger(ledger: InterventionXp.DayLedger) = copy(
+        xpDay = ledger.xpDay,
+        askBrainCount = ledger.askBrainCount,
+        ransomDebit = ledger.ransomDebit,
+        askOpen = ledger.askOpen,
+        lastAskToken = ledger.lastAskToken,
+    )
+
     private fun rollDay(current: SavedState): SavedState {
         val today = Scoring.dayKey()
         val yesterday = Scoring.dayKey(LocalDate.now().minusDays(1))
         val streak = Scoring.nextOpenStreak(current.lastOpenDay, current.streak, today, yesterday)
         var next = current.copy(streak = streak, longestStreak = maxOf(current.longestStreak, streak), lastOpenDay = today)
-        if (next.xpDay != today) {
-            next = next.copy(xpDay = today, askBrainCount = 0, ransomDebit = 0)
-        }
+        val ledger = InterventionXp.roll(next.dayLedger(), today)
+        next = next.withLedger(ledger)
         return next
     }
 
@@ -783,6 +810,7 @@ class RotRunRepository(context: Context) {
         put("lastOpenDay", state.lastOpenDay)
         put("askBrainCount", state.askBrainCount)
         put("ransomDebit", state.ransomDebit)
+        put("askOpen", state.askOpen)
         put("xpDay", state.xpDay)
         put("focusMinutesByDay", JSONObject(state.focusMinutesByDay.mapValues { it.value }))
         put("appLists", JSONArray().apply { state.appLists.forEach { put(encodeList(it)) } })
@@ -845,6 +873,7 @@ class RotRunRepository(context: Context) {
             lastOpenDay = json.optString("lastOpenDay"),
             askBrainCount = json.optInt("askBrainCount"),
             ransomDebit = json.optInt("ransomDebit"),
+            askOpen = json.optBoolean("askOpen"),
             xpDay = json.optString("xpDay"),
             focusMinutesByDay = json.optJSONObject("focusMinutesByDay").toIntMap(),
             appLists = lists,

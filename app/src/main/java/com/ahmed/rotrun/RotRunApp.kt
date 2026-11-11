@@ -166,6 +166,7 @@ class InterventionActivity : ComponentActivity() {
     }
 
     private fun goHome() {
+        if (RotRunGraph.ready()) RotRunGraph.repo.clearAskIntervention()
         startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).setFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         finish()
     }

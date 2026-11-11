@@ -772,14 +772,17 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
 
     private fun flags() = app.getSharedPreferences("rotrun.flags", Context.MODE_PRIVATE)
 
-    private fun xpBody(id: String, day: String, xp: Int, name: String, avatar: String?): JSONObject =
-        JSONObject()
-            .put("user_id", id)
-            .put("day", day)
-            .put("xp", xp)
-            .put("display_name", if (name.equals("You", ignoreCase = true)) DailyBoard.fallbackName else name)
-            .put("avatar_url", if (avatar.isNullOrBlank()) JSONObject.NULL else avatar)
-            .put("updated_at", ZonedDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME))
+    private fun xpBody(id: String, day: String, xp: Int, name: String, avatar: String?): JSONObject {
+        val shown = if (name.equals("You", ignoreCase = true)) DailyBoard.fallbackName else name
+        return DailyBoard.xpUploadBody(
+            id,
+            day,
+            xp,
+            shown,
+            avatar,
+            ZonedDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
+        )
+    }
 
     private fun postDaily(body: String): Int {
         val path = "/rest/v1/daily_xp?on_conflict=user_id,day"
@@ -1061,16 +1064,19 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
             .put("timezone", ZoneId.systemDefault().id)
             .put("unlock_minutes_left", ((state.unlockUntil - System.currentTimeMillis()) / 60_000).toInt().coerceAtLeast(0))
             .put("streak_days", state.streak)
-            .put("screen_time_goal_min", state.goalHours * 60)
+            .put("screen_time_goal_min", Scoring.goalMinutes(state.goalHours))
             .put("is_premium", state.premiumActive())
             .put("app_version", BuildConfig.VERSION_NAME)
             .put("caught_doomscrolling", false)
             .put("leaderboard", "unknown")
         if (usage.authorized) {
-            val xp = Scoring.dailyXp((usage.todaySeconds / 60).toInt(), state.goalHours * 60, state.askBrainCount, state.ransomDebit)
-            objectJson.put("xp", xp)
+            val minutes = Scoring.scoredMinutes(usage.todaySeconds, authorized = true)
+            if (minutes != null) {
+                val xp = Scoring.dailyXp(minutes, Scoring.goalMinutes(state.goalHours), state.askBrainCount, state.ransomDebit)
+                objectJson.put("xp", xp)
+                objectJson.put("screen_time_today_min", minutes)
+            }
             if (health != null) objectJson.put("brain_health", health)
-            objectJson.put("screen_time_today_min", usage.todaySeconds / 60)
         }
         if (usage.authorized && usage.pickups > 0) objectJson.put("pickups_today", usage.pickups)
         if (state.focusMinutesToday() > 0) objectJson.put("focus_time_today_min", state.focusMinutesToday())

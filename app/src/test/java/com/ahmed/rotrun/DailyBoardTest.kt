@@ -24,7 +24,7 @@ class DailyBoardTest {
     }
 
     @Test
-    fun tiesShareARankAndYouIsTheUserId() {
+    fun placesAreTheFetchIndexPlusOne() {
         val ranked = DailyBoard.withRanks(
             listOf(
                 XpRow("a", "Ada L.", 50),
@@ -33,7 +33,8 @@ class DailyBoardTest {
             ),
             youId = "me",
         )
-        assertEquals(listOf(1, 1, 3), ranked.map { it.rank })
+        assertEquals(listOf(1, 2, 3), ranked.map { it.rank })
+        assertEquals(listOf(50, 50, 20), ranked.map { it.xp })
         assertTrue(ranked.last().you)
         assertFalse(ranked.first().you)
     }
@@ -79,9 +80,22 @@ class DailyBoardTest {
         assertTrue(DailyBoard.shouldSkip(finger, null, finger))
         assertFalse(DailyBoard.shouldSkip(finger, "{\"xp\":1}", finger))
         assertFalse(DailyBoard.shouldSkip(null, null, finger))
+        val withAvatar = DailyBoard.fingerprint("user", "2026-11-07", 120, "Ahmed J.", "https://cdn.example/a.jpg")
+        assertFalse(DailyBoard.shouldSkip(finger, null, withAvatar))
         assertFalse(DailyBoard.shouldUpload(authorized = false, hasReading = true))
         assertFalse(DailyBoard.shouldUpload(authorized = true, hasReading = false))
         assertTrue(DailyBoard.shouldUpload(authorized = true, hasReading = true))
+    }
+
+    @Test
+    fun uploadOmitsAvatarWhenItIsMissing() {
+        val bare = DailyBoard.xpUploadBody("user", "2026-11-11", 10, "Ahmed J.", null, "2026-11-11T00:00:00Z")
+        assertFalse(bare.has("avatar_url"))
+        assertEquals(10, bare.getInt("xp"))
+        val blank = DailyBoard.xpUploadBody("user", "2026-11-11", 10, "Ahmed J.", "  ", "2026-11-11T00:00:00Z")
+        assertFalse(blank.has("avatar_url"))
+        val photo = DailyBoard.xpUploadBody("user", "2026-11-11", 10, "Ahmed J.", "https://cdn.example/a.jpg", "2026-11-11T00:00:00Z")
+        assertEquals("https://cdn.example/a.jpg", photo.getString("avatar_url"))
     }
 
     @Test

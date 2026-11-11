@@ -182,7 +182,7 @@ private fun MainShell(repo: RotRunRepository, onOpenBoard: () -> Unit, onEditYou
     val context = LocalContext.current
     val level = BrainHealthLevel.fromLabel(state.brainHealth)
     val health = Scoring.shownHealth(usage.authorized, usage.todaySeconds, state.focusMinutesToday(), level)
-    val screenMinutes = if (usage.authorized) (usage.todaySeconds / 60).toInt() else null
+    val screenMinutes = Scoring.scoredMinutes(usage.todaySeconds, usage.authorized)
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         repo.onForeground()
         if (PaywallGate.shows && !repo.state.value.premiumActive() && !PlayCatalog.purchasing.value && repo.askIntervention.value == null) upgrade = true
