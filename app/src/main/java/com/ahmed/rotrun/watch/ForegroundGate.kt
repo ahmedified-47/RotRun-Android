@@ -120,4 +120,102 @@ object ForegroundGate {
         }
         return if (shouldShowShield(eventPackage, ownPackage, safety, eventBlocked)) ShieldStep.Show else ShieldStep.Hide
     }
+
+    data class CoverChoice(val step: ShieldStep, val packageName: String?)
+
+    /** System UI and ColorOS chrome. The launcher is not chrome: it is a real leave. */
+    fun overlayChrome(packageName: String): Boolean {
+        val name = packageName.lowercase()
+        if (name == "android" || name.startsWith("com.android.systemui")) return true
+        if (name.startsWith("com.coloros.") || name.startsWith("com.oplus.") || name.startsWith("com.heytap.")) return true
+        return name.startsWith("com.oppo.") && !name.contains("launcher")
+    }
+
+    fun realApp(packageName: String, ownPackage: String, safety: Set<String>): Boolean {
+        if (packageName.isBlank() || packageName == ownPackage) return false
+        if (overlayChrome(packageName) || ignore(packageName, ownPackage)) return false
+        return packageName !in safety
+    }
+
+    /**
+     * A focused blocked app stays first even when a launcher window sits above it.
+     * When ColorOS sets no focus flags at all, the first real app leads, so a
+     * launcher or System UI window cannot hide Calendar.
+     * A focused launcher stays in front, which is the user leaving.
+     */
+    fun orderedPackages(
+        windowsTopToBottom: List<Pair<String, Boolean>>,
+        ownPackage: String,
+        safety: Set<String>,
+    ): List<String> {
+        val names = windowsTopToBottom.map { it.first }
+        val focusedReal = windowsTopToBottom.firstOrNull { (pkg, focused) ->
+            focused && realApp(pkg, ownPackage, safety)
+        }?.first
+        if (focusedReal != null) return listOf(focusedReal) + names.filter { it != focusedReal }
+        val frontClaimed = windowsTopToBottom.any { (pkg, focused) ->
+            focused && pkg.isNotBlank() && !overlayChrome(pkg)
+        }
+        if (!frontClaimed) {
+            val real = windowsTopToBottom.firstOrNull { (pkg, _) -> realApp(pkg, ownPackage, safety) }?.first
+            if (real != null) return listOf(real) + names.filter { it != real }
+        }
+        return names
+    }
+
+    /**
+     * One decision for the accessibility poll and for window events.
+     * The package in [windowsFrontToBack] wins over the event package, so a launcher
+     * or System UI event does not hide while Calendar is the app in front.
+     * RotRun, the launcher, and System UI are never the package that gets a shield.
+     * Keep, when the same package is already covered, is what stops a second Ask.
+     */
+    fun coverChoice(
+        reported: String?,
+        windowsFrontToBack: List<String>,
+        usagePackage: String?,
+        usageResumedAt: Long,
+        shownFor: String?,
+        shownAt: Long,
+        ownPackage: String,
+        safety: Set<String>,
+        blocked: (String) -> Boolean,
+        windowStateChanged: Boolean,
+    ): CoverChoice {
+        val visible = windowsFrontToBack.firstOrNull { it.isNotBlank() && !overlayChrome(it) }
+        fun show(pkg: String): CoverChoice {
+            val step = if (shownFor == pkg) ShieldStep.Keep else ShieldStep.Show
+            return CoverChoice(step, pkg)
+        }
+        if (visible != null && realApp(visible, ownPackage, safety)) {
+            return if (blocked(visible)) show(visible) else CoverChoice(ShieldStep.Hide, null)
+        }
+        val usageLeft = shownFor != null &&
+            usagePackage == ownPackage &&
+            usageResumedAt > 0L &&
+            usageResumedAt >= shownAt
+        val usageHome = usagePackage != null &&
+            userWentElsewhere(usagePackage, ownPackage, safety) &&
+            usageResumedAt > 0L &&
+            (shownFor == null || usageResumedAt >= shownAt)
+        if (visible == ownPackage) {
+            if (usageLeft || (usageHome && shownFor != null)) return CoverChoice(ShieldStep.Hide, null)
+            return if (shownFor != null) CoverChoice(ShieldStep.Keep, shownFor) else CoverChoice(ShieldStep.Leave, null)
+        }
+        if (visible != null && userWentElsewhere(visible, ownPackage, safety)) {
+            return CoverChoice(ShieldStep.Hide, null)
+        }
+        if (usageLeft) return CoverChoice(ShieldStep.Hide, null)
+        if (usagePackage != null && realApp(usagePackage, ownPackage, safety) && blocked(usagePackage)) {
+            return show(usagePackage)
+        }
+        if (!usageHome && reported != null && realApp(reported, ownPackage, safety) && blocked(reported)) {
+            return show(reported)
+        }
+        if (usageHome || (reported != null && userWentElsewhere(reported, ownPackage, safety) && windowStateChanged && visible == null && shownFor == null)) {
+            return if (shownFor != null || usageHome) CoverChoice(ShieldStep.Hide, null) else CoverChoice(ShieldStep.Leave, null)
+        }
+        if (shownFor != null) return CoverChoice(ShieldStep.Keep, shownFor)
+        return CoverChoice(ShieldStep.Leave, null)
+    }
 }

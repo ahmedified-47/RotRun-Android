@@ -116,19 +116,19 @@ class BlockWatchService : Service() {
         }
         val reading = UsageReader.foregroundResume(this)
         val safety = repo.safetyPackages()
-        val candidate = reading?.packageName
-        val blockedNow = candidate != null && repo.isBlocked(candidate, safety)
-        when (
-            ForegroundGate.onUsage(
-                packageName = candidate,
-                resumedAtMillis = reading?.atMillis ?: 0L,
-                shownFor = shownFor,
-                shownAtMillis = overlayShownAt,
-                ownPackage = packageName,
-                safety = safety,
-                blocked = blockedNow,
-            )
-        ) {
+        val choice = ForegroundGate.coverChoice(
+            reported = reading?.packageName,
+            windowsFrontToBack = emptyList(),
+            usagePackage = reading?.packageName,
+            usageResumedAt = reading?.atMillis ?: 0L,
+            shownFor = shownFor,
+            shownAt = overlayShownAt,
+            ownPackage = packageName,
+            safety = safety,
+            blocked = { repo.isBlocked(it, safety) },
+            windowStateChanged = false,
+        )
+        when (choice.step) {
             ShieldStep.Leave, ShieldStep.Keep -> return
             ShieldStep.Hide -> {
                 hideOverlay()
@@ -136,35 +136,35 @@ class BlockWatchService : Service() {
             }
             ShieldStep.Show -> Unit
         }
-        val packageName = candidate ?: return
-        if (ShieldSession.blocks(packageName)) {
+        val target = choice.packageName ?: return
+        if (ShieldSession.blocks(target)) {
             hideOverlay()
-            if (ShieldSession.openedInto(packageName) && !repo.isBlocked(packageName, repo.safetyPackages())) {
+            if (ShieldSession.openedInto(target) && !repo.isBlocked(target, repo.safetyPackages())) {
                 ShieldSession.release()
             }
             return
         }
-        val blocked = repo.isBlocked(packageName, repo.safetyPackages())
-        if (packageName != lastForeground) {
-            lastForeground = packageName
-            Log.i(ShieldOverlay.TAG, "fg=$packageName blocked=$blocked overlay=${Settings.canDrawOverlays(this)}")
+        val blocked = repo.isBlocked(target, repo.safetyPackages())
+        if (target != lastForeground) {
+            lastForeground = target
+            Log.i(ShieldOverlay.TAG, "fg=$target blocked=$blocked overlay=${Settings.canDrawOverlays(this)}")
         }
         if (!blocked) {
             hideOverlay()
             return
         }
-        val label = UsageReader.label(this, packageName)
+        val label = UsageReader.label(this, target)
         if (Settings.canDrawOverlays(this)) {
-            if (shownFor != packageName || overlay == null) {
+            if (shownFor != target || overlay == null) {
                 hideOverlay()
                 overlay = ShieldOverlay.show(
                     context = this,
                     type = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-                    packageName = packageName,
+                    packageName = target,
                     label = label,
-                    onAsk = { openAsk(packageName, label) },
+                    onAsk = { openAsk(target, label) },
                 )
-                shownFor = if (overlay == null) null else packageName
+                shownFor = if (overlay == null) null else target
                 if (shownFor != null) overlayShownAt = System.currentTimeMillis()
             }
         }

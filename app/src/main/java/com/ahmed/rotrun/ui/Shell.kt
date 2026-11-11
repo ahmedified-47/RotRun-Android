@@ -160,6 +160,7 @@ private fun Gate(repo: RotRunRepository) {
             selected = plan,
             onSelect = { plan = it },
             notice = notice,
+            signedInUserId = repo.backend.userId,
         )
     }
 }
@@ -185,7 +186,7 @@ private fun MainShell(repo: RotRunRepository, onOpenBoard: () -> Unit, onEditYou
     val screenMinutes = Scoring.scoredMinutes(usage.todaySeconds, usage.authorized)
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         repo.onForeground()
-        if (PaywallGate.shows && !repo.state.value.premiumActive() && !PlayCatalog.purchasing.value && repo.askIntervention.value == null) upgrade = true
+        if (PaywallGate.shows && !repo.state.value.proFor(repo.backend.userId) && !PlayCatalog.purchasing.value && repo.askIntervention.value == null) upgrade = true
     }
     LaunchedEffect(Unit) {
         if (repo.takeChatRequest()) talk = true
@@ -260,7 +261,7 @@ private fun MainShell(repo: RotRunRepository, onOpenBoard: () -> Unit, onEditYou
             talk = false
             ShieldSession.endChat()
         }
-        if (upgrade && PaywallGate.shows && !state.premiumActive()) {
+        if (upgrade && PaywallGate.shows && !state.proFor(repo.backend.userId)) {
             val notice by repo.purchaseError.collectAsState()
             PaywallPopup(onDismiss = { upgrade = false }) {
                 GetAccessPaywall(
@@ -273,6 +274,7 @@ private fun MainShell(repo: RotRunRepository, onOpenBoard: () -> Unit, onEditYou
                     selected = plan,
                     onSelect = { plan = it },
                     notice = notice,
+                    signedInUserId = repo.backend.userId,
                 )
             }
         }
@@ -321,7 +323,7 @@ private fun MainShell(repo: RotRunRepository, onOpenBoard: () -> Unit, onEditYou
                 },
             )
         }
-        val upgradeUp = upgrade && PaywallGate.shows && !state.premiumActive()
+        val upgradeUp = upgrade && PaywallGate.shows && !state.proFor(repo.backend.userId)
         BackHandler(enabled = ask != null || audio || upgradeUp || talk || focusSheet || state.focus != null) {
             when {
                 ask != null -> {

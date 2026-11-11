@@ -76,6 +76,7 @@ import com.ahmed.rotrun.data.DeviceAccessReader
 import com.ahmed.rotrun.data.RotRunRepository
 import com.ahmed.rotrun.data.SavedState
 import com.ahmed.rotrun.data.TrackedApp
+import com.ahmed.rotrun.logic.BillingQuotes
 import com.ahmed.rotrun.logic.BrainHealthLevel
 import com.ahmed.rotrun.logic.Products
 import com.ahmed.rotrun.logic.SupportCopy
@@ -136,6 +137,7 @@ fun SettingsScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunR
                 state, showClose = true, onClose = { showPlans = false },
                 onPurchase = repo::purchase, onRestore = repo::restore, onRetry = repo::refreshBilling,
                 selected = plan, onSelect = { plan = it }, notice = notice,
+                signedInUserId = repo.backend.userId,
             )
         }
     }
@@ -219,7 +221,7 @@ private fun RootSettings(
                     )
                     GreenSwitch(state.upgradeReminders) { enabled ->
                         repo.update { it.copy(upgradeReminders = enabled) }
-                        com.ahmed.rotrun.watch.UpgradeReminders.sync(context, repo.state.value)
+                        com.ahmed.rotrun.watch.UpgradeReminders.sync(context, repo.state.value, repo.backend.userId)
                     }
                 }
             }
@@ -723,14 +725,11 @@ private fun PremiumManage(state: SavedState, repo: RotRunRepository, onBack: () 
 private fun SubscriptionSection(state: SavedState, repo: RotRunRepository, onChangePlan: () -> Unit) {
     val context = LocalContext.current
     val chrome = rot()
-    val plan = if (state.premiumActive() && !state.productId.isNullOrBlank()) Products.planName(state.productId) else "Not subscribed"
-    val renews = when {
-        state.lifetime && state.premiumActive() -> "Does not renew"
-        state.premiumActive() && state.premiumUntil > System.currentTimeMillis() ->
-            "Renews ${java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(java.util.Date(state.premiumUntil))}"
-        state.premiumActive() && !state.productId.isNullOrBlank() -> "Active on Google Play"
-        else -> "Prices come from Google Play"
-    }
+    val now = System.currentTimeMillis()
+    val shows = BillingQuotes.showsPlayPlan(repo.backend.userId, state.grantUserId, state.premiumActive())
+    val plan = BillingQuotes.planTitle(shows, state.productId)
+    val renewalText = "Renews ${java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(java.util.Date(state.premiumUntil))}"
+    val renews = BillingQuotes.statusLine(shows, state.lifetime, state.premiumUntil, now, state.productId, renewalText)
     Text(
         "Buy, restore, or manage your plan. RotRun stays open while your subscription is active.",
         color = chrome.muted,
@@ -743,7 +742,7 @@ private fun SubscriptionSection(state: SavedState, repo: RotRunRepository, onCha
         Text(renews, color = chrome.muted, fontSize = 15.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp, start = 16.dp, end = 16.dp))
     }
     CardGroup {
-        RowLink(if (state.premiumActive()) "Change Plan" else "Get Premium", icon = Icons.Default.Star, tint = Color(0xFFF2BF33), onClick = onChangePlan)
+        RowLink(if (shows) "Change Plan" else "Get Premium", icon = Icons.Default.Star, tint = Color(0xFFF2BF33), onClick = onChangePlan)
         Hairline()
         RowLink("Manage Subscription", plan, icon = Icons.Default.Paid, tint = Color(0xFFF2BF33)) {
             val product = state.productId
@@ -756,7 +755,7 @@ private fun SubscriptionSection(state: SavedState, repo: RotRunRepository, onCha
         Hairline()
         RowLink("Restore Purchases", icon = Icons.Default.Refresh, tint = Color(0xFF598CF2), onClick = repo::restore)
     }
-    if (!state.premiumActive()) {
+    if (!shows) {
         Text(
             "You're not subscribed. Get Premium to start a plan, or Restore Purchases if you already bought one on this Google account.",
             color = chrome.muted,

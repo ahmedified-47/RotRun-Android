@@ -148,7 +148,7 @@ class RotRunRepository(context: Context) {
         refreshUsage()
         loadInstalled()
         billing.start()
-        com.ahmed.rotrun.watch.UpgradeReminders.sync(app, _state.value)
+        com.ahmed.rotrun.watch.UpgradeReminders.sync(app, _state.value, backend.userId)
         com.ahmed.rotrun.watch.RotNudges.consider(app, this)
     }
 
@@ -248,7 +248,7 @@ class RotRunRepository(context: Context) {
             val (kept, cut) = com.ahmed.rotrun.logic.BillingQuotes.keepingFirst(
                 emptyList(),
                 ordered,
-                current.premiumActive(),
+                current.proFor(backend.userId),
                 PaywallGate.shows,
             )
             trimmed = cut
@@ -261,14 +261,14 @@ class RotRunRepository(context: Context) {
         if (trimmed) requestPaywall()
     }
 
-    fun advance() = update { stepForward(it) }
+    fun advance() = update { stepForward(it, backend.userId) }
 
-    fun back() = update { stepBack(it) }
+    fun back() = update { stepBack(it, backend.userId) }
 
     fun declineAccess() = update { current ->
-        val offerMissing = OnboardingStep.OneTimeOffer.skipped(current.copy(yearly70Dismissed = false, premium = false))
+        val offerMissing = OnboardingStep.OneTimeOffer.skipped(current.copy(yearly70Dismissed = false, premium = false), backend.userId)
         if (current.yearly70Dismissed || offerMissing) {
-            stepForward(current.copy(declinedGetAccess = true, onboardingStep = OnboardingStep.OneTimeOffer.raw))
+            stepForward(current.copy(declinedGetAccess = true, onboardingStep = OnboardingStep.OneTimeOffer.raw), backend.userId)
         } else {
             current.copy(declinedGetAccess = true, onboardingStep = OnboardingStep.OneTimeOffer.raw)
         }
@@ -276,7 +276,7 @@ class RotRunRepository(context: Context) {
 
     fun leaveOffer() = update { current ->
         val marked = current.copy(yearly70Dismissed = true, skippedOneTimeOffer = true, declinedGetAccess = true)
-        stepForward(marked.copy(onboardingStep = OnboardingStep.OneTimeOffer.raw))
+        stepForward(marked.copy(onboardingStep = OnboardingStep.OneTimeOffer.raw), backend.userId)
     }
 
     fun dismissYearly70() = update { it.copy(yearly70Dismissed = true, skippedOneTimeOffer = true) }
@@ -327,18 +327,27 @@ class RotRunRepository(context: Context) {
                 serverExpiresAt = expiresAtMillis,
                 now = System.currentTimeMillis(),
             )
+            val playConfirmed = active && !productId.isNullOrBlank()
+            val owner = com.ahmed.rotrun.logic.BillingQuotes.grantOwner(
+                signedInUserId = backend.userId,
+                storedGrantUserId = current.grantUserId,
+                grantPremium = grant.premium,
+                playConfirmed = playConfirmed,
+                playReportedGone = playReportedGone,
+            )
             val next = current.copy(
                 premium = grant.premium,
                 lifetime = grant.lifetime,
                 productId = grant.productId,
                 premiumUntil = grant.premiumUntil,
                 purchaseToken = grant.token,
+                grantUserId = owner,
             )
             if (grant.premium && !next.onboardingCompleted && OnboardingStep.fromRaw(next.onboardingStep).let {
                     it == OnboardingStep.GetAccess || it == OnboardingStep.OneTimeOffer || it == OnboardingStep.PurchaseComplete
                 }
             ) {
-                stepForward(next.copy(onboardingStep = OnboardingStep.PurchaseComplete.raw - 1))
+                stepForward(next.copy(onboardingStep = OnboardingStep.PurchaseComplete.raw - 1), backend.userId)
             } else {
                 next
             }
@@ -351,7 +360,7 @@ class RotRunRepository(context: Context) {
         val (kept, trimmed) = com.ahmed.rotrun.logic.BillingQuotes.keepingFirst(
             previous,
             blocker.packageOrder(),
-            current.premiumActive(),
+            current.proFor(backend.userId),
             PaywallGate.shows,
         )
         val allow = kept.toSet()
@@ -393,7 +402,7 @@ class RotRunRepository(context: Context) {
         val (kept, trimmed) = com.ahmed.rotrun.logic.BillingQuotes.keepingFirst(
             previous,
             apps.map { it.packageName },
-            current.premiumActive(),
+            current.proFor(backend.userId),
             PaywallGate.shows,
         )
         val allow = kept.toSet()
@@ -416,7 +425,7 @@ class RotRunRepository(context: Context) {
         val (kept, trimmed) = com.ahmed.rotrun.logic.BillingQuotes.keepingFirst(
             previous,
             list.apps.map { it.packageName },
-            current.premiumActive(),
+            current.proFor(backend.userId),
             PaywallGate.shows,
         )
         val chosen = list.copy(apps = list.apps.filter { it.packageName in kept.toSet() })
@@ -592,7 +601,7 @@ class RotRunRepository(context: Context) {
             current.blockers.forEach { addAll(it.packageOrder()) }
             current.appLists.forEach { list -> addAll(list.apps.map { it.packageName }) }
         }
-        val allowed = BlockRules.freeAllowed(ordered, current.premiumActive(), PaywallGate.shows)
+        val allowed = BlockRules.freeAllowed(ordered, current.proFor(backend.userId), PaywallGate.shows)
         val windows = current.blockers.map { blocker ->
             val active = blocker.apps.ifEmpty {
                 current.appLists.firstOrNull { it.id == blocker.appListId }?.apps.orEmpty()
@@ -642,7 +651,7 @@ class RotRunRepository(context: Context) {
                 addAll(list.apps.map { it.packageName })
             }
         }
-        return BlockRules.overFreeCap(existing, proposed, excluded, current.premiumActive(), PaywallGate.shows)
+        return BlockRules.overFreeCap(existing, proposed, excluded, current.proFor(backend.userId), PaywallGate.shows)
     }
 
     private fun considerBatteryPrompt(state: SavedState) {
@@ -780,6 +789,7 @@ class RotRunRepository(context: Context) {
         put("premiumUntil", state.premiumUntil)
         put("lifetime", state.lifetime)
         put("purchaseToken", state.purchaseToken)
+        put("grantUserId", state.grantUserId)
         put("introUsed", state.introUsed)
         put("declinedGetAccess", state.declinedGetAccess)
         put("skippedOneTimeOffer", state.skippedOneTimeOffer)
@@ -843,6 +853,7 @@ class RotRunRepository(context: Context) {
             premiumUntil = json.optLong("premiumUntil"),
             lifetime = json.optBoolean("lifetime") || json.optString("productId") == Products.LIFETIME,
             purchaseToken = json.optString("purchaseToken"),
+            grantUserId = json.optString("grantUserId"),
             introUsed = json.optBoolean("introUsed"),
             declinedGetAccess = json.optBoolean("declinedGetAccess"),
             skippedOneTimeOffer = json.optBoolean("skippedOneTimeOffer"),
@@ -917,22 +928,22 @@ fun iconStreak(icon: String): Int = when (icon) {
     else -> 0
 }
 
-fun stepForward(state: SavedState): SavedState {
+fun stepForward(state: SavedState, userId: String? = null): SavedState {
     var cursor = state.onboardingStep + 1
     while (cursor <= OnboardingStep.EnableFirstRule.raw) {
         val next = OnboardingStep.fromRaw(cursor)
-        if (!next.skipped(state)) return state.copy(onboardingStep = next.raw)
+        if (!next.skipped(state, userId)) return state.copy(onboardingStep = next.raw)
         cursor++
     }
     return state.copy(onboardingCompleted = true)
 }
 
-fun stepBack(state: SavedState): SavedState {
+fun stepBack(state: SavedState, userId: String? = null): SavedState {
     if (state.onboardingStep <= 0) return state
     var cursor = state.onboardingStep - 1
     while (cursor > 0) {
         val next = OnboardingStep.fromRaw(cursor)
-        if (!next.skipped(state)) return state.copy(onboardingStep = next.raw)
+        if (!next.skipped(state, userId)) return state.copy(onboardingStep = next.raw)
         cursor--
     }
     return state.copy(onboardingStep = 0)

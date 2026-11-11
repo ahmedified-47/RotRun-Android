@@ -16,14 +16,15 @@ object UpgradeReminders {
     private const val id = 77
     private const val channel = "rotrun.upgrade"
 
-    fun sync(context: Context, state: SavedState) {
+    fun sync(context: Context, state: SavedState, signedInUserId: String? = null) {
+        val pro = state.proFor(signedInUserId)
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val alarm = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val pending = pending(context)
         context.getSharedPreferences("rotrun.flags", Context.MODE_PRIVATE).edit()
-            .putBoolean("upgrade", state.upgradeReminders && !state.premiumActive())
+            .putBoolean("upgrade", state.upgradeReminders && !pro)
             .apply()
-        if (!state.upgradeReminders || state.premiumActive()) {
+        if (!state.upgradeReminders || pro) {
             alarm.cancel(pending)
             manager.cancel(id)
             return

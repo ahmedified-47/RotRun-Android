@@ -144,7 +144,7 @@ fun TalkSheet(repo: RotRunRepository, onClose: () -> Unit) {
         }
     }
     fun startCall() {
-        if (!repo.state.value.premiumActive()) {
+        if (!repo.state.value.proFor(repo.backend.userId)) {
             note = FreeTier.voiceMessage
             if (PaywallGate.shows) repo.requestPaywall()
             return
@@ -329,7 +329,7 @@ fun TalkSheet(repo: RotRunRepository, onClose: () -> Unit) {
                 InputBar(draft, { draft = it }, !busy && draft.isNotBlank(), ink, card, tertiary, page, onFocus = { focusTick += 1 }) {
                     val message = draft.trim()
                     if (message.isEmpty() || busy) return@InputBar
-                    if (PaywallGate.shows && !repo.state.value.premiumActive() && !canStillChat(repo)) {
+                    if (PaywallGate.shows && !repo.state.value.proFor(repo.backend.userId) && !canStillChat(repo)) {
                         repo.requestPaywall()
                         note = FreeTier.limitMessage
                         return@InputBar
@@ -344,7 +344,7 @@ fun TalkSheet(repo: RotRunRepository, onClose: () -> Unit) {
 
 private fun canStillChat(repo: RotRunRepository): Boolean {
     val state = repo.state.value
-    if (state.premiumActive()) return true
+    if (state.proFor(repo.backend.userId)) return true
     val used = if (state.chatDay == Scoring.dayKey()) state.chatCount else 0
     return used < FreeTier.dailyMessageCap
 }

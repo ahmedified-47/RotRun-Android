@@ -52,13 +52,13 @@ enum class OnboardingStep(val raw: Int) {
 
     fun progress(): Float = if (this == GetAccess) 0.82f else raw / 39f
 
-    fun skipped(state: SavedState): Boolean = when (this) {
+    fun skipped(state: SavedState, userId: String? = null): Boolean = when (this) {
         SeeForYourself, ConnectScreenTime, LimitedOffer, ChoosePlan -> true
-        PurchaseComplete -> !state.premiumActive()
-        GetAccess -> !PaywallGate.shows || state.premiumActive() || PlayCatalog.status.value == CatalogStatus.Unavailable
+        PurchaseComplete -> !state.proFor(userId)
+        GetAccess -> !PaywallGate.shows || state.proFor(userId) || PlayCatalog.status.value == CatalogStatus.Unavailable
         OneTimeOffer -> !BillingQuotes.yearly70Visible(
             paywall = PaywallGate.shows,
-            premium = state.premiumActive(),
+            premium = state.proFor(userId),
             dismissed = state.yearly70Dismissed,
             productId = state.productId,
             catalogReady = PlayCatalog.status.value == CatalogStatus.Ready,
@@ -158,7 +158,9 @@ data class SavedState(
     val duelUntil: Long = 0L,
     val lastAskToken: Long = 0L,
     val bailoutFrom: String = "",
+    val grantUserId: String = "",
 ) {
+    /** Stored grant only. Settings and the paywall use [proFor] so a leftover grant is not Pro while signed out. */
     fun premiumActive(now: Long = System.currentTimeMillis()): Boolean {
         if (!premium) return false
         if (lifetime || productId == Products.LIFETIME) return true
@@ -168,6 +170,8 @@ data class SavedState(
         // send that purchaser through checkout again. Play clears premium when the purchase is gone.
         return productId in Products.subscriptions
     }
+
+    fun proFor(userId: String?): Boolean = BillingQuotes.showsPlayPlan(userId, grantUserId, premiumActive())
 
     fun cameoToday(day: String = Scoring.dayKey()): Boolean = cameoName.isNotBlank() && cameoDay == day
 

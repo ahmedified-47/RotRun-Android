@@ -156,7 +156,7 @@ fun OnboardingScreen(repo: RotRunRepository) {
         }
     }
     androidx.compose.runtime.LaunchedEffect(catalog, state.onboardingStep, state.premium, state.yearly70Dismissed) {
-        if (step.skipped(repo.state.value)) repo.advance()
+        if (step.skipped(repo.state.value, repo.backend.userId)) repo.advance()
     }
     LegalDialog(legal) { legal = null }
     Box(Modifier.fillMaxSize().statusBarsPadding()) {
@@ -212,6 +212,7 @@ fun OnboardingScreen(repo: RotRunRepository) {
                         onboarding = true,
                         onContinue = repo::advance,
                         notice = notice,
+                        signedInUserId = repo.backend.userId,
                     )
                 }
             }
@@ -238,7 +239,7 @@ fun OnboardingScreen(repo: RotRunRepository) {
         }
         }
         val plansAlreadyShowing = step == OnboardingStep.GetAccess || step == OnboardingStep.OneTimeOffer
-        if (upgrade && PaywallGate.shows && !state.premiumActive() && !plansAlreadyShowing) {
+        if (upgrade && PaywallGate.shows && !state.proFor(repo.backend.userId) && !plansAlreadyShowing) {
             val notice by repo.purchaseError.collectAsState()
             PaywallPopup(onDismiss = { upgrade = false }) {
                 GetAccessPaywall(
@@ -251,6 +252,7 @@ fun OnboardingScreen(repo: RotRunRepository) {
                     selected = plan,
                     onSelect = { plan = it },
                     notice = notice,
+                    signedInUserId = repo.backend.userId,
                 )
             }
         }

@@ -236,6 +236,57 @@ object BillingQuotes {
         )
     }
 
+    /**
+     * Monthly is for the signed-in user whose grant this is.
+     * A blank user, a blank owner, or a different user is not that plan.
+     * [premiumActive] is the stored grant. It is not enough on its own.
+     */
+    fun showsPlayPlan(signedInUserId: String?, grantUserId: String, premiumActive: Boolean): Boolean {
+        if (!premiumActive) return false
+        val user = signedInUserId?.trim().orEmpty()
+        val owner = grantUserId.trim()
+        return user.isNotEmpty() && owner.isNotEmpty() && user == owner
+    }
+
+    fun planTitle(showsPlan: Boolean, productId: String?): String =
+        if (showsPlan && !productId.isNullOrBlank()) Products.planName(productId) else "Not subscribed"
+
+    fun statusLine(
+        showsPlan: Boolean,
+        lifetime: Boolean,
+        premiumUntil: Long,
+        now: Long,
+        productId: String?,
+        renewalText: String,
+    ): String = when {
+        !showsPlan -> "Prices come from Google Play"
+        lifetime -> "Does not renew"
+        premiumUntil > now -> renewalText
+        !productId.isNullOrBlank() -> "Active on Google Play"
+        else -> "Prices come from Google Play"
+    }
+
+    /**
+     * Who the stored grant belongs to. Signing out does not clear it.
+     * An empty Play query keeps the owner. Play confirming a purchase stamps the signed-in user.
+     * A grant from before this field existed is stamped to the signed-in user on that empty query.
+     * Nobody signed in, and no owner yet, stays blank so Settings cannot paint Monthly.
+     */
+    fun grantOwner(
+        signedInUserId: String?,
+        storedGrantUserId: String,
+        grantPremium: Boolean,
+        playConfirmed: Boolean,
+        playReportedGone: Boolean,
+    ): String {
+        if (playReportedGone || !grantPremium) return ""
+        val user = signedInUserId?.trim().orEmpty()
+        if (playConfirmed && user.isNotEmpty()) return user
+        if (storedGrantUserId.isNotBlank()) return storedGrantUserId
+        if (user.isNotEmpty()) return user
+        return ""
+    }
+
     /** Apply a server expiry only when that same purchase is still active. Never let an empty sync clear it. */
     fun applyServerEntitlement(playPurchased: Boolean, serverActive: Boolean): Boolean = playPurchased && serverActive
 

@@ -275,7 +275,7 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
         remember("user", text)
         remember("assistant", answer)
         absorbCards(payload?.optJSONArray("cards"))
-        if (PaywallGate.shows && !state.premiumActive()) {
+        if (PaywallGate.shows && !state.proFor(userId)) {
             repo.update { current ->
                 val day = Scoring.dayKey()
                 val count = if (current.chatDay == day) current.chatCount else 0
@@ -287,7 +287,7 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
 
     suspend fun startVoice(onUpdate: (String, String) -> Unit = { _, _ -> }, allowRetry: Boolean = true): String? {
         val state = repo.state.value
-        if (!state.premiumActive()) {
+        if (!state.proFor(userId)) {
             if (PaywallGate.shows) repo.requestPaywall()
             return FreeTier.voiceMessage
         }
@@ -302,7 +302,7 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
         val payload = response.json
         val code = payload?.optString("error_code").orEmpty()
         if (VoiceSession.isPaywallRequired(code)) {
-            return paywallVoice(state.premiumActive(), onUpdate, allowRetry)
+            return paywallVoice(state.proFor(userId), onUpdate, allowRetry)
         }
         if (VoiceSession.isVoiceLimit(response.code, code)) {
             val message = if (code == "voice_monthly_limit") {
@@ -1009,7 +1009,7 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
     }
 
     private fun canSend(state: SavedState): Boolean {
-        if (!PaywallGate.shows || state.premiumActive()) return true
+        if (!PaywallGate.shows || state.proFor(userId)) return true
         val used = if (state.chatDay == Scoring.dayKey()) state.chatCount else 0
         return used < FreeTier.dailyMessageCap
     }
@@ -1065,7 +1065,7 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
             .put("unlock_minutes_left", ((state.unlockUntil - System.currentTimeMillis()) / 60_000).toInt().coerceAtLeast(0))
             .put("streak_days", state.streak)
             .put("screen_time_goal_min", Scoring.goalMinutes(state.goalHours))
-            .put("is_premium", state.premiumActive())
+            .put("is_premium", state.proFor(userId))
             .put("app_version", BuildConfig.VERSION_NAME)
             .put("caught_doomscrolling", false)
             .put("leaderboard", "unknown")

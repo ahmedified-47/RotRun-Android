@@ -71,6 +71,7 @@ fun GetAccessPaywall(
     onboarding: Boolean = false,
     onContinue: () -> Unit = {},
     notice: String? = null,
+    signedInUserId: String? = null,
 ) {
     val chrome = rot()
     val catalog by PlayCatalog.status.collectAsState()
@@ -78,6 +79,7 @@ fun GetAccessPaywall(
     var legal by remember { mutableStateOf<String?>(null) }
     LegalDialog(legal) { legal = null }
     val shown = selected.takeIf { it == Products.YEARLY || it == Products.MONTHLY || it == Products.LIFETIME } ?: Products.YEARLY
+    val pro = state.proFor(signedInUserId)
     Column(Modifier.fillMaxWidth().background(chrome.page).padding(horizontal = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Row(Modifier.fillMaxWidth().padding(top = if (onboarding) 4.dp else 12.dp), verticalAlignment = Alignment.CenterVertically) {
             if (onboarding) {
@@ -118,7 +120,7 @@ fun GetAccessPaywall(
             Text(BillingQuotes.UNAVAILABLE_MESSAGE, color = chrome.muted, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp))
             PrimaryButton("Try Again", onClick = onRetry)
         } else {
-            if (state.premiumActive()) {
+            if (pro) {
                 Text("You’re Premium", color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 18.sp)
                 Text("Current plan: ${Products.planName(state.productId)}", color = chrome.muted)
                 val renews = renewsLine(state)
@@ -131,18 +133,18 @@ fun GetAccessPaywall(
                     Spacer(Modifier.height(10.dp))
                 }
                 val title = when {
-                    onboarding && state.premiumActive() -> "Continue"
+                    onboarding && pro -> "Continue"
                     onboarding -> "Subscribe to ${Products.planName(shown)}"
-                    state.premiumActive() && state.productId == shown -> "Current Plan"
-                    state.premiumActive() -> "Change Plan"
+                    pro && state.productId == shown -> "Current Plan"
+                    pro -> "Change Plan"
                     else -> "Subscribe"
                 }
-                val locked = !onboarding && state.premiumActive() && state.productId == shown
+                val locked = !onboarding && pro && state.productId == shown
                 if (purchasing) {
                     CircularProgressIndicator(color = chrome.blue, modifier = Modifier.padding(top = 12.dp).size(28.dp))
                 } else {
                     PrimaryButton(title, enabled = !locked) {
-                        if (onboarding && state.premiumActive()) onContinue() else if (!locked) onPurchase(shown)
+                        if (onboarding && pro) onContinue() else if (!locked) onPurchase(shown)
                     }
                 }
             }

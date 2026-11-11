@@ -197,6 +197,67 @@ class BillingQuotesTest {
     }
 
     @Test
+    fun signedOutDoesNotShowMonthly() {
+        val buyer = "11111111-2222-3333-4444-555555555555"
+        val other = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        val now = 1_700_000_000_000L
+        val until = now + 86_400_000L
+        val renewal = "Renews Nov 12, 2023"
+        assertFalse(BillingQuotes.showsPlayPlan(null, buyer, premiumActive = true))
+        assertFalse(BillingQuotes.showsPlayPlan("", buyer, premiumActive = true))
+        assertFalse(BillingQuotes.showsPlayPlan(buyer, "", premiumActive = true))
+        assertFalse(BillingQuotes.showsPlayPlan(other, buyer, premiumActive = true))
+        assertEquals("Not subscribed", BillingQuotes.planTitle(showsPlan = false, productId = Products.MONTHLY))
+        val hidden = BillingQuotes.statusLine(false, lifetime = false, until, now, Products.MONTHLY, renewal)
+        assertEquals("Prices come from Google Play", hidden)
+        assertFalse(hidden.contains("Active on Google Play"))
+        assertFalse(hidden.contains("Renews"))
+        assertFalse(BillingQuotes.planTitle(false, Products.MONTHLY).contains("Monthly"))
+        assertTrue(BillingQuotes.showsPlayPlan(buyer, buyer, premiumActive = true))
+        assertEquals("Monthly", BillingQuotes.planTitle(showsPlan = true, productId = Products.MONTHLY))
+        assertEquals(
+            "Active on Google Play",
+            BillingQuotes.statusLine(true, lifetime = false, premiumUntil = 0L, now, Products.MONTHLY, renewal),
+        )
+        val kept = BillingQuotes.grantAfterQuery(
+            storedPremium = true,
+            storedProductId = Products.MONTHLY,
+            storedToken = "purchase-token",
+            storedLifetime = false,
+            storedUntil = 0L,
+            playActive = false,
+            playReportedGone = false,
+            playProductId = null,
+            playToken = null,
+            playLifetime = false,
+            serverExpiresAt = null,
+            now = now,
+        )
+        val owner = BillingQuotes.grantOwner(buyer, storedGrantUserId = "", kept.premium, playConfirmed = false, playReportedGone = false)
+        assertEquals(buyer, owner)
+        assertEquals(Products.MONTHLY, kept.productId)
+        assertEquals("purchase-token", kept.token)
+        val still = SavedState(
+            premium = kept.premium,
+            productId = kept.productId,
+            premiumUntil = kept.premiumUntil,
+            purchaseToken = kept.token,
+            grantUserId = owner,
+        )
+        assertTrue(still.premiumActive(now))
+        assertTrue(still.proFor(buyer))
+        assertFalse(still.proFor(null))
+        assertFalse(still.proFor(""))
+        assertFalse(still.proFor(other))
+        assertEquals("Not subscribed", BillingQuotes.planTitle(still.proFor(null), still.productId))
+        val signedOutKeepsOwner = BillingQuotes.grantOwner(null, buyer, grantPremium = true, playConfirmed = false, playReportedGone = false)
+        assertEquals(buyer, signedOutKeepsOwner)
+        assertEquals("", BillingQuotes.grantOwner(null, "", grantPremium = true, playConfirmed = false, playReportedGone = false))
+        assertEquals(other, BillingQuotes.grantOwner(other, buyer, grantPremium = true, playConfirmed = true, playReportedGone = false))
+        assertEquals("", BillingQuotes.grantOwner(buyer, buyer, grantPremium = false, playConfirmed = false, playReportedGone = true))
+    }
+
+    @Test
     fun accountIdIsASha256Hex() {
         val id = "11111111-2222-3333-4444-555555555555"
         val hash = BillingQuotes.obfuscatedAccountId(id)

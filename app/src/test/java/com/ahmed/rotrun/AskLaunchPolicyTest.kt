@@ -5,6 +5,7 @@ import com.ahmed.rotrun.data.AskIntervention
 import com.ahmed.rotrun.data.AskInterventionPlan
 import com.ahmed.rotrun.data.GoogleNonce
 import com.ahmed.rotrun.data.GoogleSignInPolicy
+import com.ahmed.rotrun.logic.BrainCallPolicy
 import com.ahmed.rotrun.watch.AskLaunchPolicy
 import com.ahmed.rotrun.watch.ForegroundGate
 import com.ahmed.rotrun.watch.ShieldSession
@@ -232,6 +233,118 @@ class AskLaunchPolicyTest {
         assertFalse(ForegroundGate.shouldShowShield(own, own, safety, blocked = true))
         assertFalse(ForegroundGate.shouldShowShield("com.android.systemui", own, safety, blocked = true))
         assertFalse(ForegroundGate.shouldShowShield("com.oppo.launcher", own, safety, blocked = true))
+    }
+
+    @Test
+    fun blockedPackageInFrontIsShownEvenWhenTheEventIsTheLauncher() {
+        val own = "com.ahmed.rotrun"
+        val safety = setOf(own, "android", "com.android.systemui", "com.android.launcher3", "com.oppo.launcher")
+        val calendar = "com.google.android.calendar"
+        val launcher = "com.android.launcher3"
+        val oppo = "com.oppo.launcher"
+        val shownAt = 5_000L
+        val blocked = { pkg: String -> pkg == calendar }
+        val noFocus = ForegroundGate.orderedPackages(
+            listOf(oppo to false, "com.android.systemui" to false, calendar to false),
+            own,
+            safety,
+        )
+        assertEquals(calendar, noFocus.first())
+        val fromLauncherEvent = ForegroundGate.coverChoice(
+            reported = oppo,
+            windowsFrontToBack = noFocus,
+            usagePackage = null,
+            usageResumedAt = 0L,
+            shownFor = null,
+            shownAt = 0L,
+            ownPackage = own,
+            safety = safety,
+            blocked = blocked,
+            windowStateChanged = true,
+        )
+        assertEquals(ShieldStep.Show, fromLauncherEvent.step)
+        assertEquals(calendar, fromLauncherEvent.packageName)
+        val focused = ForegroundGate.orderedPackages(listOf(launcher to false, calendar to true), own, safety)
+        val focusedChoice = ForegroundGate.coverChoice(
+            reported = launcher,
+            windowsFrontToBack = focused,
+            usagePackage = launcher,
+            usageResumedAt = 1_000L,
+            shownFor = null,
+            shownAt = 0L,
+            ownPackage = own,
+            safety = safety,
+            blocked = blocked,
+            windowStateChanged = true,
+        )
+        assertEquals(ShieldStep.Show, focusedChoice.step)
+        assertEquals(calendar, focusedChoice.packageName)
+        val home = ForegroundGate.orderedPackages(listOf(launcher to true, calendar to false), own, safety)
+        val homeChoice = ForegroundGate.coverChoice(
+            reported = launcher,
+            windowsFrontToBack = home,
+            usagePackage = null,
+            usageResumedAt = 0L,
+            shownFor = calendar,
+            shownAt = shownAt,
+            ownPackage = own,
+            safety = safety,
+            blocked = blocked,
+            windowStateChanged = true,
+        )
+        assertEquals(ShieldStep.Hide, homeChoice.step)
+        assertFalse(homeChoice.packageName == launcher || homeChoice.packageName == own)
+        val again = ForegroundGate.coverChoice(
+            reported = "com.coloros.oppoguardelf",
+            windowsFrontToBack = listOf(calendar),
+            usagePackage = null,
+            usageResumedAt = 0L,
+            shownFor = calendar,
+            shownAt = shownAt,
+            ownPackage = own,
+            safety = safety,
+            blocked = blocked,
+            windowStateChanged = true,
+        )
+        assertEquals(ShieldStep.Keep, again.step)
+        assertEquals(calendar, again.packageName)
+        assertEquals(
+            ShieldStep.Leave,
+            ForegroundGate.coverChoice(own, listOf(own), null, 0L, null, 0L, own, safety, blocked, true).step,
+        )
+        assertEquals(
+            ShieldStep.Leave,
+            ForegroundGate.coverChoice("com.android.systemui", listOf("com.android.systemui"), null, 0L, null, 0L, own, safety, blocked, true).step,
+        )
+        assertEquals(
+            ShieldStep.Hide,
+            ForegroundGate.coverChoice(launcher, listOf(launcher), null, 0L, calendar, shownAt, own, safety, blocked, true).step,
+        )
+        assertEquals(
+            ShieldStep.Keep,
+            ForegroundGate.coverChoice(own, listOf(own), own, 1_000L, calendar, shownAt, own, safety, blocked, true).step,
+        )
+        assertEquals(
+            ShieldStep.Hide,
+            ForegroundGate.coverChoice(own, listOf(own), own, 6_000L, calendar, shownAt, own, safety, blocked, true).step,
+        )
+        assertEquals(
+            ShieldStep.Show,
+            ForegroundGate.coverChoice(null, emptyList(), calendar, 0L, null, 0L, own, safety, blocked, false).step,
+        )
+        assertEquals(
+            ShieldStep.Keep,
+            ForegroundGate.coverChoice(null, emptyList(), null, 0L, calendar, shownAt, own, safety, blocked, false).step,
+        )
+        assertEquals(
+            ShieldStep.Leave,
+            ForegroundGate.coverChoice(null, emptyList(), null, 0L, null, 0L, own, safety, blocked, false).step,
+        )
+        assertEquals("none", AskLaunchPolicy.shieldCover(accessibilityConnected = false, canDrawOverlays = false))
+        assertEquals("overlay", AskLaunchPolicy.shieldCover(accessibilityConnected = true, canDrawOverlays = false))
+        assertEquals("overlay", AskLaunchPolicy.shieldCover(accessibilityConnected = false, canDrawOverlays = true))
+        assertFalse(AskLaunchPolicy.raiseShieldActivity(alreadyShowing = false, elapsedMs = 0))
+        assertEquals("dismiss", BrainCallPolicy.afterDecline())
     }
 
     @Test
