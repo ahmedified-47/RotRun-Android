@@ -1,6 +1,8 @@
 package com.ahmed.rotrun.ui
 
 import android.Manifest
+import android.app.Activity
+import android.content.pm.PackageManager
 import androidx.activity.compose.BackHandler
 import android.content.Intent
 import android.net.Uri
@@ -67,12 +69,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ahmed.rotrun.BuildConfig
 import com.ahmed.rotrun.R
 import com.ahmed.rotrun.data.DeviceAccessReader
+import com.ahmed.rotrun.logic.NotificationPrompt
 import com.ahmed.rotrun.data.RotRunRepository
 import com.ahmed.rotrun.data.SavedState
 import com.ahmed.rotrun.data.TrackedApp
@@ -93,8 +95,14 @@ fun SettingsScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunR
     var showDisclosure by remember { mutableStateOf(false) }
     val access by repo.access.collectAsState()
     val context = LocalContext.current
-    val askNotify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+    var askedNotifications by rememberSaveable { mutableStateOf(false) }
+    val askNotify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        askedNotifications = true
         repo.refreshAccess()
+        val rationale = (context as? Activity)?.shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS) == true
+        if (!granted && NotificationPrompt.afterDenial(rationale) == NotificationPrompt.SETTINGS) {
+            DeviceAccessReader.open(context, DeviceAccessReader.notificationIntent(context))
+        }
     }
     BackHandler(enabled = !showPlans && (page != "root" || showDisclosure || authError)) {
         when {
@@ -123,8 +131,16 @@ fun SettingsScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunR
             onUsage = { DeviceAccessReader.open(context, DeviceAccessReader.usageIntent(context)) },
             onAccessibility = { showDisclosure = true },
             onNotifications = {
-                if (Build.VERSION.SDK_INT >= 33 && !access.notifications) askNotify.launch(Manifest.permission.POST_NOTIFICATIONS)
-                else DeviceAccessReader.open(context, DeviceAccessReader.notificationIntent(context))
+                val runtimeGranted = Build.VERSION.SDK_INT < 33 ||
+                    context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+                val rationale = (context as? Activity)?.shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS) == true
+                val next = NotificationPrompt.next(runtimeGranted, rationale, askedNotifications)
+                if (runtimeGranted || next == NotificationPrompt.SETTINGS) {
+                    DeviceAccessReader.open(context, DeviceAccessReader.notificationIntent(context))
+                } else {
+                    askedNotifications = true
+                    askNotify.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
             },
             onOverlay = { DeviceAccessReader.open(context, DeviceAccessReader.overlayIntent(context)) },
             onBattery = { DeviceAccessReader.open(context, DeviceAccessReader.batteryIntent(context)) },
@@ -144,18 +160,13 @@ fun SettingsScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunR
     if (page == "brain") BrainHealthPage(state, repo) { page = "root" }
     if (page == "excluded") ExcludedPage(state, installed, repo) { page = "root" }
     if (showDisclosure) {
-        AlertDialog(
-            onDismissRequest = { showDisclosure = false },
-            title = { Text("Accessibility") },
-            text = { Text(stringResource(R.string.accessibility_disclosure)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    showDisclosure = false
-                    runCatching { context.startActivity(DeviceAccessReader.accessibilityIntent()) }
-                        .onFailure { authError = true }
-                }) { Text("Open settings") }
+        AccessibilityDisclosureDialog(
+            onDecline = { showDisclosure = false },
+            onAccept = {
+                showDisclosure = false
+                runCatching { context.startActivity(DeviceAccessReader.accessibilityIntent()) }
+                    .onFailure { authError = true }
             },
-            dismissButton = { TextButton(onClick = { showDisclosure = false }) { Text("Not now") } },
         )
     }
     if (authError) {

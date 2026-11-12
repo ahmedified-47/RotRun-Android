@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -21,6 +22,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ahmed.rotrun.data.DeviceAccessReader
+import com.ahmed.rotrun.logic.AccessibilityDisclosure
 import com.ahmed.rotrun.logic.BlockArming
 
 /** One missing grant at a time. Not now leaves the gate and leaves blocking disarmed. */
@@ -53,10 +55,31 @@ fun PermissionGate(step: BlockArming.Step, onOpen: () -> Unit, onLeave: () -> Un
     }
 }
 
+@Composable
+fun AccessibilityDisclosureDialog(onDecline: () -> Unit, onAccept: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = {
+            if (AccessibilityDisclosure.afterChoice(accepted = false) == AccessibilityDisclosure.DISARMED) onDecline()
+        },
+        title = { Text("Accessibility") },
+        text = { Text(AccessibilityDisclosure.COPY) },
+        confirmButton = {
+            TextButton(onClick = {
+                if (AccessibilityDisclosure.afterChoice(accepted = true) == AccessibilityDisclosure.SETTINGS) onAccept()
+            }) { Text("Open settings") }
+        },
+        dismissButton = {
+            TextButton(onClick = {
+                if (AccessibilityDisclosure.afterChoice(accepted = false) == AccessibilityDisclosure.DISARMED) onDecline()
+            }) { Text("Not now") }
+        },
+    )
+}
+
 fun openArmingStep(context: android.content.Context, id: String, onNotify: () -> Unit) {
     when (id) {
         "usage" -> DeviceAccessReader.open(context, DeviceAccessReader.usageIntent(context))
-        "accessibility" -> DeviceAccessReader.open(context, DeviceAccessReader.accessibilityIntent())
+        "accessibility" -> Unit
         "overlay" -> DeviceAccessReader.open(context, DeviceAccessReader.overlayIntent(context))
         "notifications" -> onNotify()
         "battery" -> DeviceAccessReader.open(context, DeviceAccessReader.batteryIntent(context))

@@ -112,56 +112,84 @@ object ShieldOverlay {
     ): View? {
         val copy = InterventionCopy.forPackage(packageName, label)
         val density = context.resources.displayMetrics.density
+        fun px(dp: Int) = (dp * density).toInt()
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
             setBackgroundColor(ShieldPalette.background(copy.id))
-            val pad = (28 * density).toInt()
-            setPadding(pad, pad * 2, pad, pad)
+        }
+        val topGap = android.view.View(context).apply {
+            minimumHeight = px(24)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
         }
         val mascot = ImageView(context).apply {
             setImageResource(R.drawable.rot_mascot)
-            val size = (180 * density).toInt()
-            layoutParams = LinearLayout.LayoutParams(size, size).apply { gravity = Gravity.CENTER_HORIZONTAL }
+            val size = px(196)
+            layoutParams = LinearLayout.LayoutParams(size, size).apply {
+                gravity = Gravity.CENTER_HORIZONTAL
+                bottomMargin = px(36)
+            }
         }
         val title = TextView(context).apply {
             text = copy.headline
             setTextColor(android.graphics.Color.WHITE)
-            textSize = 28f
+            textSize = 32f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
-            setPadding(0, (24 * density).toInt(), 0, 0)
+            setPadding(px(28), 0, px(28), 0)
         }
         val body = TextView(context).apply {
-            text = listOfNotNull(copy.body, copy.footer).joinToString("\n")
-            setTextColor(0xFFF2E6DC.toInt())
-            textSize = 16f
+            text = copy.body
+            setTextColor(0xFF9E9EA3.toInt())
+            textSize = 17f
             gravity = Gravity.CENTER
-            setPadding(0, (16 * density).toInt(), 0, 0)
+            setPadding(px(36), px(16), px(36), 0)
+        }
+        val footer = copy.footer?.let { line ->
+            TextView(context).apply {
+                text = line
+                setTextColor(0xFF9E9EA3.toInt())
+                textSize = 16f
+                gravity = Gravity.CENTER
+                setPadding(px(36), px(14), px(36), 0)
+            }
+        }
+        val bottomGap = android.view.View(context).apply {
+            minimumHeight = px(32)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
         }
         val button = TextView(context).apply {
             text = "Ask my brain"
             setTextColor(android.graphics.Color.WHITE)
             textSize = 18f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
             background = GradientDrawable().apply {
-                cornerRadius = 28 * density
+                cornerRadius = 999f * density
                 setColor(ShieldPalette.accent(copy.id))
             }
-            val padH = (18 * density).toInt()
+            val padH = px(18)
             setPadding(padH, padH, padH, padH)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = (28 * density).toInt() }
+            ).apply {
+                marginStart = px(28)
+                marginEnd = px(28)
+                bottomMargin = px(12)
+            }
             setOnClickListener {
                 if (!AskLaunchPolicy.acceptTap(AskBrainLaunch.launching)) return@setOnClickListener
                 isEnabled = false
                 onAsk()
             }
         }
+        root.addView(topGap)
         root.addView(mascot)
         root.addView(title)
         root.addView(body)
+        footer?.let(root::addView)
+        root.addView(bottomGap)
         root.addView(button)
         padForBars(root)
         val params = WindowManager.LayoutParams(

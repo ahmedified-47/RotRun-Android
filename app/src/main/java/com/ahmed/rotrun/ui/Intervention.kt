@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
@@ -110,21 +111,14 @@ fun InterventionFlow(
     val shield = shieldColors(shieldCopy.id)
     Box(Modifier.fillMaxSize().rotInsets()) {
         if (shieldUnderneath && !pendingLeave) {
-            val context = LocalContext.current
             Column(
-                Modifier.fillMaxSize().background(shield.second).padding(horizontal = 28.dp, vertical = 20.dp),
+                Modifier.fillMaxSize().background(shield.second),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Shield(
-                    name,
-                    packageName,
-                    shield.first,
-                    onAsk = {
-                        AskBrainLaunch.open(context, packageName, name)
-                        (context as? android.app.Activity)?.finish()
-                    },
-                    onBailOut = { ransom = true },
-                )
+                Shield(name, packageName, shield.first) {
+                    if (packageName.isNotBlank()) repo.requestAskIntervention(packageName, name)
+                    mode = repo.askIntervention.value?.mode ?: repo.pickStyle() ?: "standard"
+                }
             }
         }
         androidx.compose.animation.AnimatedVisibility(
@@ -176,32 +170,28 @@ fun InterventionFlow(
 }
 
 @Composable
-private fun ColumnScope.Shield(appName: String, packageName: String, accent: Color, onAsk: () -> Unit, onBailOut: () -> Unit) {
+private fun ColumnScope.Shield(appName: String, packageName: String, accent: Color, onAsk: () -> Unit) {
     var opening by remember { mutableStateOf(false) }
     val copy = InterventionCopy.forPackage(packageName, appName)
-    Spacer(Modifier.weight(1f))
-    CartoonBrain(BrainStyle.Meadow, Modifier.size(196.dp))
-    Text(copy.headline, color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 28.dp))
-    Text(copy.body, color = Color(0xFF9E9EA3), fontSize = 17.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 16.dp))
-    if (copy.footer != null) Text(copy.footer, color = Color(0xFF9E9EA3), fontSize = 16.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 14.dp))
-    Spacer(Modifier.weight(1f))
+    Spacer(Modifier.heightIn(min = 24.dp).weight(1f))
+    CartoonBrain(BrainStyle.Meadow, Modifier.padding(bottom = 36.dp).size(196.dp))
+    Text(copy.headline, color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 28.dp))
+    Text(copy.body, color = Color(0xFF9E9EA3), fontSize = 17.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 16.dp).padding(horizontal = 36.dp))
+    if (copy.footer != null) {
+        Text(copy.footer, color = Color(0xFF9E9EA3), fontSize = 16.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 14.dp).padding(horizontal = 36.dp))
+    }
+    Spacer(Modifier.heightIn(min = 32.dp).weight(1f))
     Text(
-        if (opening) "Opening…" else "Ask my brain",
+        "Ask my brain",
         color = Color.White,
         fontWeight = FontWeight.Bold,
         fontSize = 18.sp,
         textAlign = TextAlign.Center,
-        modifier = Modifier.fillMaxWidth().clip(CircleShape).background(accent).clickable(enabled = !opening) {
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 28.dp).padding(bottom = 12.dp).clip(CircleShape).background(accent).clickable(enabled = !opening) {
             if (opening) return@clickable
             opening = true
             onAsk()
         }.padding(vertical = 18.dp),
-    )
-    Text(
-        "Hold to bail out",
-        color = Color.White.copy(alpha = 0.85f),
-        fontSize = 15.sp,
-        modifier = Modifier.padding(top = 14.dp).clickable(enabled = !opening, onClick = onBailOut),
     )
 }
 
@@ -212,7 +202,10 @@ private fun shieldColors(id: String): Pair<Color, Color> =
 private fun Standard(appName: String, friend: String?, kind: String, onDismiss: () -> Unit, onUnlock: (Int) -> Unit) {
     var beat by remember { mutableIntStateOf(0) }
     var minutes by remember { mutableIntStateOf(10) }
-    val stamp = remember { SimpleDateFormat("h:mm a", Locale.US).format(Date()).lowercase() }
+    val stamp = remember {
+        val symbols = java.text.DateFormatSymbols(Locale.US).apply { amPmStrings = arrayOf("am", "pm") }
+        SimpleDateFormat("h:mm a", symbols).format(Date())
+    }
     val blue = Color(0xFF007AFF)
     val note = friend?.let { "$it left a note." }
     val question = if (friend != null) "Opening $appName anyway?" else "you really gotta open this?"
@@ -234,35 +227,37 @@ private fun Standard(appName: String, friend: String?, kind: String, onDismiss: 
         if (beat > 1) scroll.animateScrollTo(scroll.maxValue, androidx.compose.animation.core.tween(250, easing = androidx.compose.animation.core.EaseOut))
     }
     Column(Modifier.fillMaxSize().background(Color.White)) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("‹ $appName", color = blue, fontSize = 17.sp, modifier = Modifier.clickable(onClick = onDismiss))
-        }
-        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-            Box(Modifier.size(78.dp).clip(CircleShape).background(Color(0xFFB8E0FA)), contentAlignment = Alignment.Center) {
+        Column(Modifier.fillMaxWidth().padding(bottom = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp).padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("‹", color = blue, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.clickable(onClick = onDismiss))
+                Text(appName, color = blue, fontSize = 17.sp, modifier = Modifier.padding(start = 3.dp).clickable(onClick = onDismiss))
+            }
+            Box(Modifier.padding(top = 8.dp).size(78.dp).clip(CircleShape).background(Color(0xFFB8E0FA)), contentAlignment = Alignment.Center) {
                 CartoonBrain(BrainStyle.Meadow, Modifier.size(72.dp).offset(y = 4.dp), animated = false)
             }
-            Text(
-                "Your Brain ›",
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 15.sp,
-                modifier = Modifier.padding(top = 8.dp).clip(CircleShape).border(1.dp, Color(0xFFC6C6C8), CircleShape).background(Color(0xFFF2F2F7)).padding(horizontal = 14.dp, vertical = 7.dp),
-            )
+            Row(
+                Modifier.padding(top = 8.dp).clip(CircleShape).border(1.dp, Color(0xFFC6C6C8), CircleShape).background(Color(0xFFF2F2F7)).padding(horizontal = 14.dp, vertical = 7.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Your Brain", fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = Color(0xFF1C1C1E))
+                Text(" ›", color = Color(0xFF8E8E93), fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
+            }
         }
-        Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(scroll).padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(scroll).padding(horizontal = 16.dp).padding(top = 8.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("Today $stamp", color = Color(0xFFC7C7CC), fontSize = 12.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp))
-            if (beat >= 1) ChatBubble("yo it's me. brain", true, blue)
-            if (beat >= 2 && note != null) ChatBubble(note, true, blue)
-            if (beat >= 3 || (beat >= 2 && note == null)) ChatBubble(question, true, blue)
-            if (beat in 5..6) ChatBubble("nah, you're right", false, blue)
-            if (beat >= 6 && beat < 7) ChatBubble("bet. go live.", true, blue)
-            if (beat in 7..13) ChatBubble("yes i really do", false, blue)
-            if (beat in 8..13) ChatBubble("alright more rot it is 🥱", true, blue)
-            if (beat in 9..13) ChatBubble("so how long?", true, blue)
-            if (beat >= 11) ChatBubble("$minutes mins", false, blue)
-            if (beat >= 12) ChatBubble("ok lol go for it", true, blue)
+            if (beat >= 1) ChatBubble("yo it's me. brain", true, blue, grouped = false)
+            if (beat >= 2 && note != null) ChatBubble(note, true, blue, grouped = beat >= 1)
+            if (beat >= 3 || (beat >= 2 && note == null)) ChatBubble(question, true, blue, grouped = true)
+            if (beat in 5..6) ChatBubble("nah, you're right", false, blue, grouped = false)
+            if (beat >= 6 && beat < 7) ChatBubble("bet. go live.", true, blue, grouped = false)
+            if (beat in 7..13) ChatBubble("yes i really do", false, blue, grouped = false)
+            if (beat in 8..13) ChatBubble("alright more rot it is 🥱", true, blue, grouped = false)
+            if (beat in 9..13) ChatBubble("so how long?", true, blue, grouped = true)
+            if (beat >= 11) ChatBubble("$minutes mins", false, blue, grouped = false)
+            if (beat >= 12) ChatBubble("ok lol go for it", true, blue, grouped = false)
             if (beat == 4) {
                 SpringBeat {
-                    Column(Modifier.fillMaxWidth().padding(top = 18.dp), horizontalAlignment = Alignment.End) {
+                    Column(Modifier.fillMaxWidth().padding(top = 18.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text("Tap to reply ↓", color = Color(0xFFC7C7CC), fontSize = 13.sp)
                         ReplyPill("nah, you're right", blue) { beat = 5 }
                         ReplyPill("yes i really do", blue) { beat = 7 }
@@ -271,7 +266,7 @@ private fun Standard(appName: String, friend: String?, kind: String, onDismiss: 
             }
             if (beat == 10) {
                 SpringBeat {
-                    Column(Modifier.fillMaxWidth().padding(top = 18.dp), horizontalAlignment = Alignment.End) {
+                    Column(Modifier.fillMaxWidth().padding(top = 18.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text("Tap to reply ↓", color = Color(0xFFC7C7CC), fontSize = 13.sp)
                         listOf(10, 20, 30).forEach { value -> ReplyPill("$value mins", blue) { minutes = value; beat = 11 } }
                         ReplyPill("actually nevermind", blue) { beat = 5 }
@@ -296,7 +291,7 @@ private fun Standard(appName: String, friend: String?, kind: String, onDismiss: 
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 17.sp,
                         textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth().padding(top = 14.dp).clickable { onUnlock(minutes) },
+                        modifier = Modifier.fillMaxWidth().padding(top = 14.dp).clickable { onUnlock(minutes) }.padding(vertical = 6.dp),
                     )
                 }
             }
@@ -318,7 +313,7 @@ private fun SpringBeat(content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun ChatBubble(text: String, brain: Boolean, blue: Color) {
+private fun ChatBubble(text: String, brain: Boolean, blue: Color, grouped: Boolean) {
     val scale = remember { androidx.compose.animation.core.Animatable(0.86f) }
     val alpha = remember { androidx.compose.animation.core.Animatable(0f) }
     LaunchedEffect(text) {
@@ -331,7 +326,14 @@ private fun ChatBubble(text: String, brain: Boolean, blue: Color) {
         val duration = if (brain) 0.36f else 0.32f
         alpha.animateTo(1f, swiftSpring(duration, bounce))
     }
-    Row(Modifier.fillMaxWidth().padding(top = 8.dp).graphicsLayer {
+    val tail = if (grouped) 18.dp else 5.dp
+    val bubbleShape = RoundedCornerShape(
+        topStart = 18.dp,
+        topEnd = 18.dp,
+        bottomEnd = if (brain) 18.dp else tail,
+        bottomStart = if (brain) tail else 18.dp,
+    )
+    Row(Modifier.fillMaxWidth().padding(top = if (grouped) 2.dp else 8.dp).graphicsLayer {
         scaleX = scale.value
         scaleY = scale.value
         this.alpha = alpha.value
@@ -342,7 +344,7 @@ private fun ChatBubble(text: String, brain: Boolean, blue: Color) {
             text,
             color = if (brain) Color.White else Melt.Ink,
             fontSize = 17.sp,
-            modifier = Modifier.weight(1f, fill = false).clip(RoundedCornerShape(18.dp)).background(if (brain) blue else Color(0xFFE5E5EA)).padding(horizontal = 14.dp, vertical = 9.dp),
+            modifier = Modifier.weight(1f, fill = false).clip(bubbleShape).background(if (brain) blue else Color(0xFFE5E5EA)).padding(horizontal = 14.dp, vertical = 9.dp),
         )
         if (brain) Spacer(Modifier.weight(1f))
     }
@@ -354,7 +356,7 @@ private fun ReplyPill(label: String, blue: Color, onClick: () -> Unit) {
         label,
         color = blue,
         fontSize = 16.sp,
-        modifier = Modifier.padding(top = 10.dp).clip(CircleShape).border(1.5.dp, blue, CircleShape).clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 9.dp),
+        modifier = Modifier.clip(CircleShape).border(1.5.dp, blue, CircleShape).clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 9.dp),
     )
 }
 

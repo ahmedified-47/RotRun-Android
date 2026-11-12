@@ -337,6 +337,14 @@ class AskLaunchPolicyTest {
             ForegroundGate.coverChoice(null, emptyList(), null, 0L, calendar, shownAt, own, safety, blocked, false).step,
         )
         assertEquals(
+            ShieldStep.Hide,
+            ForegroundGate.coverChoice(null, emptyList(), null, 0L, calendar, shownAt, own, safety, { false }, false).step,
+        )
+        assertEquals(
+            ShieldStep.Hide,
+            ForegroundGate.coverChoice(own, listOf(own), null, 0L, calendar, shownAt, own, safety, { false }, true).step,
+        )
+        assertEquals(
             ShieldStep.Leave,
             ForegroundGate.coverChoice(null, emptyList(), null, 0L, null, 0L, own, safety, blocked, false).step,
         )

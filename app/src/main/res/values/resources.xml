@@ -4,7 +4,7 @@
     <string name="widget_description">Brain health and the apps using most of your time today.</string>
     <string name="focus_widget_name">Focus Mode</string>
     <string name="focus_widget_description">Start a 15, 30, 45, or 60 minute Focus session and watch the timer on your Home Screen.</string>
-    <string name="accessibility_disclosure">RotRun uses Accessibility to see which app is in front and show your block screen for apps you chose. It does not read what you type and it does not record the screen.</string>
+    <string name="accessibility_disclosure">RotRun uses Accessibility to detect when you open apps you chose to block and to show a blocking screen; no personal data is collected or shared via this service.</string>
     <color name="meadow">#3DB370</color>
     <color name="ic_launcher_background">#FFF4EC</color>
     <color name="icon_default">#FFF4EC</color>

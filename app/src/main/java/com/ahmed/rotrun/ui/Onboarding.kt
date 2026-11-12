@@ -62,7 +62,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -1282,26 +1281,12 @@ private fun EnableRule(repo: RotRunRepository) {
         )
     }
     if (ask) {
-        AlertDialog(
-            onDismissRequest = { ask = false },
-            title = { Text("Blocking access") },
-            text = { Text(stringResource(com.ahmed.rotrun.R.string.accessibility_disclosure)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    ask = false
-                    waiting = true
-                    DeviceAccessReader.open(context, DeviceAccessReader.accessibilityIntent())
-                }) { Text("Open settings") }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    ask = false
-                    if (DeviceAccessReader.read(context).overlay) repo.advance()
-                    else {
-                        waiting = true
-                        DeviceAccessReader.open(context, DeviceAccessReader.overlayIntent(context))
-                    }
-                }) { Text("Not now") }
+        AccessibilityDisclosureDialog(
+            onDecline = { ask = false },
+            onAccept = {
+                ask = false
+                waiting = true
+                DeviceAccessReader.open(context, DeviceAccessReader.accessibilityIntent())
             },
         )
     }

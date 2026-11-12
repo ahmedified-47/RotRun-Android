@@ -200,6 +200,7 @@ object ForegroundGate {
             (shownFor == null || usageResumedAt >= shownAt)
         if (visible == ownPackage) {
             if (usageLeft || (usageHome && shownFor != null)) return CoverChoice(ShieldStep.Hide, null)
+            if (shownFor != null && !blocked(shownFor)) return CoverChoice(ShieldStep.Hide, null)
             return if (shownFor != null) CoverChoice(ShieldStep.Keep, shownFor) else CoverChoice(ShieldStep.Leave, null)
         }
         if (visible != null && userWentElsewhere(visible, ownPackage, safety)) {
@@ -215,7 +216,9 @@ object ForegroundGate {
         if (usageHome || (reported != null && userWentElsewhere(reported, ownPackage, safety) && windowStateChanged && visible == null && shownFor == null)) {
             return if (shownFor != null || usageHome) CoverChoice(ShieldStep.Hide, null) else CoverChoice(ShieldStep.Leave, null)
         }
-        if (shownFor != null) return CoverChoice(ShieldStep.Keep, shownFor)
+        if (shownFor != null) {
+            return if (blocked(shownFor)) CoverChoice(ShieldStep.Keep, shownFor) else CoverChoice(ShieldStep.Hide, null)
+        }
         return CoverChoice(ShieldStep.Leave, null)
     }
 }

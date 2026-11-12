@@ -97,6 +97,7 @@ class BlockWatchService : Service() {
     private fun startInForeground(text: String = "RotRun is watching the apps you chose.") {
         val notification = buildNotification(text)
         if (Build.VERSION.SDK_INT >= 34) {
+            // Target 36 requires a declared type. specialUse is what a long-running block watcher is allowed to be.
             startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         } else {
             startForeground(NOTIFICATION_ID, notification)

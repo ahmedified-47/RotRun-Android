@@ -62,6 +62,19 @@ object BlockArming {
 }
 
 /**
+ * Shown before Accessibility Settings. Accept is the only path that may open Settings.
+ * Decline leaves blocking disarmed.
+ */
+object AccessibilityDisclosure {
+    const val COPY =
+        "RotRun uses Accessibility to detect when you open apps you chose to block and to show a blocking screen; no personal data is collected or shared via this service."
+    const val SETTINGS = "settings"
+    const val DISARMED = "disarmed"
+
+    fun afterChoice(accepted: Boolean): String = if (accepted) SETTINGS else DISARMED
+}
+
+/**
  * The first notification ask uses the system dialog.
  * After a denial, a false rationale means Android will not show that dialog again, so the next step is the app notification settings page.
  */

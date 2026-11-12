@@ -1,9 +1,11 @@
 package com.ahmed.rotrun
 
+import com.ahmed.rotrun.logic.AccessibilityDisclosure
 import com.ahmed.rotrun.logic.BlockArming
 import com.ahmed.rotrun.logic.NotificationPrompt
 import com.ahmed.rotrun.logic.OverlayInsetTypes
 import org.junit.Assert.assertEquals
+import java.io.File
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -23,6 +25,20 @@ class ArmingGateTest {
         assertEquals(systemBars or cutout, mask)
         assertFalse((mask and OverlayInsetTypes.IME) != 0)
         assertTrue(mask != 0)
+    }
+
+    @Test
+    fun accessibilityDisclosureMustBeAcceptedBeforeSettings() {
+        val copy = "RotRun uses Accessibility to detect when you open apps you chose to block and to show a blocking screen; no personal data is collected or shared via this service."
+        assertEquals(copy, AccessibilityDisclosure.COPY)
+        assertEquals(AccessibilityDisclosure.SETTINGS, AccessibilityDisclosure.afterChoice(accepted = true))
+        assertEquals(AccessibilityDisclosure.DISARMED, AccessibilityDisclosure.afterChoice(accepted = false))
+        val root = listOf(File("src/main"), File("app/src/main")).first { it.isDirectory }
+        val strings = File(root, "res/values/resources.xml").readText()
+        val service = File(root, "res/xml/block_accessibility.xml").readText()
+        assertTrue(strings.contains(copy))
+        assertTrue(service.contains("android:isAccessibilityTool=\"false\""))
+        assertFalse(service.contains("android:isAccessibilityTool=\"true\""))
     }
 
     @Test

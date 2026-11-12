@@ -63,6 +63,10 @@ class BlockAccessibilityService : AccessibilityService() {
     private fun route(reported: String?, usagePackage: String?, usageAt: Long, windowStateChanged: Boolean) {
         if (!RotRunGraph.ready() || adding) return
         val repo = RotRunGraph.repo
+        if (!repo.armingReady()) {
+            hide()
+            return
+        }
         val safety = repo.safetyPackages()
         val ordered = ForegroundGate.orderedPackages(seenWindows(), packageName, safety)
         val choice = ForegroundGate.coverChoice(
@@ -123,6 +127,10 @@ class BlockAccessibilityService : AccessibilityService() {
     }
 
     private fun considerNow(packageName: String) {
+        if (RotRunGraph.ready() && !RotRunGraph.repo.armingReady()) {
+            hide()
+            return
+        }
         if (AskLaunchPolicy.leaveOverlayUp(AskBrainLaunch.launching)) return
         if (!AskLaunchPolicy.showShield(ShieldSession.chatPackage() != null)) {
             hide()
@@ -134,14 +142,14 @@ class BlockAccessibilityService : AccessibilityService() {
             return
         }
         if (ForegroundGate.ignore(packageName, this.packageName)) {
-            if (AskLaunchPolicy.keepShownShield(shownFor, packageName, this.packageName)) {
+            if (AskLaunchPolicy.keepShownShield(shownFor, packageName, this.packageName) && stillBlocked(shownFor)) {
                 covering = overlay != null
                 return
             }
             hide()
             return
         }
-        if (AskLaunchPolicy.keepShownShield(shownFor, packageName, this.packageName)) {
+        if (AskLaunchPolicy.keepShownShield(shownFor, packageName, this.packageName) && stillBlocked(shownFor)) {
             covering = overlay != null
             return
         }
@@ -184,6 +192,12 @@ class BlockAccessibilityService : AccessibilityService() {
         connected = false
         hide()
         super.onDestroy()
+    }
+
+    private fun stillBlocked(packageName: String?): Boolean {
+        if (packageName.isNullOrBlank() || !RotRunGraph.ready()) return false
+        val repo = RotRunGraph.repo
+        return repo.isBlocked(packageName, repo.safetyPackages())
     }
 
     private fun repoReadyBlocked(packageName: String): Boolean {

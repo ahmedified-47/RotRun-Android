@@ -60,7 +60,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Size
@@ -363,17 +362,12 @@ private fun MainShell(repo: RotRunRepository, onOpenBoard: () -> Unit, onEditYou
             )
         }
         if (accessDisclosure) {
-            AlertDialog(
-                onDismissRequest = { accessDisclosure = false },
-                title = { Text("Accessibility") },
-                text = { Text(stringResource(R.string.accessibility_disclosure)) },
-                confirmButton = {
-                    TextButton(onClick = {
-                        accessDisclosure = false
-                        DeviceAccessReader.open(context, DeviceAccessReader.accessibilityIntent())
-                    }) { Text("Open settings") }
+            AccessibilityDisclosureDialog(
+                onDecline = { accessDisclosure = false },
+                onAccept = {
+                    accessDisclosure = false
+                    DeviceAccessReader.open(context, DeviceAccessReader.accessibilityIntent())
                 },
-                dismissButton = { TextButton(onClick = { accessDisclosure = false }) { Text("Not now") } },
             )
         }
         if (talk) TalkSheet(repo) {
