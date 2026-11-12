@@ -85,7 +85,7 @@ private fun IdleSmall(context: Context, white: TextStyle) {
             modifier = GlanceModifier.fillMaxWidth().clickable(actionStartActivity(focusIntent(context, null))),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Image(provider = ImageProvider(R.drawable.rot_mascot), contentDescription = "Rot", modifier = GlanceModifier.size(36.dp))
+            Image(provider = ImageProvider(R.drawable.rot_brain_character), contentDescription = "Rot", modifier = GlanceModifier.size(36.dp))
             Column(GlanceModifier.padding(start = 8.dp)) {
                 Text("Focus", style = white.copy(fontSize = 16.sp, fontWeight = FontWeight.Bold))
                 Text("How long?", style = white.copy(fontSize = 11.sp, color = ColorProvider(Color.White.copy(alpha = 0.78f))))
@@ -113,7 +113,7 @@ private fun IdleMedium(context: Context, white: TextStyle) {
             GlanceModifier.width(96.dp).clickable(actionStartActivity(focusIntent(context, null))),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Image(provider = ImageProvider(R.drawable.rot_mascot), contentDescription = "Rot", modifier = GlanceModifier.size(72.dp))
+            Image(provider = ImageProvider(R.drawable.rot_brain_character), contentDescription = "Rot", modifier = GlanceModifier.size(72.dp))
             Spacer(GlanceModifier.height(6.dp))
             Text("Focus Mode", style = white.copy(fontSize = 15.sp, fontWeight = FontWeight.Bold))
         }
@@ -138,7 +138,7 @@ private fun Active(context: Context, white: TextStyle, medium: Boolean, started:
     val remaining = if (countUp) elapsed else (targetMinutes * 60L - elapsed).coerceAtLeast(0)
     Column(GlanceModifier.fillMaxSize()) {
         Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Image(provider = ImageProvider(R.drawable.rot_mascot), contentDescription = "Rot", modifier = GlanceModifier.size(if (medium) 56.dp else 40.dp))
+            Image(provider = ImageProvider(R.drawable.rot_brain_character), contentDescription = "Rot", modifier = GlanceModifier.size(if (medium) 56.dp else 40.dp))
             Column(GlanceModifier.defaultWeight().padding(start = 10.dp)) {
                 Text(if (countUp) "Elapsed" else "Remaining", style = white.copy(fontSize = 11.sp, fontWeight = FontWeight.Medium, color = ColorProvider(Color.White.copy(alpha = 0.75f))))
                 Text(Scoring.formatClock(remaining), style = white.copy(fontSize = if (medium) 34.sp else 26.sp, fontWeight = FontWeight.Bold), maxLines = 1)

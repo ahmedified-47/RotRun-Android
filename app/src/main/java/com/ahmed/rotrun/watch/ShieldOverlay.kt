@@ -1,9 +1,12 @@
 package com.ahmed.rotrun.watch
 
 import android.content.Context
+import android.animation.ObjectAnimator
+import android.animation.PropertyValuesHolder
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
+import android.provider.Settings
 import android.util.Log
 import android.view.Gravity
 import android.view.View
@@ -123,7 +126,24 @@ object ShieldOverlay {
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
         }
         val mascot = ImageView(context).apply {
-            setImageResource(R.drawable.rot_mascot)
+            setImageResource(R.drawable.rot_brain_character)
+            val scale = Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
+            if (scale != 0f) {
+                val breath = ObjectAnimator.ofPropertyValuesHolder(
+                    this,
+                    PropertyValuesHolder.ofFloat(View.SCALE_X, 1f, 1.03f),
+                    PropertyValuesHolder.ofFloat(View.SCALE_Y, 1f, 1.03f),
+                ).apply {
+                    duration = 2400L
+                    repeatCount = ObjectAnimator.INFINITE
+                    repeatMode = ObjectAnimator.REVERSE
+                    interpolator = android.view.animation.AccelerateDecelerateInterpolator()
+                }
+                addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+                    override fun onViewAttachedToWindow(v: View) { breath.start() }
+                    override fun onViewDetachedFromWindow(v: View) { breath.cancel() }
+                })
+            }
             val size = px(196)
             layoutParams = LinearLayout.LayoutParams(size, size).apply {
                 gravity = Gravity.CENTER_HORIZONTAL

@@ -1,6 +1,7 @@
 package com.ahmed.rotrun
 
 import com.ahmed.rotrun.logic.AccessibilityDisclosure
+import com.ahmed.rotrun.watch.GatePrompt
 import com.ahmed.rotrun.logic.CoverRevoke
 import com.ahmed.rotrun.logic.BlockArming
 import com.ahmed.rotrun.logic.NotificationPrompt
@@ -40,6 +41,22 @@ class ArmingGateTest {
         assertTrue(strings.contains(copy))
         assertTrue(service.contains("android:isAccessibilityTool=\"false\""))
         assertFalse(service.contains("android:isAccessibilityTool=\"true\""))
+        assertFalse(service.contains("flagReportViewIds"))
+        assertTrue(service.contains("flagRetrieveInteractiveWindows"))
+        val readsViewIds = File(root, "java").walk().filter { it.extension == "kt" }.any { file ->
+            file.readText().contains("viewIdResourceName")
+        }
+        assertFalse(readsViewIds)
+    }
+
+    @Test
+    fun restoringArmingLetsTheNextRevokeBringRotRunForward() {
+        GatePrompt.latch(true)
+        assertFalse(GatePrompt.observe(true))
+        assertFalse(GatePrompt.observe(false))
+        assertTrue(GatePrompt.observe(true))
+        assertFalse(GatePrompt.observe(true))
+        GatePrompt.latch(false)
     }
 
     @Test

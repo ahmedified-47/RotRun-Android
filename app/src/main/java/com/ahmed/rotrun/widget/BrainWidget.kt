@@ -84,7 +84,7 @@ private fun BrainWidgetContent(context: Context, night: Boolean, known: Boolean,
         if (large) {
             Column(modifier = GlanceModifier.fillMaxSize()) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Image(provider = ImageProvider(R.drawable.rot_mascot), contentDescription = "Rot", modifier = GlanceModifier.size(88.dp))
+                    Image(provider = ImageProvider(R.drawable.rot_brain_character), contentDescription = "Rot", modifier = GlanceModifier.size(88.dp))
                     HealthColumn(known, health, 52, 12, title, secondary, night, showBrain = false, modifier = GlanceModifier.padding(start = 14.dp).defaultWeight())
                 }
                 Spacer(GlanceModifier.height(14.dp))
@@ -114,10 +114,10 @@ private fun HealthColumn(
 ) {
     Column(modifier) {
         if (showBrain) {
-            Image(provider = ImageProvider(R.drawable.rot_mascot), contentDescription = "Rot", modifier = GlanceModifier.size(52.dp))
+            Image(provider = ImageProvider(R.drawable.rot_brain_character), contentDescription = "Rot", modifier = GlanceModifier.size(52.dp))
             Spacer(GlanceModifier.height(6.dp))
         }
-        Text("Brain Health", style = TextStyle(color = secondary, fontSize = 12.sp, fontWeight = FontWeight.Bold))
+        Text("Brain Health", style = TextStyle(color = secondary, fontSize = 12.sp, fontWeight = FontWeight.Medium))
         Text(
             if (known) "$health%" else "Not in yet",
             style = TextStyle(color = title, fontSize = if (known) percentSize.sp else (percentSize * 0.55f).sp, fontWeight = FontWeight.Bold),
@@ -130,7 +130,7 @@ private fun HealthColumn(
 
 @Composable
 private fun HealthBar(health: Int?, height: Int, night: Boolean) {
-    val track = if (night) Color(0xFF3A3A3C) else Color.Black.copy(alpha = 0.22f)
+    val track = if (night) Color(0x3D767680) else Color.Black.copy(alpha = 0.22f)
     val fill = if (night) Color(0xFF217AFF) else Color.White
     LinearProgressIndicator(
         progress = (health ?: 0) / 100f,
@@ -167,8 +167,8 @@ private fun Offenders(
                 ) {
                     Glyph(app, icon)
                     Spacer(GlanceModifier.width(8.dp))
-                    Text(app.label, style = TextStyle(color = title, fontSize = 13.sp, fontWeight = FontWeight.Bold), maxLines = 1, modifier = GlanceModifier.defaultWeight())
-                    Text(Scoring.formatDuration(app.seconds), style = TextStyle(color = secondary, fontSize = 12.sp, fontWeight = FontWeight.Bold), maxLines = 1)
+                    Text(app.label, style = TextStyle(color = title, fontSize = 13.sp, fontWeight = FontWeight.Medium), maxLines = 1, modifier = GlanceModifier.defaultWeight())
+                    Text(Scoring.formatDuration(app.seconds), style = TextStyle(color = secondary, fontSize = 12.sp, fontWeight = FontWeight.Medium), maxLines = 1)
                 }
             }
         }

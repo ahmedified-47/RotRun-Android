@@ -20,9 +20,27 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import androidx.annotation.DrawableRes
 import com.ahmed.rotrun.R
 import kotlin.math.sin
 import kotlinx.coroutines.delay
+
+/** iOS `Image("RotBrainCharacter")`. Sleep-cap, checking-watch, and pleading are this same file. */
+@Composable
+fun RotPose(@DrawableRes pose: Int, modifier: Modifier = Modifier, animated: Boolean = true) {
+    val minPx = with(LocalDensity.current) { 96.dp.roundToPx() }
+    var tallEnough by remember { mutableIntStateOf(0) }
+    val breath = rememberPulse(1.03f, 2400, animated && tallEnough >= minPx)
+    Image(
+        painter = painterResource(pose),
+        contentDescription = "Rot",
+        contentScale = ContentScale.Fit,
+        modifier = modifier.onSizeChanged { tallEnough = it.height }.graphicsLayer {
+            scaleX = breath
+            scaleY = breath
+        },
+    )
+}
 
 @Composable
 fun CartoonBrain(style: BrainStyle, modifier: Modifier = Modifier, animated: Boolean = true) {

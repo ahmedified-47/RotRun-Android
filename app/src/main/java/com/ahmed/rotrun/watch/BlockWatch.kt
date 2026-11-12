@@ -112,6 +112,7 @@ class BlockWatchService : Service() {
     private fun checkForeground() {
         if (!RotRunGraph.ready()) return
         val repo = RotRunGraph.repo
+        if (GatePrompt.observe(repo.armingReady())) repo.refreshAccess()
         if (!repo.armingReady()) {
             if (!holdingCover()) {
                 hideOverlay()

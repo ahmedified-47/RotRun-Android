@@ -15,6 +15,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -65,11 +66,13 @@ import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ahmed.rotrun.R
 import com.ahmed.rotrun.data.RotRunRepository
 import com.ahmed.rotrun.logic.BrainCallPolicy
 import com.ahmed.rotrun.logic.InterventionCopy
@@ -141,17 +144,23 @@ fun InterventionFlow(
                 Standard(name, friend, state.cameoKind, onDismiss = retreat, onUnlock = onUnlock)
             } else if (shown == "breathing") {
                 Breathing(friend, state.cameoKind, retreat, onUnlock)
-            } else {
+            } else if (shown == "cameo") {
                 Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF8FDBFA), Color(0xFF66C785), Color(0xFF338C57))))) {
                     Column(
                         Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 20.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        when (shown) {
-                            "quick" -> Quick(name, friend, retreat, onUnlock)
-                            "cameo" -> Cameo(name, friend ?: "a friend", state.cameoKind, retreat, onUnlock)
-                            else -> Quick(name, friend, retreat, onUnlock)
-                        }
+                        Cameo(name, friend ?: "a friend", state.cameoKind, retreat, onUnlock)
+                    }
+                }
+            } else {
+                Box(Modifier.fillMaxSize()) {
+                    GameStage()
+                    Column(
+                        Modifier.fillMaxSize().padding(horizontal = 24.dp).padding(top = 16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Quick(name, friend, retreat, onUnlock)
                     }
                 }
             }
@@ -175,16 +184,17 @@ private fun ColumnScope.Shield(appName: String, packageName: String, accent: Col
     var opening by remember { mutableStateOf(false) }
     val copy = InterventionCopy.forPackage(packageName, appName)
     Spacer(Modifier.heightIn(min = 24.dp).weight(1f))
-    CartoonBrain(BrainStyle.Meadow, Modifier.padding(bottom = 36.dp).size(196.dp))
-    Text(copy.headline, color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 28.dp))
-    Text(copy.body, color = Color(0xFF9E9EA3), fontSize = 17.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 16.dp).padding(horizontal = 36.dp))
+    RotPose(R.drawable.rot_brain_character, Modifier.padding(bottom = 36.dp).size(196.dp))
+    Text(copy.headline, color = Color.White, fontFamily = FontFamily.Default, fontSize = 32.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 28.dp))
+    Text(copy.body, color = Color(0xFF9E9EA3), fontFamily = FontFamily.Default, fontSize = 17.sp, fontWeight = FontWeight.Normal, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 16.dp).padding(horizontal = 36.dp))
     if (copy.footer != null) {
-        Text(copy.footer, color = Color(0xFF9E9EA3), fontSize = 16.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 14.dp).padding(horizontal = 36.dp))
+        Text(copy.footer, color = Color(0xFF9E9EA3), fontFamily = FontFamily.Default, fontSize = 16.sp, fontWeight = FontWeight.Normal, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 14.dp).padding(horizontal = 36.dp))
     }
     Spacer(Modifier.heightIn(min = 32.dp).weight(1f))
     Text(
         "Ask my brain",
         color = Color.White,
+        fontFamily = FontFamily.Default,
         fontWeight = FontWeight.Bold,
         fontSize = 18.sp,
         textAlign = TextAlign.Center,
@@ -230,22 +240,22 @@ private fun Standard(appName: String, friend: String?, kind: String, onDismiss: 
     Column(Modifier.fillMaxSize().background(Color.White)) {
         Column(Modifier.fillMaxWidth().padding(bottom = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp).padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("‹", color = blue, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.clickable(onClick = onDismiss))
-                Text(appName, color = blue, fontSize = 17.sp, modifier = Modifier.padding(start = 3.dp).clickable(onClick = onDismiss))
+                Text("‹", color = blue, fontFamily = FontFamily.Default, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.clickable(onClick = onDismiss))
+                Text(appName, color = blue, fontFamily = FontFamily.Default, fontSize = 17.sp, fontWeight = FontWeight.Normal, modifier = Modifier.padding(start = 3.dp).clickable(onClick = onDismiss))
             }
             Box(Modifier.padding(top = 8.dp).size(78.dp).clip(CircleShape).background(Color(0xFFB8E0FA)), contentAlignment = Alignment.Center) {
-                CartoonBrain(BrainStyle.Meadow, Modifier.size(72.dp).offset(y = 4.dp), animated = false)
+                RotPose(R.drawable.rot_sleep_cap, Modifier.size(72.dp).offset(y = 4.dp), animated = false)
             }
             Row(
                 Modifier.padding(top = 8.dp).clip(CircleShape).border(1.dp, Color(0xFFC6C6C8), CircleShape).background(Color(0xFFF2F2F7)).padding(horizontal = 14.dp, vertical = 7.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Your Brain", fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = Color(0xFF1C1C1E))
-                Text("›", color = Color(0xFF8E8E93), fontWeight = FontWeight.SemiBold, fontSize = 11.sp, modifier = Modifier.padding(start = 4.dp))
+                Text("Your Brain", fontFamily = FontFamily.Default, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = Color(0xFF1C1C1E))
+                Text("›", color = Color(0xFF8E8E93), fontFamily = FontFamily.Default, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, modifier = Modifier.padding(start = 4.dp))
             }
         }
         Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(scroll).padding(horizontal = 16.dp).padding(top = 8.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("Today $stamp", color = Color(0xFFC7C7CC), fontSize = 12.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp))
+            Text("Today $stamp", color = Color(0xFFC7C7CC), fontFamily = FontFamily.Default, fontSize = 12.sp, fontWeight = FontWeight.Normal, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp))
             if (beat >= 1) ChatBubble("yo it's me. brain", true, blue, grouped = false)
             if (beat >= 2 && note != null) ChatBubble(note, true, blue, grouped = beat >= 1)
             if (beat >= 3 || (beat >= 2 && note == null)) ChatBubble(question, true, blue, grouped = true)
@@ -259,7 +269,7 @@ private fun Standard(appName: String, friend: String?, kind: String, onDismiss: 
             if (beat == 4) {
                 SpringBeat {
                     Column(Modifier.fillMaxWidth().padding(top = 18.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text("Tap to reply ↓", color = Color(0xFFC7C7CC), fontSize = 13.sp)
+                        Text("Tap to reply ↓", color = Color(0xFFC7C7CC), fontFamily = FontFamily.Default, fontSize = 13.sp, fontWeight = FontWeight.Normal)
                         ReplyPill("nah, you're right", blue) { beat = 5 }
                         ReplyPill("yes i really do", blue) { beat = 7 }
                     }
@@ -268,7 +278,7 @@ private fun Standard(appName: String, friend: String?, kind: String, onDismiss: 
             if (beat == 10) {
                 SpringBeat {
                     Column(Modifier.fillMaxWidth().padding(top = 18.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text("Tap to reply ↓", color = Color(0xFFC7C7CC), fontSize = 13.sp)
+                        Text("Tap to reply ↓", color = Color(0xFFC7C7CC), fontFamily = FontFamily.Default, fontSize = 13.sp, fontWeight = FontWeight.Normal)
                         listOf(10, 20, 30).forEach { value -> ReplyPill("$value mins", blue) { minutes = value; beat = 11 } }
                         ReplyPill("actually nevermind", blue) { beat = 5 }
                     }
@@ -281,6 +291,7 @@ private fun Standard(appName: String, friend: String?, kind: String, onDismiss: 
                     Text(
                         "Actually I don't need this",
                         color = Color.White,
+                        fontFamily = FontFamily.Default,
                         fontWeight = FontWeight.Bold,
                         fontSize = 17.sp,
                         textAlign = TextAlign.Center,
@@ -289,6 +300,7 @@ private fun Standard(appName: String, friend: String?, kind: String, onDismiss: 
                     Text(
                         "Open the app and rot",
                         color = Color(0xFFFF3B30),
+                        fontFamily = FontFamily.Default,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 17.sp,
                         textAlign = TextAlign.Center,
@@ -328,7 +340,7 @@ private fun ChatBubble(text: String, brain: Boolean, blue: Color, grouped: Boole
         alpha.animateTo(1f, swiftSpring(duration, bounce))
     }
     val tail = if (grouped) 18.dp else 5.dp
-    val bubbleShape = RoundedCornerShape(
+    val bubbleShape = ContinuousCornerShape(
         topStart = 18.dp,
         topEnd = 18.dp,
         bottomEnd = if (brain) 18.dp else tail,
@@ -344,6 +356,8 @@ private fun ChatBubble(text: String, brain: Boolean, blue: Color, grouped: Boole
         Text(
             text,
             color = if (brain) Color.White else Melt.Ink,
+            fontFamily = FontFamily.Default,
+            fontWeight = FontWeight.Normal,
             fontSize = 17.sp,
             modifier = Modifier.weight(1f, fill = false).clip(bubbleShape).background(if (brain) blue else Color(0xFFE5E5EA)).padding(horizontal = 14.dp, vertical = 9.dp),
         )
@@ -356,6 +370,8 @@ private fun ReplyPill(label: String, blue: Color, onClick: () -> Unit) {
     Text(
         label,
         color = blue,
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.Normal,
         fontSize = 16.sp,
         modifier = Modifier.clip(CircleShape).border(1.5.dp, blue, CircleShape).clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 9.dp),
     )
@@ -370,17 +386,19 @@ private fun Quick(appName: String, friend: String?, onDismiss: () -> Unit, onUnl
     val leave = with(density) { 8.dp.roundToPx() }
     Appear(0f) { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text("QUICK CHECK", color = Color(0xFF1A5230), fontWeight = FontWeight.Black, fontSize = 12.sp, letterSpacing = 1.1.sp, modifier = Modifier.clip(CircleShape).background(Color.White.copy(alpha = 0.92f)).padding(horizontal = 12.dp, vertical = 6.dp))
-            Text(appName, color = Color(0xFF1A2938), fontWeight = FontWeight.Black, fontSize = 28.sp, maxLines = 1, modifier = Modifier.padding(top = 6.dp))
+            Text("QUICK CHECK", color = Color(0xFF1A522E), fontFamily = Nunito, fontWeight = FontWeight.ExtraBold, fontSize = 12.sp, letterSpacing = 1.1.sp, modifier = Modifier.clip(CircleShape).background(Color.White.copy(alpha = 0.92f)).padding(horizontal = 12.dp, vertical = 6.dp))
+            Text(appName, color = Color(0xFF1A2938), fontFamily = Nunito, fontWeight = FontWeight.Black, fontSize = 28.sp, maxLines = 1, modifier = Modifier.padding(top = 6.dp))
         }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         listOf(1, 2).forEach { pip ->
             val filled = pip <= step
             Box(
-                Modifier.padding(start = 6.dp).size(32.dp).clip(CircleShape).background(if (filled) Color.White else Color.White.copy(alpha = 0.22f)).border(if (filled) 0.dp else 1.5.dp, Color.White.copy(alpha = 0.7f), CircleShape),
+                Modifier.size(32.dp).clip(CircleShape).background(if (filled) Color.White else Color.White.copy(alpha = 0.22f)).border(if (filled) 0.dp else 1.5.dp, Color.White.copy(alpha = 0.7f), CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
-                Text("$pip", color = if (filled) Color(0xFF1A522E) else Color.White, fontWeight = FontWeight.Black, fontSize = 13.sp)
+                Text("$pip", color = if (filled) Color(0xFF1A522E) else Color.White, fontFamily = Nunito, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp)
             }
+        }
         }
     } }
     Spacer(Modifier.height(20.dp))
@@ -417,7 +435,17 @@ private fun Quick(appName: String, friend: String?, onDismiss: () -> Unit, onUnl
                     })
                 }
                 val mascot = @Composable {
-                    CartoonBrain(if (current == 1) BrainStyle.Watch else BrainStyle.Pleading, mascotMod.size(200.dp))
+                    val pose = if (current == 1) R.drawable.rot_checking_watch else R.drawable.rot_pleading
+                    Box(mascotMod.height(216.dp).fillMaxWidth(), contentAlignment = Alignment.BottomCenter) {
+                        Box(
+                            Modifier
+                                .size(width = 144.dp, height = 26.dp)
+                                .offset(y = (-8).dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF083814).copy(alpha = 0.28f)),
+                        )
+                        RotPose(pose, Modifier.size(200.dp))
+                    }
                 }
                 if (current == 1) {
                     Appear(0.06f) { Box(bubbleMod) { bubble() } }
@@ -429,7 +457,7 @@ private fun Quick(appName: String, friend: String?, onDismiss: () -> Unit, onUnl
             }
         }
     }
-    Spacer(Modifier.height(12.dp))
+    Spacer(Modifier.height(16.dp))
     androidx.compose.animation.AnimatedContent(
         step,
         transitionSpec = {
@@ -441,20 +469,22 @@ private fun Quick(appName: String, friend: String?, onDismiss: () -> Unit, onUnl
         },
         label = "quick-controls",
     ) { current ->
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
             if (current == 1) {
-                Pill("Nah, you're right") { onDismiss() }
-                Text("Yes, I really do", color = Color.White, fontWeight = FontWeight.Black, fontSize = 16.sp, modifier = Modifier.padding(vertical = 8.dp).clickable { step = 2 })
+                QuickNah("Nah, you're right", onDismiss)
+                Text("Yes, I really do", color = Color.White, fontFamily = Nunito, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, modifier = Modifier.padding(top = 14.dp, bottom = 8.dp).clickable { step = 2 })
             } else {
-                DurationTiles(onUnlock)
+                DurationTiles(onUnlock, game = true)
                 Text(
                     "Nah, never mind",
                     color = Color(0xFF1A472E),
-                    fontWeight = FontWeight.Black,
+                    fontFamily = Nunito,
+                    fontWeight = FontWeight.ExtraBold,
                     fontSize = 16.sp,
                     modifier = Modifier.padding(top = 6.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.92f)).clickable(onClick = onDismiss).padding(horizontal = 16.dp, vertical = 8.dp),
                 )
             }
+            Spacer(Modifier.height(28.dp))
         }
     }
 }
@@ -857,12 +887,13 @@ private fun Cameo(appName: String, friend: String, kind: String, onDismiss: () -
 }
 
 @Composable
-private fun DurationTiles(onUnlock: (Int) -> Unit, delays: List<Float> = emptyList()) {
+private fun DurationTiles(onUnlock: (Int) -> Unit, delays: List<Float> = emptyList(), game: Boolean = false) {
     data class Tile(val minutes: Int, val label: String)
-    Column(Modifier.fillMaxWidth()) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(if (game) 8.dp else 0.dp)) {
     listOf(Tile(10, "Quick peek"), Tile(20, "A chapter"), Tile(30, "Long scroll")).forEachIndexed { index, tile ->
         val body = @Composable {
-            Column(
+            if (game) QuickMinuteTile(tile.minutes, tile.label) { onUnlock(tile.minutes) }
+            else Column(
                 Modifier.padding(vertical = 4.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color.White).clickable { onUnlock(tile.minutes) }.padding(12.dp),
             ) {
                 Text("${tile.minutes}", fontWeight = FontWeight.Black, fontSize = 22.sp)
@@ -873,6 +904,86 @@ private fun DurationTiles(onUnlock: (Int) -> Unit, delays: List<Float> = emptyLi
         if (delaySec == null) body() else Appear(delaySec) { body() }
     }
     }
+}
+
+@Composable
+private fun QuickMinuteTile(minutes: Int, caption: String, onClick: () -> Unit) {
+    val ink = Color(0xFF1A472E)
+    val press = remember { MutableInteractionSource() }
+    Box(Modifier.fillMaxWidth().padding(bottom = 4.dp).chunkyPress(press)) {
+        Box(Modifier.matchParentSize().offset(y = 4.dp).clip(ContinuousCornerShape(18.dp)).background(Color(0xFF739E7A)))
+        Row(
+            Modifier.fillMaxWidth().clip(ContinuousCornerShape(18.dp)).background(Color(0xFFF2FCF5)).clickable(interactionSource = press, indication = null, onClick = onClick).padding(horizontal = 18.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("$minutes", color = ink, fontFamily = Nunito, fontWeight = FontWeight.Black, fontSize = 28.sp, modifier = Modifier.widthIn(min = 44.dp))
+            Column(Modifier.padding(start = 12.dp).weight(1f)) {
+                Text("minutes", color = ink, fontFamily = Nunito, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp)
+                Text(caption, color = ink.copy(alpha = 0.55f), fontFamily = Nunito, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
+            }
+            Image(painterResource(R.drawable.ic_hourglass), contentDescription = null, modifier = Modifier.size(16.dp))
+        }
+    }
+}
+
+@Composable
+private fun QuickNah(label: String, onClick: () -> Unit) {
+    val press = remember { MutableInteractionSource() }
+    Box(Modifier.fillMaxWidth().padding(bottom = 6.dp).chunkyPress(press)) {
+        Box(Modifier.matchParentSize().offset(y = 5.dp).clip(CircleShape).background(Color(0xFF0F3D9E)))
+        Row(
+            Modifier.fillMaxWidth().clip(CircleShape).background(Brush.verticalGradient(listOf(Color(0xFF217AFF).copy(alpha = 0.92f), Color(0xFF217AFF)))).clickable(interactionSource = press, indication = null, onClick = onClick).padding(vertical = 16.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Image(painterResource(R.drawable.ic_shield_fill), contentDescription = null, modifier = Modifier.size(16.dp))
+            Text(label, color = Color.White, fontFamily = Nunito, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, modifier = Modifier.padding(start = 8.dp))
+        }
+    }
+}
+
+@Composable
+private fun GameStage() {
+    Canvas(Modifier.fillMaxSize()) {
+        drawRect(Brush.verticalGradient(listOf(Color(0xFFBAD6FA), Color(0xFF8CD1F5), Color(0xFFA8DB94))))
+        val sun = Offset(size.width * 0.78f, size.height * 0.16f)
+        drawCircle(Color(0xFFFFED8C), radius = 36.dp.toPx(), center = sun)
+        gameCloud(Offset(size.width * 0.22f, size.height * 0.12f), 1f)
+        gameCloud(Offset(size.width * 0.55f, size.height * 0.08f), 0.62f)
+        val far = Path().apply {
+            moveTo(0f, size.height * 0.58f)
+            quadraticBezierTo(size.width * 0.45f, size.height * 0.44f, size.width, size.height * 0.52f)
+            lineTo(size.width, size.height)
+            lineTo(0f, size.height)
+            close()
+        }
+        drawPath(far, Color(0xFF7DC76B))
+        val near = Path().apply {
+            moveTo(0f, size.height * 0.74f)
+            quadraticBezierTo(size.width * 0.42f, size.height * 0.64f, size.width, size.height * 0.70f)
+            lineTo(size.width, size.height)
+            lineTo(0f, size.height)
+            close()
+        }
+        drawPath(near, Color(0xFF5CAD52))
+        gameTree(Offset(size.width * 0.16f, size.height * 0.56f))
+        drawOval(Color(0xFFC7C7C7), Offset(size.width * 0.82f - 22.dp.toPx(), size.height * 0.68f - 12.dp.toPx()), Size(44.dp.toPx(), 24.dp.toPx()))
+        drawOval(Color(0xFFC7C7C7), Offset(size.width * 0.70f - 15.4.dp.toPx(), size.height * 0.76f - 8.4.dp.toPx()), Size(30.8.dp.toPx(), 16.8.dp.toPx()))
+    }
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.gameCloud(center: Offset, scale: Float) {
+    val color = Color.White.copy(alpha = 0.92f)
+    drawOval(color, Offset(center.x - 46.dp.toPx() * scale, center.y - 10.dp.toPx() * scale), Size(54.dp.toPx() * scale, 28.dp.toPx() * scale))
+    drawOval(color, Offset(center.x - 16.dp.toPx() * scale, center.y - 22.dp.toPx() * scale), Size(48.dp.toPx() * scale, 34.dp.toPx() * scale))
+    drawOval(color, Offset(center.x + 16.dp.toPx() * scale, center.y - 8.dp.toPx() * scale), Size(42.dp.toPx() * scale, 24.dp.toPx() * scale))
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.gameTree(at: Offset) {
+    drawRoundRect(Color(0xFF5C381F), Offset(at.x - 7.dp.toPx(), at.y), Size(14.dp.toPx(), 70.dp.toPx()), CornerRadius(4.dp.toPx()))
+    drawOval(Color(0xFF3D9E4D), Offset(at.x - 34.dp.toPx(), at.y - 28.dp.toPx()), Size(68.dp.toPx(), 42.dp.toPx()))
+    drawOval(Color(0xFF3D9E4D), Offset(at.x - 24.dp.toPx(), at.y - 52.dp.toPx()), Size(52.dp.toPx(), 40.dp.toPx()))
+    drawOval(Color(0xFF3D9E4D), Offset(at.x - 14.dp.toPx(), at.y - 70.dp.toPx()), Size(34.dp.toPx(), 30.dp.toPx()))
 }
 
 @Composable
@@ -898,16 +1009,28 @@ private fun MirrorQuestion(question: String) {
 
 @Composable
 private fun Bubble(text: String) {
-    Box(Modifier.padding(vertical = 8.dp).fillMaxWidth()) {
-        Box(Modifier.matchParentSize().offset(y = 5.dp).clip(RoundedCornerShape(22.dp)).background(Color(0xFF295C38)))
-        Text(
-            text,
-            color = Color(0xFF1F3329),
-            fontWeight = FontWeight.Black,
-            fontSize = 18.sp,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Color.White).padding(horizontal = 18.dp, vertical = 16.dp),
-        )
+    Column(Modifier.fillMaxWidth().padding(bottom = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(Modifier.fillMaxWidth().padding(bottom = 5.dp)) {
+            Box(Modifier.matchParentSize().offset(y = 5.dp).clip(ContinuousCornerShape(22.dp)).background(Color(0xFF295C38)))
+            Text(
+                text,
+                color = Color(0xFF1F3329),
+                fontFamily = Nunito,
+                fontWeight = FontWeight.ExtraBold,
+                fontSize = 18.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().clip(ContinuousCornerShape(22.dp)).background(Color.White).border(1.dp, Color.White.copy(alpha = 0.9f), ContinuousCornerShape(22.dp)).padding(horizontal = 18.dp, vertical = 16.dp),
+            )
+        }
+        Canvas(Modifier.size(22.dp, 12.dp).offset(y = (-6).dp)) {
+            val tail = Path().apply {
+                moveTo(0f, 0f)
+                lineTo(size.width, 0f)
+                lineTo(size.width / 2f, size.height)
+                close()
+            }
+            drawPath(tail, Color.White)
+        }
     }
 }
 

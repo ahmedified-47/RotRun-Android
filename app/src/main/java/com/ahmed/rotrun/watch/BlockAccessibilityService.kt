@@ -20,6 +20,7 @@ class BlockAccessibilityService : AccessibilityService() {
     private var showingChat = false
     private val poll = object : Runnable {
         override fun run() {
+            noteArming()
             if (!adding && !AskLaunchPolicy.leaveOverlayUp(AskBrainLaunch.launching)) {
                 if (!AskLaunchPolicy.showShield(ShieldSession.chatPackage() != null)) {
                     hide()
@@ -36,6 +37,7 @@ class BlockAccessibilityService : AccessibilityService() {
         super.onServiceConnected()
         live = this
         connected = true
+        noteArming()
         handler.removeCallbacks(poll)
         handler.post(poll)
     }
@@ -200,6 +202,7 @@ class BlockAccessibilityService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        GatePrompt.latch(false)
         val last = shownFor
         val wasUp = overlay != null || last != null
         handler.removeCallbacks(poll)
@@ -214,6 +217,11 @@ class BlockAccessibilityService : AccessibilityService() {
             }
         }
         super.onDestroy()
+    }
+
+    private fun noteArming() {
+        if (!RotRunGraph.ready()) return
+        if (GatePrompt.observe(RotRunGraph.repo.armingReady())) RotRunGraph.repo.refreshAccess()
     }
 
     private fun coverDespiteArming(): Boolean {

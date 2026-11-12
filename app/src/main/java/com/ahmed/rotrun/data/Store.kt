@@ -167,7 +167,9 @@ class RotRunRepository(context: Context) {
 
     fun refreshAccess() {
         _access.value = DeviceAccessReader.read(app)
-        if (armingReady()) {
+        val ready = armingReady()
+        com.ahmed.rotrun.watch.GatePrompt.latch(ready)
+        if (ready) {
             _accessGate.value = false
             com.ahmed.rotrun.watch.GatePrompt.reset()
             com.ahmed.rotrun.watch.CoverHold.clear()

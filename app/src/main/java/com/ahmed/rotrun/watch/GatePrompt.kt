@@ -12,6 +12,25 @@ object GatePrompt {
     @Volatile
     private var brought = false
 
+    @Volatile
+    private var armed = false
+
+    /**
+     * True only on the edge from disarmed to armed. The caller refreshes access,
+     * which clears [brought], so the next revoke can bring RotRun forward again.
+     */
+    fun observe(ready: Boolean): Boolean {
+        if (ready == armed) return false
+        armed = ready
+        if (!ready) return false
+        reset()
+        return true
+    }
+
+    fun latch(ready: Boolean) {
+        armed = ready
+    }
+
     fun open(context: Context) {
         if (!RotRunGraph.ready()) return
         RotRunGraph.repo.requestAccessGate()
