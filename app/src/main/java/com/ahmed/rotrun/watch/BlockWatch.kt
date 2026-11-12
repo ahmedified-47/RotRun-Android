@@ -26,7 +26,12 @@ import com.ahmed.rotrun.widget.FocusWidgetProvider
 
 object WatchController {
     fun sync(context: Context, state: SavedState, armed: Boolean) {
-        val watching = BlockArming.shouldWatch(
+        if (armed) {
+            CoverHold.clear()
+            CoverLoose.clear()
+        }
+        val holdCover = CoverHold.packageName != null && android.provider.Settings.canDrawOverlays(context)
+        val watching = holdCover || BlockArming.shouldWatch(
             armed,
             state.focus != null,
             state.blockers.any { it.apps.isNotEmpty() },
@@ -59,7 +64,7 @@ class BlockWatchService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (RotRunGraph.ready() && !RotRunGraph.repo.armingReady()) {
+        if (RotRunGraph.ready() && !RotRunGraph.repo.armingReady() && !holdingCover()) {
             startInForeground("Blocking is paused.")
             stopSelf()
             return START_NOT_STICKY
@@ -82,7 +87,7 @@ class BlockWatchService : Service() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        if (RotRunGraph.ready() && !RotRunGraph.repo.armingReady()) {
+        if (RotRunGraph.ready() && !RotRunGraph.repo.armingReady() && !holdingCover()) {
             super.onTaskRemoved(rootIntent)
             return
         }
@@ -108,8 +113,12 @@ class BlockWatchService : Service() {
         if (!RotRunGraph.ready()) return
         val repo = RotRunGraph.repo
         if (!repo.armingReady()) {
-            hideOverlay()
-            stopSelf()
+            if (!holdingCover()) {
+                hideOverlay()
+                stopSelf()
+                return
+            }
+            coverHeld()
             return
         }
         repo.maybeExpireFocus()
@@ -212,6 +221,64 @@ class BlockWatchService : Service() {
         }
         // No draw-over permission here. The accessibility service covers the blocked app.
         // An activity would be a second RotRun card in the switcher, beside that app.
+    }
+
+    private fun holdingCover(): Boolean {
+        val held = CoverHold.packageName
+        return !held.isNullOrBlank() && Settings.canDrawOverlays(this)
+    }
+
+    private fun coverHeld() {
+        val held = CoverHold.packageName ?: return
+        if (!RotRunGraph.ready()) return
+        val repo = RotRunGraph.repo
+        startInForeground("Blocking paused: turn Accessibility back on.")
+        val reading = UsageReader.foregroundResume(this)?.packageName
+        if (reading == null || reading == packageName) {
+            hideOverlay()
+            return
+        }
+        val safety = repo.safetyPackages()
+        if (reading != held && !repo.rulesBlocked(reading, safety)) {
+            hideOverlay()
+            return
+        }
+        GatePrompt.open(this)
+        val ask = repo.askIntervention.value
+        val wantChat = ask?.packageName == reading
+        if (shownFor == reading && overlay != null && showingChat == wantChat) return
+        val label = UsageReader.label(this, reading)
+        hideOverlay()
+        overlay = ShieldOverlay.cover(
+            context = this,
+            type = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            packageName = reading,
+            label = label,
+            ask = if (wantChat) ask else null,
+            onAsk = { openAsk(reading, label) },
+            onNah = {
+                repo.clearAskIntervention()
+                shownFor = null
+                coverHeld()
+            },
+            onUnlock = { minutes ->
+                if (!repo.grantUnlock(minutes)) {
+                    repo.toast("Unlock waits until Focus ends")
+                } else {
+                    ShieldSession.markOpened(reading)
+                    repo.clearAskIntervention()
+                    CoverHold.clear()
+                    hideOverlay()
+                    packageManager.getLaunchIntentForPackage(reading)?.let { launch ->
+                        launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        runCatching { startActivity(launch) }
+                    }
+                }
+            },
+        )
+        showingChat = wantChat && overlay != null
+        shownFor = if (overlay == null) null else reading
+        if (shownFor != null) overlayShownAt = System.currentTimeMillis()
     }
 
     private fun openAsk(packageName: String, label: String) {

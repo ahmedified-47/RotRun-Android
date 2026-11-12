@@ -1,6 +1,7 @@
 package com.ahmed.rotrun
 
 import com.ahmed.rotrun.logic.AccessibilityDisclosure
+import com.ahmed.rotrun.logic.CoverRevoke
 import com.ahmed.rotrun.logic.BlockArming
 import com.ahmed.rotrun.logic.NotificationPrompt
 import com.ahmed.rotrun.logic.OverlayInsetTypes
@@ -39,6 +40,14 @@ class ArmingGateTest {
         assertTrue(strings.contains(copy))
         assertTrue(service.contains("android:isAccessibilityTool=\"false\""))
         assertFalse(service.contains("android:isAccessibilityTool=\"true\""))
+    }
+
+    @Test
+    fun revokingAccessibilityOrOverlayDoesNotUncover() {
+        assertEquals(CoverRevoke.STAY, CoverRevoke.response(accessibilityOn = true, overlayOn = true))
+        assertEquals(CoverRevoke.COVER, CoverRevoke.response(accessibilityOn = true, overlayOn = false))
+        assertEquals(CoverRevoke.COVER, CoverRevoke.response(accessibilityOn = false, overlayOn = true))
+        assertEquals(CoverRevoke.GATE, CoverRevoke.response(accessibilityOn = false, overlayOn = false))
     }
 
     @Test

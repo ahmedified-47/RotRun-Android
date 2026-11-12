@@ -63,10 +63,13 @@ class BlockAccessibilityService : AccessibilityService() {
     private fun route(reported: String?, usagePackage: String?, usageAt: Long, windowStateChanged: Boolean) {
         if (!RotRunGraph.ready() || adding) return
         val repo = RotRunGraph.repo
-        if (!repo.armingReady()) {
+        val coverLoose = coverDespiteArming()
+        if (!repo.armingReady() && !coverLoose) {
+            if (overlay != null || shownFor != null) GatePrompt.open(this)
             hide()
             return
         }
+        if (coverLoose) GatePrompt.open(this)
         val safety = repo.safetyPackages()
         val ordered = ForegroundGate.orderedPackages(seenWindows(), packageName, safety)
         val choice = ForegroundGate.coverChoice(
@@ -78,13 +81,15 @@ class BlockAccessibilityService : AccessibilityService() {
             shownAt = shownAt,
             ownPackage = packageName,
             safety = safety,
-            blocked = { repo.isBlocked(it, safety) },
+            blocked = { if (coverLoose) repo.rulesBlocked(it, safety) else repo.isBlocked(it, safety) },
             windowStateChanged = windowStateChanged,
         )
         when (choice.step) {
             ShieldStep.Show -> choice.packageName?.let(::consider)
             ShieldStep.Hide -> hide()
-            ShieldStep.Keep, ShieldStep.Leave -> Unit
+            ShieldStep.Keep, ShieldStep.Leave -> {
+                if (coverLoose && ordered.firstOrNull() == packageName) hide()
+            }
         }
     }
 
@@ -127,10 +132,12 @@ class BlockAccessibilityService : AccessibilityService() {
     }
 
     private fun considerNow(packageName: String) {
-        if (RotRunGraph.ready() && !RotRunGraph.repo.armingReady()) {
+        if (RotRunGraph.ready() && !RotRunGraph.repo.armingReady() && !coverDespiteArming()) {
+            if (overlay != null || shownFor != null) GatePrompt.open(this)
             hide()
             return
         }
+        if (coverDespiteArming()) GatePrompt.open(this)
         if (AskLaunchPolicy.leaveOverlayUp(AskBrainLaunch.launching)) return
         if (!AskLaunchPolicy.showShield(ShieldSession.chatPackage() != null)) {
             hide()
@@ -142,6 +149,10 @@ class BlockAccessibilityService : AccessibilityService() {
             return
         }
         if (ForegroundGate.ignore(packageName, this.packageName)) {
+            if (coverDespiteArming() && packageName == this.packageName) {
+                hide()
+                return
+            }
             if (AskLaunchPolicy.keepShownShield(shownFor, packageName, this.packageName) && stillBlocked(shownFor)) {
                 covering = overlay != null
                 return
@@ -154,7 +165,9 @@ class BlockAccessibilityService : AccessibilityService() {
             return
         }
         val repo = RotRunGraph.repo
-        if (!repo.isBlocked(packageName, repo.safetyPackages())) {
+        val safety = repo.safetyPackages()
+        val blockedNow = if (coverDespiteArming()) repo.rulesBlocked(packageName, safety) else repo.isBlocked(packageName, safety)
+        if (!blockedNow) {
             hide()
             return
         }
@@ -187,17 +200,43 @@ class BlockAccessibilityService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        val last = shownFor
+        val wasUp = overlay != null || last != null
         handler.removeCallbacks(poll)
         if (live === this) live = null
         connected = false
         hide()
+        if (wasUp && last != null && RotRunGraph.ready()) {
+            GatePrompt.open(this)
+            if (android.provider.Settings.canDrawOverlays(this)) {
+                CoverHold.hold(last)
+                WatchController.sync(this, RotRunGraph.repo.state.value, armed = false)
+            }
+        }
         super.onDestroy()
+    }
+
+    private fun coverDespiteArming(): Boolean {
+        if (!RotRunGraph.ready() || RotRunGraph.repo.armingReady()) {
+            CoverLoose.clear()
+            return false
+        }
+        val access = com.ahmed.rotrun.data.DeviceAccessReader.read(this)
+        val decision = com.ahmed.rotrun.logic.CoverRevoke.response(access.accessibility && connected, access.overlay)
+        val shieldUp = overlay != null || shownFor != null
+        if (decision == com.ahmed.rotrun.logic.CoverRevoke.COVER && shieldUp) CoverLoose.active = true
+        if (decision != com.ahmed.rotrun.logic.CoverRevoke.COVER) {
+            CoverLoose.clear()
+            return false
+        }
+        return shieldUp || CoverLoose.active
     }
 
     private fun stillBlocked(packageName: String?): Boolean {
         if (packageName.isNullOrBlank() || !RotRunGraph.ready()) return false
         val repo = RotRunGraph.repo
-        return repo.isBlocked(packageName, repo.safetyPackages())
+        val safety = repo.safetyPackages()
+        return if (coverDespiteArming()) repo.rulesBlocked(packageName, safety) else repo.isBlocked(packageName, safety)
     }
 
     private fun repoReadyBlocked(packageName: String): Boolean {

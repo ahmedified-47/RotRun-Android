@@ -188,6 +188,7 @@ private fun MainShell(repo: RotRunRepository, onOpenBoard: () -> Unit, onEditYou
     val installed by repo.installed.collectAsState()
     val batteryAsk by repo.batteryAsk.collectAsState()
     val access by repo.access.collectAsState()
+    val accessGate by repo.accessGate.collectAsState()
     val ask by repo.askIntervention.collectAsState()
     var accessAsk by rememberSaveable { mutableStateOf(false) }
     var accessDisclosure by rememberSaveable { mutableStateOf(false) }
@@ -226,6 +227,13 @@ private fun MainShell(repo: RotRunRepository, onOpenBoard: () -> Unit, onEditYou
     val level = BrainHealthLevel.fromLabel(state.brainHealth)
     val health = Scoring.shownHealth(usage.authorized, usage.todaySeconds, state.focusMinutesToday(), level)
     val screenMinutes = Scoring.scoredMinutes(usage.todaySeconds, usage.authorized)
+    LaunchedEffect(accessGate) {
+        if (!accessGate) return@LaunchedEffect
+        tabName = Tab.Home.name
+        gateUp = true
+        arming = repo.armingSteps()
+        if (arming.any { it.id == "accessibility" }) accessDisclosure = true
+    }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         repo.onForeground()
         arming = repo.armingSteps()

@@ -58,6 +58,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handle(intent: Intent?) {
+        if (intent?.getBooleanExtra(com.ahmed.rotrun.watch.GatePrompt.EXTRA, false) == true) {
+            intent.removeExtra(com.ahmed.rotrun.watch.GatePrompt.EXTRA)
+            if (RotRunGraph.ready()) RotRunGraph.repo.requestAccessGate()
+        }
         if (intent?.getBooleanExtra(AskBrainLaunch.EXTRA_OPEN_CHAT, false) == true) {
             val held = intent.getStringExtra(AskBrainLaunch.EXTRA_HELD_PACKAGE).orEmpty()
             val label = intent.getStringExtra(AskBrainLaunch.EXTRA_HELD_LABEL).orEmpty()

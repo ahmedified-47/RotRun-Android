@@ -72,6 +72,9 @@ class RotRunRepository(context: Context) {
     private val _batteryAsk = MutableStateFlow(false)
     val batteryAsk: StateFlow<Boolean> = _batteryAsk.asStateFlow()
 
+    private val _accessGate = MutableStateFlow(false)
+    val accessGate: StateFlow<Boolean> = _accessGate.asStateFlow()
+
     private val _pulses = MutableSharedFlow<UiPulse>(extraBufferCapacity = 8)
     val pulses: SharedFlow<UiPulse> = _pulses.asSharedFlow()
     private var host: WeakReference<Activity>? = null
@@ -164,7 +167,17 @@ class RotRunRepository(context: Context) {
 
     fun refreshAccess() {
         _access.value = DeviceAccessReader.read(app)
+        if (armingReady()) {
+            _accessGate.value = false
+            com.ahmed.rotrun.watch.GatePrompt.reset()
+            com.ahmed.rotrun.watch.CoverHold.clear()
+            com.ahmed.rotrun.watch.CoverLoose.clear()
+        }
         com.ahmed.rotrun.watch.WatchController.sync(app, _state.value, armingReady())
+    }
+
+    fun requestAccessGate() {
+        _accessGate.value = true
     }
 
     fun dismissBatteryAsk() {
@@ -629,7 +642,11 @@ class RotRunRepository(context: Context) {
         return styles.randomOrNull()
     }
 
-    fun isBlocked(packageName: String, safety: Set<String>): Boolean {
+    fun isBlocked(packageName: String, safety: Set<String>): Boolean =
+        com.ahmed.rotrun.logic.BlockArming.enforced(armingReady(), rulesBlocked(packageName, safety))
+
+    /** Schedule and limit rules, ignoring whether the grants are armed. */
+    fun rulesBlocked(packageName: String, safety: Set<String>): Boolean {
         val current = _state.value
         val excluded = current.excluded.map { it.packageName }.toSet()
         val ordered = buildList {
@@ -659,9 +676,7 @@ class RotRunRepository(context: Context) {
         } else {
             0L
         }
-        return com.ahmed.rotrun.logic.BlockArming.enforced(
-            armingReady(),
-            BlockRules.isBlocked(
+        return BlockRules.isBlocked(
             packageName = packageName,
             safety = safety,
             excluded = excluded,
@@ -672,7 +687,6 @@ class RotRunRepository(context: Context) {
             usageSeconds = seconds,
             windows = windows,
             chatPackage = com.ahmed.rotrun.watch.ShieldSession.chatPackage(),
-            ),
         )
     }
 

@@ -36,6 +36,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -240,7 +241,7 @@ private fun Standard(appName: String, friend: String?, kind: String, onDismiss: 
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text("Your Brain", fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = Color(0xFF1C1C1E))
-                Text(" ›", color = Color(0xFF8E8E93), fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
+                Text("›", color = Color(0xFF8E8E93), fontWeight = FontWeight.SemiBold, fontSize = 11.sp, modifier = Modifier.padding(start = 4.dp))
             }
         }
         Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(scroll).padding(horizontal = 16.dp).padding(top = 8.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -276,7 +277,7 @@ private fun Standard(appName: String, friend: String?, kind: String, onDismiss: 
         }
         if (beat >= 13) {
             SpringBeat {
-                Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 22.dp)) {
+                Column(Modifier.padding(horizontal = 20.dp).padding(top = 8.dp, bottom = 22.dp)) {
                     Text(
                         "Actually I don't need this",
                         color = Color.White,
@@ -339,14 +340,14 @@ private fun ChatBubble(text: String, brain: Boolean, blue: Color, grouped: Boole
         this.alpha = alpha.value
         transformOrigin = androidx.compose.ui.graphics.TransformOrigin(if (brain) 0f else 1f, 1f)
     }) {
-        if (!brain) Spacer(Modifier.weight(1f))
+        if (!brain) Spacer(Modifier.weight(1f).widthIn(min = 48.dp))
         Text(
             text,
             color = if (brain) Color.White else Melt.Ink,
             fontSize = 17.sp,
             modifier = Modifier.weight(1f, fill = false).clip(bubbleShape).background(if (brain) blue else Color(0xFFE5E5EA)).padding(horizontal = 14.dp, vertical = 9.dp),
         )
-        if (brain) Spacer(Modifier.weight(1f))
+        if (brain) Spacer(Modifier.weight(1f).widthIn(min = 48.dp))
     }
 }
 
@@ -370,15 +371,15 @@ private fun Quick(appName: String, friend: String?, onDismiss: () -> Unit, onUnl
     Appear(0f) { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text("QUICK CHECK", color = Color(0xFF1A5230), fontWeight = FontWeight.Black, fontSize = 12.sp, letterSpacing = 1.1.sp, modifier = Modifier.clip(CircleShape).background(Color.White.copy(alpha = 0.92f)).padding(horizontal = 12.dp, vertical = 6.dp))
-            Text(appName, color = Color.White, fontWeight = FontWeight.Black, fontSize = 15.sp, modifier = Modifier.padding(top = 6.dp))
+            Text(appName, color = Color(0xFF1A2938), fontWeight = FontWeight.Black, fontSize = 28.sp, maxLines = 1, modifier = Modifier.padding(top = 6.dp))
         }
         listOf(1, 2).forEach { pip ->
             val filled = pip <= step
             Box(
-                Modifier.padding(start = 6.dp).size(32.dp).clip(CircleShape).background(if (filled) Color.White else Color.White.copy(alpha = 0.22f)),
+                Modifier.padding(start = 6.dp).size(32.dp).clip(CircleShape).background(if (filled) Color.White else Color.White.copy(alpha = 0.22f)).border(if (filled) 0.dp else 1.5.dp, Color.White.copy(alpha = 0.7f), CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
-                Text("$pip", color = if (filled) Color(0xFF1A5230) else Color.White, fontWeight = FontWeight.Black, fontSize = 13.sp)
+                Text("$pip", color = if (filled) Color(0xFF1A522E) else Color.White, fontWeight = FontWeight.Black, fontSize = 13.sp)
             }
         }
     } }
@@ -416,7 +417,7 @@ private fun Quick(appName: String, friend: String?, onDismiss: () -> Unit, onUnl
                     })
                 }
                 val mascot = @Composable {
-                    CartoonBrain(if (current == 1) BrainStyle.Watch else BrainStyle.Pleading, mascotMod.size(180.dp))
+                    CartoonBrain(if (current == 1) BrainStyle.Watch else BrainStyle.Pleading, mascotMod.size(200.dp))
                 }
                 if (current == 1) {
                     Appear(0.06f) { Box(bubbleMod) { bubble() } }
@@ -446,7 +447,13 @@ private fun Quick(appName: String, friend: String?, onDismiss: () -> Unit, onUnl
                 Text("Yes, I really do", color = Color.White, fontWeight = FontWeight.Black, fontSize = 16.sp, modifier = Modifier.padding(vertical = 8.dp).clickable { step = 2 })
             } else {
                 DurationTiles(onUnlock)
-                Text("Nah, never mind", color = Color.White, fontWeight = FontWeight.Black, fontSize = 16.sp, modifier = Modifier.padding(vertical = 8.dp).clickable(onClick = onDismiss))
+                Text(
+                    "Nah, never mind",
+                    color = Color(0xFF1A472E),
+                    fontWeight = FontWeight.Black,
+                    fontSize = 16.sp,
+                    modifier = Modifier.padding(top = 6.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.92f)).clickable(onClick = onDismiss).padding(horizontal = 16.dp, vertical = 8.dp),
+                )
             }
         }
     }
