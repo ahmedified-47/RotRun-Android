@@ -60,7 +60,7 @@ object Products {
     fun periodLabel(id: String): String = when (id) {
         YEARLY, YEARLY70 -> "/ year"
         MONTHLY -> "/ month"
-        LIFETIME -> " once"
+        LIFETIME -> "once"
         else -> ""
     }
 }

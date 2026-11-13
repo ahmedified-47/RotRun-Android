@@ -92,28 +92,34 @@ object AskBrainLaunch {
             putExtra(EXTRA_HELD_LABEL, label)
         }
 
-    private fun start(context: Context, intent: Intent): Boolean {
-        val options = if (Build.VERSION.SDK_INT >= 34) {
-            ActivityOptions.makeBasic().apply {
-                setPendingIntentBackgroundActivityStartMode(
-                    ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_ALWAYS,
-                )
-            }.toBundle()
+    /**
+     * ALLOW_ALWAYS is API 36. On 34 and 35 that constant is not a mode the system
+     * understands, so the start falls through and Ask my brain never comes forward.
+     * Those versions use ALLOWED, which is the background-start mode they actually have.
+     */
+    @Suppress("DEPRECATION")
+    private fun backgroundStartOptions(): ActivityOptions? {
+        if (Build.VERSION.SDK_INT < 34) return null
+        val mode = if (Build.VERSION.SDK_INT >= 36) {
+            ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_ALWAYS
         } else {
-            null
+            ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
         }
+        return ActivityOptions.makeBasic().apply {
+            setPendingIntentBackgroundActivityStartMode(mode)
+        }
+    }
+
+    private fun start(context: Context, intent: Intent): Boolean {
+        val options = backgroundStartOptions()?.toBundle()
         return runCatching { context.startActivity(intent, options) }.isSuccess
     }
 
     private fun pending(context: Context, intent: Intent): PendingIntent {
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        return if (Build.VERSION.SDK_INT >= 34) {
-            val options = ActivityOptions.makeBasic().apply {
-                setPendingIntentBackgroundActivityStartMode(
-                    ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_ALWAYS,
-                )
-            }
-            PendingIntent.getActivity(context, NOTIFICATION_ID, intent, flags, options.toBundle())
+        val options = backgroundStartOptions()?.toBundle()
+        return if (options != null) {
+            PendingIntent.getActivity(context, NOTIFICATION_ID, intent, flags, options)
         } else {
             PendingIntent.getActivity(context, NOTIFICATION_ID, intent, flags)
         }

@@ -9,6 +9,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -31,17 +32,23 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.runtime.collectAsState
@@ -53,6 +60,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import com.ahmed.rotrun.data.SavedState
 import androidx.compose.material3.CircularProgressIndicator
+import com.ahmed.rotrun.R
 import com.ahmed.rotrun.logic.BillingQuotes
 import com.ahmed.rotrun.logic.CatalogStatus
 import com.ahmed.rotrun.logic.PlayCatalog
@@ -73,94 +81,10 @@ fun GetAccessPaywall(
     notice: String? = null,
     signedInUserId: String? = null,
 ) {
-    val chrome = rot()
-    val catalog by PlayCatalog.status.collectAsState()
-    val purchasing by PlayCatalog.purchasing.collectAsState()
-    var legal by remember { mutableStateOf<String?>(null) }
-    LegalDialog(legal) { legal = null }
-    val shown = selected.takeIf { it == Products.YEARLY || it == Products.MONTHLY || it == Products.LIFETIME } ?: Products.YEARLY
-    val pro = state.proFor(signedInUserId)
-    Column(Modifier.fillMaxWidth().background(chrome.page).padding(horizontal = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Row(Modifier.fillMaxWidth().padding(top = if (onboarding) 4.dp else 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (onboarding) {
-                Text("Restore Purchases", color = chrome.blue, fontWeight = FontWeight.SemiBold, modifier = Modifier.clickable(onClick = onRestore))
-                Spacer(Modifier.weight(1f))
-                if (showClose) CloseMark(onClose)
-            } else {
-                if (showClose) CloseMark(onClose)
-                Spacer(Modifier.weight(1f))
-            }
-        }
-        CartoonBrain(BrainStyle.Meadow, Modifier.size(if (onboarding) 96.dp else 120.dp), animated = false)
-        val titleCopy = @Composable {
-            Text("RotRun Premium", color = chrome.ink, fontSize = 32.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp))
-        }
-        val subtitle = @Composable {
-            Text(
-                if (onboarding) "Free includes 3 chats a day. Voice is Premium. Prices come from Google Play."
-                else "Free includes 3 chats with Rot a day. Voice is Premium. Prices come from Google Play.",
-                color = chrome.muted,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(top = 8.dp, start = 12.dp, end = 12.dp),
-            )
-        }
-        if (onboarding) {
-            Appear(0f) { titleCopy() }
-            Appear(0.08f) { subtitle() }
-        } else {
-            titleCopy()
-            subtitle()
-        }
-        if (!notice.isNullOrBlank()) {
-            Text(notice, color = chrome.danger, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 10.dp, start = 12.dp, end = 12.dp))
-        }
-        Spacer(Modifier.height(12.dp))
-        if (catalog == CatalogStatus.Unavailable) {
-            Text("Subscriptions unavailable", color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-            Text(BillingQuotes.UNAVAILABLE_MESSAGE, color = chrome.muted, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp))
-            PrimaryButton("Try Again", onClick = onRetry)
-        } else {
-            if (pro) {
-                Text("You’re Premium", color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                Text("Current plan: ${Products.planName(state.productId)}", color = chrome.muted)
-                val renews = renewsLine(state)
-                if (renews != null) Text(renews, color = chrome.muted, modifier = Modifier.padding(top = 4.dp))
-                Spacer(Modifier.height(8.dp))
-            }
-            if (!state.lifetime) {
-                listOf(Products.YEARLY, Products.MONTHLY, Products.LIFETIME).forEach { id ->
-                    PlanCard(id, shown == id) { onSelect(id) }
-                    Spacer(Modifier.height(10.dp))
-                }
-                val title = when {
-                    onboarding && pro -> "Continue"
-                    onboarding -> "Subscribe to ${Products.planName(shown)}"
-                    pro && state.productId == shown -> "Current Plan"
-                    pro -> "Change Plan"
-                    else -> "Subscribe"
-                }
-                val locked = !onboarding && pro && state.productId == shown
-                if (purchasing) {
-                    CircularProgressIndicator(color = chrome.blue, modifier = Modifier.padding(top = 12.dp).size(28.dp))
-                } else {
-                    PrimaryButton(title, enabled = !locked) {
-                        if (onboarding && pro) onContinue() else if (!locked) onPurchase(shown)
-                    }
-                }
-            }
-        }
-        if (!onboarding) {
-            Text("Restore Purchases", color = rot().blue, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 14.dp).clickable(onClick = onRestore))
-        }
-        Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            Text("Terms of Use", color = chrome.blue, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.clickable { legal = "terms" })
-            Text("Privacy Policy", color = chrome.blue, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.clickable { legal = "privacy" })
-        }
-        val footer = @Composable {
-            Text(BillingQuotes.LEGAL_FOOTER, color = chrome.muted, fontSize = 12.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = if (onboarding) 8.dp else 16.dp))
-        }
-        if (onboarding) Appear(0.14f) { footer() } else footer()
-        Spacer(Modifier.height(12.dp))
+    if (onboarding) {
+        OnboardingCatalog(state, showClose, onClose, onPurchase, onRestore, onRetry, selected, onSelect, onContinue, notice, signedInUserId)
+    } else {
+        PremiumPaywall(state, showClose, onClose, onPurchase, onRestore, onRetry, selected, onSelect, notice, signedInUserId)
     }
 }
 
@@ -182,136 +106,411 @@ fun PaywallPopup(onDismiss: () -> Unit, content: @Composable () -> Unit) {
             window.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
             window.setDimAmount(0f)
         }
-        Box(Modifier.fillMaxSize().rotInsets()) {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.45f))
-                    .clickable(onClick = onDismiss),
-            )
-            Box(
-                Modifier
-                    .align(Alignment.Center)
-                    .padding(horizontal = 16.dp, vertical = 28.dp)
-                    .fillMaxWidth()
-                    .fillMaxHeight(0.86f)
-                    .clip(RoundedCornerShape(36.dp))
-                    .background(rot().page)
-                    .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) {},
-            ) {
-                Column(Modifier.verticalScroll(rememberScrollState())) { content() }
-            }
-        }
+        Column(
+            Modifier.fillMaxSize().background(rot().page).rotInsets().verticalScroll(rememberScrollState()),
+        ) { content() }
     }
 }
 
 @Composable
 fun OneTimeOffer(onRedeem: () -> Unit, onClose: () -> Unit) {
-    val chrome = rot()
+    val ink = paywallInk()
     val plans by PlayCatalog.plans.collectAsState()
     val purchasing by PlayCatalog.purchasing.collectAsState()
-    var legal by remember { mutableStateOf<String?>(null) }
-    LegalDialog(legal) { legal = null }
     val offer = plans[Products.YEARLY70]
     val place = if (offer == null) BillingQuotes.placeholder(Products.YEARLY70) else null
-    val off = if (offer != null) BillingQuotes.savingsPercent(Products.YEARLY70, offer, null) else BillingQuotes.placeholderSavings(Products.YEARLY70)
-    Column(Modifier.fillMaxWidth().background(chrome.page).padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { CloseMark(onClose) }
-        CartoonBrain(BrainStyle.Meadow, Modifier.padding(top = 8.dp).size(120.dp), animated = false)
-        Text("A one-time yearly offer", color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 28.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 12.dp))
-        Text("This offer shows once. Prices come from Google Play.", color = chrome.muted, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp))
+    val monthly = plans[Products.MONTHLY]?.regularMicros
+    val off = if (offer != null) BillingQuotes.savingsPercent(Products.YEARLY70, offer, monthly) else BillingQuotes.placeholderSavings(Products.YEARLY70)
+    val price = offer?.formattedPrice ?: place?.shown
+    val thenLine = renewalLine(Products.YEARLY70, offer, place)
+    Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp), horizontalArrangement = Arrangement.End) {
+            CloseMark(onClose, paywallFill())
+        }
+        Spacer(Modifier.weight(1f))
+        RotPose(R.drawable.rot_brain_character, Modifier.size(140.dp), animated = false)
+        Text("A one-time yearly offer", color = ink, fontFamily = FontFamily.Default, fontWeight = FontWeight.Bold, fontSize = 28.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 24.dp))
+        Text(
+            "This offer shows once. Prices come from Google Play.",
+            color = paywallSecondary(),
+            fontFamily = FontFamily.Default,
+            fontSize = 15.sp,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 28.dp),
+        )
         if (off != null) {
             Text(
                 "$off% OFF",
                 color = Color.White,
-                fontWeight = FontWeight.Black,
-                fontSize = 13.sp,
-                modifier = Modifier.padding(top = 12.dp).clip(CircleShape).background(Melt.Orange).padding(horizontal = 14.dp, vertical = 6.dp),
+                fontFamily = FontFamily.Default,
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp,
+                modifier = Modifier.clip(CircleShape).background(Melt.Orange).padding(horizontal = 12.dp, vertical = 6.dp),
             )
         }
-        Text(offer?.formattedPrice ?: place?.shown ?: "Price from Google Play", color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 34.sp, modifier = Modifier.padding(top = 8.dp))
-        Text("/ year", color = chrome.muted, fontSize = 16.sp)
-        if (offer?.introPresent == true && offer.renewalFormatted != null) {
-            Text("then ${offer.renewalFormatted}/year", color = chrome.muted, fontSize = 14.sp, modifier = Modifier.padding(top = 4.dp))
-        } else if (place?.renewal != null) {
-            Text("then ${place.renewal}/year", color = chrome.muted, fontSize = 14.sp, modifier = Modifier.padding(top = 4.dp))
+        if (price != null) {
+            Text(price, color = ink, fontFamily = FontFamily.Default, fontWeight = FontWeight.Bold, fontSize = 36.sp)
+            Text(Products.periodLabel(Products.YEARLY70), color = paywallSecondary(), fontFamily = FontFamily.Default, fontWeight = FontWeight.Medium, fontSize = 15.sp)
         }
-        if (purchasing) {
-            CircularProgressIndicator(color = chrome.blue, modifier = Modifier.padding(top = 16.dp).size(28.dp))
-        } else {
-            PrimaryButton("Subscribe to Yearly offer", onClick = onRedeem)
+        if (thenLine != null) {
+            Text(thenLine, color = paywallSecondary(), fontFamily = FontFamily.Default, fontSize = 14.sp)
         }
-        Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            Text("Terms of Use", color = chrome.blue, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.clickable { legal = "terms" })
-            Text("Privacy Policy", color = chrome.blue, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.clickable { legal = "privacy" })
+        Spacer(Modifier.weight(1f))
+        val offerReady = offer != null
+        Box(Modifier.padding(horizontal = 20.dp).padding(bottom = 12.dp)) {
+            PaywallCta(
+                if (offerReady) "Subscribe to Yearly offer" else "Continue",
+                enabled = offerReady && !purchasing,
+                loading = purchasing,
+                onClick = onRedeem,
+            )
         }
-        Text(BillingQuotes.LEGAL_FOOTER, color = chrome.muted, fontSize = 12.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 16.dp, bottom = 16.dp))
+        Text(
+            BillingQuotes.LEGAL_FOOTER,
+            color = paywallTertiary(),
+            fontFamily = FontFamily.Default,
+            fontSize = 12.sp,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 24.dp).padding(bottom = 16.dp),
+        )
     }
 }
 
 @Composable
-private fun CloseMark(onClose: () -> Unit) {
-    val chrome = rot()
-    Box(Modifier.size(36.dp).clip(CircleShape).background(chrome.inset).clickable(onClick = onClose), contentAlignment = Alignment.Center) {
-        Text("✕", color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+private fun CloseMark(onClose: () -> Unit, fill: Color) {
+    val ink = paywallInk()
+    Box(
+        Modifier.size(36.dp).clip(CircleShape).background(fill).clickable(onClick = onClose).semantics { contentDescription = "Close" },
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(Modifier.size(14.dp)) {
+            val stroke = 2.2.dp.toPx()
+            drawLine(ink, Offset(0f, 0f), Offset(size.width, size.height), stroke, cap = StrokeCap.Round)
+            drawLine(ink, Offset(size.width, 0f), Offset(0f, size.height), stroke, cap = StrokeCap.Round)
+        }
+    }
+}
+
+@Composable
+private fun PremiumPaywall(
+    state: SavedState,
+    showClose: Boolean,
+    onClose: () -> Unit,
+    onPurchase: (String) -> Unit,
+    onRestore: () -> Unit,
+    onRetry: () -> Unit,
+    selected: String,
+    onSelect: (String) -> Unit,
+    notice: String?,
+    signedInUserId: String?,
+) {
+    val catalog by PlayCatalog.status.collectAsState()
+    val purchasing by PlayCatalog.purchasing.collectAsState()
+    var legal by remember { mutableStateOf<String?>(null) }
+    LegalDialog(legal) { legal = null }
+    val shown = mainSelection(selected)
+    LaunchedEffect(state.productId) {
+        val current = state.productId ?: return@LaunchedEffect
+        if (current == Products.YEARLY || current == Products.MONTHLY || current == Products.LIFETIME) onSelect(current)
+    }
+    val pro = state.proFor(signedInUserId)
+    val currentOnCard = pro && state.productId == shown
+    val ink = paywallInk()
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(20.dp)) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (showClose) CloseMark(onClose, if (rot().dark) Color(0xFF1C1C1E) else Color.White)
+            Spacer(Modifier.weight(1f))
+        }
+        RotPose(R.drawable.rot_brain_character, Modifier.size(120.dp), animated = false)
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("RotRun Premium", color = ink, fontFamily = FontFamily.Default, fontSize = 32.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+            Text(
+                "Free includes 3 chats with Rot a day. Voice is Premium. Prices come from Google Play.",
+                color = paywallSecondary(),
+                fontFamily = FontFamily.Default,
+                fontSize = 15.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 24.dp),
+            )
+        }
+        when (catalog) {
+            CatalogStatus.Loading -> CircularProgressIndicator(color = Melt.Action, modifier = Modifier.padding(top = 24.dp).size(28.dp))
+            CatalogStatus.Unavailable -> EmptyCatalog(onRetry)
+            CatalogStatus.Ready -> {
+                if (currentOnCard) CurrentPlan(state)
+                Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    listOf(Products.YEARLY, Products.MONTHLY, Products.LIFETIME).forEach { id ->
+                        SettingsPlanCard(id, shown == id) { onSelect(id) }
+                    }
+                }
+            }
+        }
+        if (!notice.isNullOrBlank()) {
+            Text(notice, color = Color.Red, fontFamily = FontFamily.Default, fontSize = 13.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 24.dp))
+        }
+        if (catalog == CatalogStatus.Ready && !state.lifetime) {
+            val title = when {
+                currentOnCard -> "Current Plan"
+                pro -> "Change Plan"
+                else -> "Subscribe"
+            }
+            Box(Modifier.padding(horizontal = 20.dp)) {
+                PaywallCta(title, enabled = !currentOnCard && !purchasing, loading = purchasing) { onPurchase(shown) }
+            }
+        }
+        Text(
+            "Restore Purchases",
+            color = Melt.Action,
+            fontFamily = FontFamily.Default,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 15.sp,
+            modifier = Modifier.clickable(enabled = !purchasing, onClick = onRestore),
+        )
+        LegalFooter { legal = it }
+    }
+}
+
+@Composable
+private fun OnboardingCatalog(
+    state: SavedState,
+    showClose: Boolean,
+    onClose: () -> Unit,
+    onPurchase: (String) -> Unit,
+    onRestore: () -> Unit,
+    onRetry: () -> Unit,
+    selected: String,
+    onSelect: (String) -> Unit,
+    onContinue: () -> Unit,
+    notice: String?,
+    signedInUserId: String?,
+) {
+    val catalog by PlayCatalog.status.collectAsState()
+    val purchasing by PlayCatalog.purchasing.collectAsState()
+    var legal by remember { mutableStateOf<String?>(null) }
+    LegalDialog(legal) { legal = null }
+    val shown = mainSelection(selected)
+    val pro = state.proFor(signedInUserId)
+    val ink = paywallInk()
+    Column(Modifier.fillMaxSize()) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "Restore Purchases",
+                color = Melt.Action,
+                fontFamily = FontFamily.Default,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 14.sp,
+                modifier = Modifier.clickable(enabled = !purchasing, onClick = onRestore),
+            )
+            Spacer(Modifier.weight(1f))
+            if (showClose) CloseMark(onClose, paywallFill())
+        }
+        Column(
+            Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Text("RotRun Premium", color = ink, fontFamily = FontFamily.Default, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+            Text(
+                "Free includes 3 chats a day. Voice is Premium. Prices come from Google Play.",
+                color = paywallSecondary(),
+                fontFamily = FontFamily.Default,
+                fontSize = 15.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 8.dp),
+            )
+            when (catalog) {
+                CatalogStatus.Loading -> CircularProgressIndicator(color = Melt.Action, modifier = Modifier.align(Alignment.CenterHorizontally).size(28.dp))
+                CatalogStatus.Unavailable -> {
+                    Text(notice ?: BillingQuotes.UNAVAILABLE_MESSAGE, color = paywallSecondary(), fontFamily = FontFamily.Default, fontSize = 14.sp, textAlign = TextAlign.Center)
+                    Text("Try Again", color = ink, fontFamily = FontFamily.Default, fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.clickable(onClick = onRetry))
+                }
+                CatalogStatus.Ready -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    listOf(Products.YEARLY, Products.MONTHLY, Products.LIFETIME).forEach { id ->
+                        OutlinePlanCard(id, shown == id) { onSelect(id) }
+                    }
+                }
+            }
+            if (catalog == CatalogStatus.Ready && !notice.isNullOrBlank()) {
+                Text(notice, color = Color.Red, fontFamily = FontFamily.Default, fontSize = 13.sp, textAlign = TextAlign.Center)
+            }
+            LegalFooter(bottom = 0.dp, horizontal = 0.dp, gap = 16.dp) { legal = it }
+        }
+        val title = when {
+            pro -> "Continue"
+            catalog != CatalogStatus.Ready -> "Subscribe"
+            else -> "Subscribe to ${Products.planName(shown)}"
+        }
+        val canBuy = pro || catalog == CatalogStatus.Ready
+        Box(Modifier.padding(horizontal = 20.dp).padding(bottom = 16.dp)) {
+            PaywallCta(title, enabled = canBuy && !purchasing, loading = purchasing) {
+                if (pro) onContinue() else onPurchase(shown)
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmptyCatalog(onRetry: () -> Unit) {
+    Column(Modifier.padding(horizontal = 24.dp).padding(top = 8.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Subscriptions unavailable", color = paywallInk(), fontFamily = FontFamily.Default, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+        Text(BillingQuotes.UNAVAILABLE_MESSAGE, color = paywallSecondary(), fontFamily = FontFamily.Default, fontSize = 14.sp, textAlign = TextAlign.Center)
+        Text(
+            "Try Again",
+            color = Color.White,
+            fontFamily = FontFamily.Default,
+            fontWeight = FontWeight.Bold,
+            fontSize = 16.sp,
+            modifier = Modifier.clip(CircleShape).background(Melt.Action).clickable(onClick = onRetry).padding(horizontal = 28.dp, vertical = 12.dp),
+        )
+    }
+}
+
+@Composable
+private fun CurrentPlan(state: SavedState) {
+    Column(Modifier.padding(horizontal = 20.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("You’re Premium", color = paywallInk(), fontFamily = FontFamily.Default, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+        Text("Current plan: ${Products.planName(state.productId)}", color = paywallSecondary(), fontFamily = FontFamily.Default, fontWeight = FontWeight.Medium, fontSize = 15.sp)
+        val renews = renewsLine(state)
+        if (renews != null) Text(renews, color = paywallTertiary(), fontFamily = FontFamily.Default, fontSize = 13.sp)
+    }
+}
+
+@Composable
+private fun LegalFooter(
+    bottom: androidx.compose.ui.unit.Dp = 28.dp,
+    horizontal: androidx.compose.ui.unit.Dp = 24.dp,
+    gap: androidx.compose.ui.unit.Dp = 10.dp,
+    onOpen: (String) -> Unit,
+) {
+    Column(Modifier.padding(horizontal = horizontal).padding(bottom = bottom), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(gap)) {
+        Text(BillingQuotes.LEGAL_FOOTER, color = paywallTertiary(), fontFamily = FontFamily.Default, fontSize = 12.sp, textAlign = TextAlign.Center)
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Text("Privacy Policy", color = Melt.Action, fontFamily = FontFamily.Default, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.clickable { onOpen("privacy") })
+            Text("Terms of Use", color = Melt.Action, fontFamily = FontFamily.Default, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.clickable { onOpen("terms") })
+        }
+    }
+}
+
+@Composable
+internal fun PaywallCta(title: String, enabled: Boolean, loading: Boolean, onClick: () -> Unit) {
+    val alpha by animateFloatAsState(if (enabled && !loading) 1f else 0.45f, tween(220, easing = EaseInOut), label = "paywall")
+    Row(
+        Modifier.fillMaxWidth().graphicsLayer { this.alpha = alpha }.clip(CircleShape).background(Melt.Action).clickable(enabled = enabled && !loading, onClick = onClick).padding(vertical = 16.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (loading) {
+            CircularProgressIndicator(color = Color.White, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+            Spacer(Modifier.width(8.dp))
+        }
+        Text(title, color = Color.White, fontFamily = FontFamily.Default, fontWeight = FontWeight.Bold, fontSize = 17.sp)
     }
 }
 
 private fun renewsLine(state: SavedState): String? = when {
-    state.lifetime || state.productId == Products.LIFETIME -> "never"
+    state.lifetime || state.productId == Products.LIFETIME -> null
     state.premiumUntil > System.currentTimeMillis() -> "Renews ${java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(java.util.Date(state.premiumUntil))}"
     else -> null
 }
 
 @Composable
-private fun PlanCard(id: String, selected: Boolean, onClick: () -> Unit) {
-    val plans by PlayCatalog.plans.collectAsState()
-    val quote = plans[id]
-    val monthly = plans[Products.MONTHLY]
-    val chrome = rot()
+private fun SettingsPlanCard(id: String, selected: Boolean, onClick: () -> Unit) {
+    val quote = planQuote(id)
     val place = if (quote == null) BillingQuotes.placeholder(id) else null
-    val price = quote?.formattedPrice ?: place?.shown ?: "Price from Google Play"
-    val period = if (quote == null && place == null) "" else Products.periodLabel(id)
-    val subtitle = when {
-        id == Products.LIFETIME -> "One-time purchase"
-        quote?.introPresent == true && quote.renewalFormatted != null -> "then ${quote.renewalFormatted}/year"
-        place?.renewal != null -> "then ${place.renewal}/year"
-        id == Products.MONTHLY -> "Billed every month"
-        else -> "Billed yearly"
-    }
-    val badge = if (id == Products.YEARLY) {
-        if (quote != null) BillingQuotes.savingsPercent(id, quote, monthly?.regularMicros) else BillingQuotes.placeholderSavings(id)
-    } else {
-        null
-    }
+    val shape = ContinuousCornerShape(22.dp)
+    val fill = if (rot().dark) Color(0xFF1C1C1E) else Color.White
     Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
-            .background(if (chrome.dark) chrome.inset else chrome.card)
-            .border(if (selected) 2.dp else 0.dp, if (selected) chrome.blue else Color.Transparent, RoundedCornerShape(18.dp))
-            .clickable(onClick = onClick)
-            .padding(16.dp),
+        Modifier.fillMaxWidth().clip(shape).background(fill).border(if (selected) 2.dp else 0.dp, if (selected) Melt.Action else Color.Transparent, shape).clickable(onClick = onClick).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(Products.planName(id), color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-            if (badge != null) {
-                Text(
-                    "SAVE $badge%",
-                    color = Color.White,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Black,
-                    modifier = Modifier.padding(start = 8.dp).clip(CircleShape).background(Melt.Orange).padding(horizontal = 8.dp, vertical = 3.dp),
-                )
-            }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(Products.planName(id), color = paywallInk(), fontFamily = FontFamily.Default, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            SaveBadge(id, quote)
         }
-        Row(verticalAlignment = Alignment.Bottom) {
-            Text(price, color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 28.sp)
-            if (period.isNotBlank()) Text(period, color = chrome.muted, fontSize = 15.sp, modifier = Modifier.padding(start = 4.dp, bottom = 4.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(shownPrice(quote, place), color = paywallInk(), fontFamily = FontFamily.Default, fontWeight = FontWeight.Bold, fontSize = 28.sp, modifier = Modifier.alignByBaseline())
+            Text(Products.periodLabel(id), color = paywallSecondary(), fontFamily = FontFamily.Default, fontWeight = FontWeight.Medium, fontSize = 15.sp, modifier = Modifier.alignByBaseline())
         }
-        Text(subtitle, color = chrome.muted, fontSize = 13.sp)
+        val thenLine = renewalLine(id, quote, place)
+        if (thenLine != null) {
+            Text(thenLine, color = paywallSecondary(), fontFamily = FontFamily.Default, fontWeight = FontWeight.Medium, fontSize = 14.sp)
+        }
     }
 }
+
+@Composable
+private fun OutlinePlanCard(id: String, selected: Boolean, onClick: () -> Unit) {
+    val quote = planQuote(id)
+    val place = if (quote == null) BillingQuotes.placeholder(id) else null
+    val shape = ContinuousCornerShape(18.dp)
+    val stroke = if (selected) Melt.Action else if (rot().dark) Color(0x99545458) else Color(0x4A3C3C43)
+    Column(
+        Modifier.fillMaxWidth().border(if (selected) 2.dp else 1.dp, stroke, shape).clickable(onClick = onClick).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(Products.planName(id), color = paywallInk(), fontFamily = FontFamily.Default, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            SaveBadge(id, quote)
+            Spacer(Modifier.weight(1f))
+            Text(shownPrice(quote, place), color = paywallInk(), fontFamily = FontFamily.Default, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Text(Products.periodLabel(id), color = paywallSecondary(), fontFamily = FontFamily.Default, fontWeight = FontWeight.Medium, fontSize = 13.sp)
+        }
+        val thenLine = renewalLine(id, quote, place)
+        if (thenLine != null) {
+            Text(thenLine, color = paywallSecondary(), fontFamily = FontFamily.Default, fontSize = 13.sp)
+        }
+    }
+}
+
+@Composable
+private fun SaveBadge(id: String, quote: com.ahmed.rotrun.logic.PlanQuote?) {
+    if (id != Products.YEARLY) return
+    val plans by PlayCatalog.plans.collectAsState()
+    val badge = if (quote != null) BillingQuotes.savingsPercent(id, quote, plans[Products.MONTHLY]?.regularMicros) else BillingQuotes.placeholderSavings(id)
+    if (badge == null) return
+    Text(
+        "SAVE $badge%",
+        color = Color.White,
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.Bold,
+        fontSize = 12.sp,
+        modifier = Modifier.clip(CircleShape).background(Melt.Orange).padding(horizontal = 8.dp, vertical = 4.dp),
+    )
+}
+
+@Composable
+private fun planQuote(id: String): com.ahmed.rotrun.logic.PlanQuote? {
+    val plans by PlayCatalog.plans.collectAsState()
+    return plans[id]
+}
+
+private fun mainSelection(selected: String): String =
+    selected.takeIf { it == Products.YEARLY || it == Products.MONTHLY || it == Products.LIFETIME } ?: Products.YEARLY
+
+private fun shownPrice(quote: com.ahmed.rotrun.logic.PlanQuote?, place: BillingQuotes.PricePlaceholder?): String =
+    quote?.formattedPrice ?: place?.shown ?: "Price from Google Play"
+
+private fun renewalLine(id: String, quote: com.ahmed.rotrun.logic.PlanQuote?, place: BillingQuotes.PricePlaceholder?): String? {
+    if (id == Products.LIFETIME) return null
+    val renewal = when {
+        quote?.introPresent == true -> quote.renewalFormatted
+        quote == null -> place?.renewal
+        else -> null
+    } ?: return null
+    return "then $renewal${Products.periodLabel(id)}"
+}
+
+@Composable
+private fun paywallInk(): Color = if (rot().dark) Color.White else Color.Black
+
+@Composable
+private fun paywallSecondary(): Color = if (rot().dark) Color(0xFF8D8D93) else Color(0xFF8A8A8E)
+
+@Composable
+private fun paywallTertiary(): Color = if (rot().dark) Color(0xFF47474A) else Color(0xFFC4C4C6)
+
+@Composable
+private fun paywallFill(): Color = if (rot().dark) Color(0x52787880) else Color(0x29787880)
 
 @Composable
 private fun FeatureRow(symbol: String, tint: Color, title: String, body: String, mascot: Boolean = false) {

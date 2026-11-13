@@ -14,7 +14,7 @@ object BillingQuotes {
     const val LIFETIME_OPTION = "buy"
     const val PENDING_MESSAGE = "This purchase is pending approval."
     const val SIGN_IN_MESSAGE = "Sign in with Google to get Premium."
-    const val UNAVAILABLE_MESSAGE = "Subscriptions aren't available yet. Try again later."
+    const val UNAVAILABLE_MESSAGE = "Subscriptions aren’t available yet. Try again later."
     const val RESTORED_MESSAGE = "Purchases restored."
     const val NOTHING_TO_RESTORE = "No active RotRun Premium subscription found for this Google account."
     const val LIFETIME_CANCEL_SUB = "Lifetime is on. Cancel your subscription in Google Play so it doesn't renew."

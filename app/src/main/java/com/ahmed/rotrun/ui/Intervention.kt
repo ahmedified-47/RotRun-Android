@@ -214,8 +214,9 @@ private fun Standard(appName: String, friend: String?, kind: String, onDismiss: 
     var beat by remember { mutableIntStateOf(0) }
     var minutes by remember { mutableIntStateOf(10) }
     val stamp = remember {
-        val symbols = java.text.DateFormatSymbols(Locale.US).apply { amPmStrings = arrayOf("am", "pm") }
-        SimpleDateFormat("h:mm a", symbols).format(Date())
+        val format = SimpleDateFormat("h:mm a", Locale.US)
+        format.dateFormatSymbols = java.text.DateFormatSymbols(Locale.US).apply { amPmStrings = arrayOf("am", "pm") }
+        format.format(Date())
     }
     val blue = Color(0xFF007AFF)
     val note = friend?.let { "$it left a note." }
@@ -952,7 +953,7 @@ private fun GameStage() {
         gameCloud(Offset(size.width * 0.55f, size.height * 0.08f), 0.62f)
         val far = Path().apply {
             moveTo(0f, size.height * 0.58f)
-            quadraticBezierTo(size.width * 0.45f, size.height * 0.44f, size.width, size.height * 0.52f)
+            quadraticTo(size.width * 0.45f, size.height * 0.44f, size.width, size.height * 0.52f)
             lineTo(size.width, size.height)
             lineTo(0f, size.height)
             close()
@@ -960,7 +961,7 @@ private fun GameStage() {
         drawPath(far, Color(0xFF7DC76B))
         val near = Path().apply {
             moveTo(0f, size.height * 0.74f)
-            quadraticBezierTo(size.width * 0.42f, size.height * 0.64f, size.width, size.height * 0.70f)
+            quadraticTo(size.width * 0.42f, size.height * 0.64f, size.width, size.height * 0.70f)
             lineTo(size.width, size.height)
             lineTo(0f, size.height)
             close()

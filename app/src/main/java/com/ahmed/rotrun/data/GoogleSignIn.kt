@@ -4,6 +4,7 @@ import android.app.Activity
 import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
+import androidx.credentials.exceptions.NoCredentialException
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
@@ -22,6 +23,8 @@ object GoogleSignIn {
     private suspend fun fetchIdToken(activity: Activity, serverClientId: String, hashedNonce: String): String {
         try {
             return tokenFrom(activity, buttonRequest(serverClientId, hashedNonce))
+        } catch (error: NoCredentialException) {
+            if (!GoogleSignInPolicy.retryWithAccountList(error.javaClass.name, error.message.orEmpty())) throw error
         } catch (error: Exception) {
             if (!GoogleSignInPolicy.retryWithAccountList(error.javaClass.name, error.message.orEmpty())) throw error
         }

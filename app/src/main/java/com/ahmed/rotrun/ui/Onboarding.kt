@@ -44,7 +44,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
-import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.TrackChanges
 import androidx.compose.material.icons.filled.Visibility
@@ -65,6 +65,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
@@ -90,6 +91,7 @@ import com.ahmed.rotrun.data.AppList
 import com.ahmed.rotrun.data.DeviceAccessReader
 import com.ahmed.rotrun.data.UsageReader
 import com.ahmed.rotrun.data.OnboardingStep
+import com.ahmed.rotrun.R
 import com.ahmed.rotrun.data.RotRunRepository
 import com.ahmed.rotrun.data.SavedState
 import com.ahmed.rotrun.data.TrackedApp
@@ -198,24 +200,22 @@ fun OnboardingScreen(repo: RotRunRepository) {
             OnboardingStep.RulePreview -> RulePreview(state, repo)
             OnboardingStep.GetAccess -> {
                 val notice by repo.purchaseError.collectAsState()
-                PaywallPopup(onDismiss = repo::declineAccess) {
-                    GetAccessPaywall(
-                        state = state,
-                        showClose = true,
-                        onClose = repo::declineAccess,
-                        onPurchase = repo::purchase,
-                        onRestore = repo::restore,
-                        onRetry = repo::refreshBilling,
-                        selected = plan,
-                        onSelect = { plan = it },
-                        onboarding = true,
-                        onContinue = repo::advance,
-                        notice = notice,
-                        signedInUserId = repo.backend.userId,
-                    )
-                }
+                GetAccessPaywall(
+                    state = state,
+                    showClose = true,
+                    onClose = repo::declineAccess,
+                    onPurchase = repo::purchase,
+                    onRestore = repo::restore,
+                    onRetry = repo::refreshBilling,
+                    selected = plan,
+                    onSelect = { plan = it },
+                    onboarding = true,
+                    onContinue = repo::advance,
+                    notice = notice,
+                    signedInUserId = repo.backend.userId,
+                )
             }
-            OnboardingStep.OneTimeOffer -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+            OnboardingStep.OneTimeOffer -> Box(Modifier.fillMaxSize()) {
                 OneTimeOffer(
                     onRedeem = { repo.purchase(Products.YEARLY70) },
                     onClose = repo::leaveOffer,
@@ -273,6 +273,7 @@ private fun OnboardingBackdrop(step: OnboardingStep) {
         OnboardingStep.ThemeUnlocked -> Sunburst(Melt.Sky, 0.16f)
         OnboardingStep.StreakReward -> Sunburst(Melt.Orange, 0.12f)
         OnboardingStep.HoldToAscend -> Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Melt.AscendTop, Melt.AscendBottom))))
+        OnboardingStep.GetAccess, OnboardingStep.OneTimeOffer, OnboardingStep.PurchaseComplete -> PaywallCanvas()
         else -> Box(Modifier.fillMaxSize()) {
             Box(Modifier.fillMaxSize().background(Melt.Grouped))
             Box(
@@ -284,6 +285,27 @@ private fun OnboardingBackdrop(step: OnboardingStep) {
                 Modifier.align(Alignment.TopEnd).offset(x = 70.dp, y = (-90).dp).size(260.dp).clip(CircleShape).background(Melt.Action.copy(alpha = 0.12f)),
             )
         }
+    }
+}
+
+@Composable
+private fun PaywallCanvas() {
+    val dark = rot().dark
+    val wash = if (dark) {
+        listOf(Color(0xFF29528A), Color(0xE61A2E57), Color.Transparent)
+    } else {
+        listOf(Melt.Sky.copy(alpha = 0.58f), Melt.Glow.copy(alpha = 0.32f), Color.Transparent)
+    }
+    Box(Modifier.fillMaxSize().background(if (dark) Color.Black else Melt.Grouped)) {
+        Box(Modifier.fillMaxWidth().height(460.dp).background(Brush.verticalGradient(wash)))
+        val circle = Modifier
+            .align(Alignment.TopEnd)
+            .offset(x = 90.dp, y = (-110).dp)
+            .size(260.dp)
+            .then(if (android.os.Build.VERSION.SDK_INT >= 31) Modifier.blur(48.dp) else Modifier)
+            .clip(CircleShape)
+            .background(Melt.Action.copy(alpha = if (dark) 0.22f else 0.12f))
+        Box(circle)
     }
 }
 
@@ -442,7 +464,7 @@ private fun WeekHelp(repo: RotRunRepository) {
         Icons.Filled.Phone to Color.Gray to "Regain control of your phone",
         Icons.Filled.Alarm to Melt.House to "Save over 3 hours every day",
         Icons.Filled.TrackChanges to Color(0xFFE23B3B) to "Improve your focus and mental clarity",
-        Icons.Filled.Send to Melt.Orange to "Build healthier digital habits",
+        Icons.AutoMirrored.Filled.Send to Melt.Orange to "Build healthier digital habits",
     )
     ScreenFrame(footer = { PrimaryButton("Continue", fadeDisabled = true) { repo.advance() } }) {
         Chrome(OnboardingStep.ThisWeekHelp, true, repo, mascot = false)
@@ -1038,14 +1060,21 @@ private fun ConnectEdu(repo: RotRunRepository) {
 @Composable
 private fun PurchaseComplete(state: SavedState, repo: RotRunRepository) {
     Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(Modifier.padding(horizontal = 20.dp, vertical = 12.dp).fillMaxWidth().height(6.dp).clip(CircleShape).background(Melt.Meadow))
+        Box(Modifier.padding(horizontal = 20.dp).padding(top = 12.dp).fillMaxWidth().height(6.dp).clip(CircleShape).background(Melt.Meadow))
         Spacer(Modifier.weight(1f))
-        CartoonBrain(BrainStyle.Meadow, Modifier.size(160.dp))
-        Text("Purchase complete!", fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp))
-        Text("RotRun Premium is on. You now have access to every feature.", color = Melt.Muted, textAlign = TextAlign.Center, fontSize = 16.sp, modifier = Modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 8.dp))
+        Appear(0f) { RotPose(R.drawable.rot_brain_character, Modifier.size(160.dp), animated = false) }
+        Appear(0.08f) {
+            Text("Purchase complete!", color = if (rot().dark) Color.White else Color.Black, fontFamily = androidx.compose.ui.text.font.FontFamily.Default, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+        }
+        Appear(0.14f) {
+            Text("RotRun Premium is on. You now have access to every feature.", color = if (rot().dark) Color(0xFF8D8D93) else Color(0xFF8A8A8E), fontFamily = androidx.compose.ui.text.font.FontFamily.Default, textAlign = TextAlign.Center, fontSize = 16.sp, modifier = Modifier.fillMaxWidth().padding(horizontal = 28.dp))
+        }
         Spacer(Modifier.weight(1f))
+        val laterStep = OnboardingStep.entries.any { step ->
+            step.raw > OnboardingStep.PurchaseComplete.raw && !step.skipped(state, repo.backend.userId)
+        }
         Box(Modifier.padding(horizontal = 20.dp).padding(bottom = 16.dp)) {
-            PrimaryButton(if (state.onboardingCompleted) "Continue to app" else "Continue") { repo.advance() }
+            PaywallCta(if (laterStep) "Continue" else "Continue to app", enabled = true, loading = false) { repo.advance() }
         }
     }
 }

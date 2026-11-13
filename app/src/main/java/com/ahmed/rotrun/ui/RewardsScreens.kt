@@ -40,7 +40,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -57,6 +57,7 @@ import com.ahmed.rotrun.logic.RewardSceneTint
 import com.ahmed.rotrun.logic.Scoring
 import com.ahmed.rotrun.logic.WidgetGlyph
 import com.ahmed.rotrun.logic.WidgetGlyphs
+import androidx.core.content.res.ResourcesCompat
 import com.ahmed.rotrun.R
 import kotlin.math.roundToInt
 
@@ -326,8 +327,10 @@ private fun OffenderMark(label: String, packageName: String) {
     }
     // These files are <shape> gradients. painterResource only accepts vectors and bitmaps,
     // and that throw is what closed Rewards as soon as an offender row was composed.
-    val context = LocalContext.current
-    val drawable = remember(background) { context.getDrawable(background)?.mutate() }
+    val resources = LocalResources.current
+    val drawable = remember(background, resources) {
+        ResourcesCompat.getDrawable(resources, background, null)?.mutate()
+    }
     Canvas(Modifier.size(28.dp).clip(RoundedCornerShape(8.dp))) {
         val mark = drawable ?: return@Canvas
         mark.setBounds(0, 0, size.width.roundToInt(), size.height.roundToInt())

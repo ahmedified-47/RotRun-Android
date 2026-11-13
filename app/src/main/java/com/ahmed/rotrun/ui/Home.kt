@@ -46,7 +46,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -89,7 +90,7 @@ fun HomeScreen(
     val chrome = rot()
     val paint = scenePaint(scene, chrome)
     val on = paint.header
-    val short = LocalConfiguration.current.screenHeightDp < 500
+    val short = with(LocalDensity.current) { LocalWindowInfo.current.containerSize.height.toDp() < 500.dp }
     val brainSize = if (short) 56.dp else 136.dp
     Column(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(if (short) 4.dp else 18.dp)) {
         if (pausedGrant != null) PausedBanner(pausedGrant, onOpenGate, paint)
