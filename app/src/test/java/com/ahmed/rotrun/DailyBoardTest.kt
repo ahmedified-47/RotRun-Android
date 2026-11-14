@@ -37,6 +37,10 @@ class DailyBoardTest {
         assertEquals(listOf(50, 50, 20), ranked.map { it.xp })
         assertTrue(ranked.last().you)
         assertFalse(ranked.first().you)
+        assertEquals(listOf(2, 1, 3), DailyBoard.topRow(ranked).map { it.rank })
+        assertEquals(listOf(2, 1), DailyBoard.topRow(ranked.take(2)).map { it.rank })
+        assertEquals(listOf(1), DailyBoard.topRow(ranked.take(1)).map { it.rank })
+        assertTrue(DailyBoard.topRow(emptyList()).isEmpty())
     }
 
     @Test

@@ -115,6 +115,20 @@ object DailyBoard {
         }
     }
 
+    /**
+     * Left to right across the top avatars: #2, #1, #3.
+     * One or two players omit the missing places instead of leaving a gap.
+     */
+    fun topRow(rows: List<RankedXp>): List<RankedXp> {
+        val top = rows.take(3)
+        return when (top.size) {
+            0 -> emptyList()
+            1 -> top
+            2 -> listOf(top[1], top[0])
+            else -> listOf(top[1], top[0], top[2])
+        }
+    }
+
     /** Daily XP upsert. `avatar_url` is omitted when there is no URL, matching iOS `DailyXPSync.publish`. */
     fun xpUploadBody(id: String, day: String, xp: Int, name: String, avatar: String?, updatedAt: String): org.json.JSONObject {
         val body = org.json.JSONObject()

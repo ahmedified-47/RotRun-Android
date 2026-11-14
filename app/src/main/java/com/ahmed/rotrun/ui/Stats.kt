@@ -10,20 +10,32 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.ahmed.rotrun.logic.BoardSnapshot
+import com.ahmed.rotrun.logic.DailyBoard
 import com.ahmed.rotrun.logic.RankedXp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Alarm
@@ -68,11 +80,10 @@ fun StatsScreen(
     health: Int?,
     screenMinutes: Int?,
     repo: RotRunRepository,
-    onLeaderboard: () -> Unit = {},
     onEditYou: () -> Unit = {},
 ) {
     var page by remember { mutableStateOf("focus") }
-    Column(Modifier.padding(bottom = 24.dp)) {
+    Column(Modifier.background(if (page == "board") Color.Black else Color.Transparent).padding(bottom = 24.dp)) {
         Segment(
             "Focus",
             "Leaderboard",
@@ -81,7 +92,7 @@ fun StatsScreen(
             { page = "board" },
             Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
         )
-        if (page == "focus") FocusStats(state, health) else Leaderboard(state, screenMinutes, repo, onLeaderboard, onEditYou)
+        if (page == "focus") FocusStats(state, health) else Leaderboard(state, screenMinutes, repo, onEditYou)
     }
 }
 
@@ -213,16 +224,17 @@ private fun StoryChip(text: String, icon: @Composable () -> Unit) {
     }
 }
 
+private enum class BoardScope { Daily, Friends }
+
 @Composable
 private fun Leaderboard(
     state: SavedState,
     screenMinutes: Int?,
     repo: RotRunRepository,
-    onOpen: () -> Unit,
     onEditYou: () -> Unit,
 ) {
     Column(Modifier.padding(horizontal = 20.dp)) {
-    LeaderboardBody(state, screenMinutes, repo, onOpen, onEditYou)
+        LeaderboardBody(state, screenMinutes, repo, onEditYou)
     }
 }
 
@@ -231,13 +243,13 @@ private fun LeaderboardBody(
     state: SavedState,
     screenMinutes: Int?,
     repo: RotRunRepository,
-    onOpen: () -> Unit,
     onEditYou: () -> Unit,
 ) {
     val context = LocalContext.current
     val xp = screenMinutes?.let { Scoring.dailyXp(it, Scoring.goalMinutes(state.goalHours), state.askBrainCount, state.ransomDebit) }
     var board by remember { mutableStateOf(BoardSnapshot()) }
     var refreshing by remember { mutableStateOf(false) }
+    var scope by remember { mutableStateOf(BoardScope.Daily) }
     val day = Scoring.dayKey()
     fun reload() {
         refreshing = true
@@ -250,10 +262,8 @@ private fun LeaderboardBody(
             }
         }
     }
-    LaunchedEffect(Unit) { onOpen() }
     LaunchedEffect(xp, repo.backend.signedIn, day, state.askBrainCount, state.ransomDebit) { reload() }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { reload() }
-    val chrome = rot()
     val reduce = reduceMotion()
     val trophy = remember { androidx.compose.animation.core.Animatable(if (reduce) 1f else 0.72f) }
     LaunchedEffect(Unit) {
@@ -262,44 +272,89 @@ private fun LeaderboardBody(
     Appear(0f) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center, modifier = Modifier.fillMaxWidth()) {
             Icon(Icons.Default.EmojiEvents, contentDescription = null, tint = Melt.Orange, modifier = Modifier.size(28.dp).graphicsLayer { scaleX = trophy.value; scaleY = trophy.value })
-            Text(" Leaderboard", color = chrome.ink, fontFamily = Nunito, fontSize = 28.sp, fontWeight = FontWeight.Black)
+            Text(" Leaderboard", color = BoardInk, fontFamily = Nunito, fontSize = 28.sp, fontWeight = FontWeight.Black)
         }
     }
-    Appear(0.06f) { Text("See how your Daily XP stacks up.", color = chrome.muted, fontFamily = Nunito, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) }
-    PullToRefreshBox(isRefreshing = refreshing, onRefresh = { repo.refreshUsage(); reload() }) {
-        Column(Modifier.fillMaxWidth()) {
-            when {
-                !repo.backend.signedIn || board.signedOut -> Appear(0f) { SignInBoard(context, repo) { reload() } }
-                xp == null -> Appear(0.08f) { UsageBoard() }
-                board.rows.isEmpty() && board.pinned == null -> Appear(0.12f) { EmptyBoard() }
-                else -> {
-                    if (board.rows.size >= 3) {
-                        Appear(0.04f) { Podium(board.rows.take(3), onEditYou) }
+    Appear(0.06f) { Text("See how your Daily XP stacks up.", color = BoardMuted, fontFamily = Nunito, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) }
+    Appear(0.1f) {
+        BoardTabs(scope) { scope = it }
+    }
+    if (scope == BoardScope.Friends) {
+        EmptyFriends()
+    } else {
+        val you = board.rows.firstOrNull { it.you } ?: board.pinned
+        var youOnScreen by remember(you?.userId, you?.rank, board.rows.size) {
+            mutableStateOf(board.rows.any { it.you })
+        }
+        PullToRefreshBox(isRefreshing = refreshing, onRefresh = { repo.refreshUsage(); reload() }) {
+            Column(Modifier.fillMaxWidth()) {
+                when {
+                    !repo.backend.signedIn || board.signedOut -> Appear(0f) { SignInBoard(context, repo) { reload() } }
+                    xp == null -> Appear(0.08f) { UsageBoard() }
+                    board.rows.isEmpty() && board.pinned == null -> Appear(0.12f) { EmptyBoard() }
+                    else -> {
+                        if (board.rows.isNotEmpty()) {
+                            Appear(0.04f) { TopAvatars(board.rows, onEditYou) { youOnScreen = it } }
+                        }
+                        board.rows.drop(3).forEachIndexed { index, row ->
+                            Appear(0.12f + minOf(index, 7) * 0.05f) { BoardLine(row, onEditYou) { youOnScreen = it } }
+                        }
                     }
-                    val list = if (board.rows.size >= 3) board.rows.drop(3) else board.rows
-                    list.forEachIndexed { index, row -> Appear(0.12f + minOf(index, 7) * 0.05f) { BoardRow(row, onEditYou) } }
-                    board.pinned?.let { PinnedYou(it, onEditYou) }
+                }
+                board.message?.let {
+                    Text(it, color = BoardMuted, fontSize = 13.sp, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), textAlign = TextAlign.Center)
                 }
             }
-            board.message?.let {
-                Text(it, color = chrome.muted, fontSize = 13.sp, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), textAlign = TextAlign.Center)
-            }
+        }
+        if (you != null && !youOnScreen && repo.backend.signedIn && xp != null && !board.signedOut) {
+            YouPill(you, onEditYou)
         }
     }
 }
 
 @Composable
+private fun BoardTabs(scope: BoardScope, onSelect: (BoardScope) -> Unit) {
+    val reduce = reduceMotion()
+    val slide by androidx.compose.animation.core.animateFloatAsState(
+        if (scope == BoardScope.Friends) 1f else 0f,
+        if (reduce) androidx.compose.animation.core.tween(120, easing = androidx.compose.animation.core.EaseOut) else swiftSpring(0.32f, 0f),
+        label = "board-scope",
+    )
+    BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 8.dp).clip(CircleShape).background(Color(0xFF1C1C1E)).padding(4.dp)) {
+        Box(
+            Modifier.fillMaxWidth(0.5f).offset { IntOffset((maxWidth * 0.5f * slide).roundToPx(), 0) }.height(36.dp).clip(CircleShape).background(BoardOrange),
+        )
+        Row(Modifier.fillMaxWidth()) {
+            BoardTab("Daily XP", scope == BoardScope.Daily, Modifier.weight(1f)) { onSelect(BoardScope.Daily) }
+            BoardTab("Friends", scope == BoardScope.Friends, Modifier.weight(1f)) { onSelect(BoardScope.Friends) }
+        }
+    }
+}
+
+@Composable
+private fun BoardTab(label: String, on: Boolean, modifier: Modifier, click: () -> Unit) {
+    Text(
+        label,
+        color = if (on) Color.White else BoardMuted,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 14.sp,
+        textAlign = TextAlign.Center,
+        modifier = modifier.clickable(onClick = click).padding(vertical = 9.dp),
+    )
+}
+
+@Composable
 private fun UsageBoard() {
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(rot().card).padding(16.dp)) {
-        Text("Daily XP", color = rot().ink, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-        Text("Connect usage access to score Daily XP. A blank day is not a perfect score.", color = rot().muted, modifier = Modifier.padding(top = 4.dp))
+    Column(Modifier.fillMaxWidth().padding(vertical = 24.dp, horizontal = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text("Daily XP", color = BoardInk, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+        Text("Connect usage access to score Daily XP. A blank day is not a perfect score.", color = BoardMuted, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
     }
 }
 
 @Composable
 private fun SignInBoard(context: android.content.Context, repo: RotRunRepository, onDone: () -> Unit) {
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(rot().card).padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("Sign in to see the leaderboard", color = rot().ink, fontWeight = FontWeight.Bold, fontSize = 18.sp, textAlign = TextAlign.Center)
+    Column(Modifier.fillMaxWidth().padding(vertical = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text("Sign in to see the leaderboard", color = BoardInk, fontWeight = FontWeight.Bold, fontSize = 18.sp, textAlign = TextAlign.Center)
         TextButton(onClick = {
             val activity = context as? Activity ?: return@TextButton
             repo.backend.signIn(activity) { onDone() }
@@ -311,86 +366,189 @@ private fun SignInBoard(context: android.content.Context, repo: RotRunRepository
 private fun EmptyBoard() {
     Column(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         CartoonBrain(BrainStyle.Meadow, Modifier.size(96.dp), animated = false)
-        Text("No rankings yet", color = rot().ink, fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.padding(top = 8.dp))
-        Text("Play a bit, then pull to refresh your Daily XP rank.", color = rot().muted, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp, start = 24.dp, end = 24.dp))
+        Text("No rankings yet", color = BoardInk, fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.padding(top = 8.dp))
+        Text("Play a bit, then pull to refresh your Daily XP rank.", color = BoardMuted, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp, start = 24.dp, end = 24.dp))
     }
 }
 
 @Composable
-private fun Podium(top: List<RankedXp>, onEditYou: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.SpaceEvenly) {
-        PodiumPlace(top[1], 88.dp, Color(0xFFB8C2D1), onEditYou)
-        PodiumPlace(top[0], 118.dp, Color(0xFFFFC747), onEditYou)
-        PodiumPlace(top[2], 72.dp, Color(0xFFE68C52), onEditYou)
+private fun EmptyFriends() {
+    Column(Modifier.fillMaxWidth().padding(vertical = 28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text("No friends on the board yet", color = BoardInk, fontWeight = FontWeight.Bold, fontSize = 18.sp, textAlign = TextAlign.Center)
+        Text(
+            "RotRun has no friends list on Android, so this board stays empty.",
+            color = BoardMuted,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 4.dp, start = 24.dp, end = 24.dp),
+        )
     }
 }
 
 @Composable
-private fun PodiumPlace(row: RankedXp, bar: androidx.compose.ui.unit.Dp, medal: Color, onEditYou: () -> Unit) {
+private fun TopAvatars(rows: List<RankedXp>, onEditYou: () -> Unit, onYouPlacement: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 8.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        DailyBoard.topRow(rows).forEach { row ->
+            TopPlace(row, onEditYou, onYouPlacement)
+        }
+    }
+}
+
+@Composable
+private fun TopPlace(row: RankedXp, onEditYou: () -> Unit, onYouPlacement: (Boolean) -> Unit) {
+    val first = row.rank == 1
+    val medal = medalColor(row.rank)
+    val avatar = if (first) 104.dp else 76.dp
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.width(96.dp).clickable(enabled = row.you, onClick = onEditYou),
+        modifier = Modifier
+            .width(if (first) 124.dp else 100.dp)
+            .offset(y = if (first) (-14).dp else 0.dp)
+            .padding(horizontal = 4.dp)
+            .then(if (row.you) Modifier.border(2.dp, BoardOrange, RoundedCornerShape(22.dp)) else Modifier)
+            .clickable(enabled = row.you, onClick = onEditYou)
+            .youWatch(row.you, onYouPlacement)
+            .padding(horizontal = 6.dp, vertical = 8.dp),
     ) {
-        PlayerAvatar(row.name, row.avatarUrl, 48.dp)
-        Text(row.name, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, color = rot().ink)
-        Text("${row.xp} XP", fontSize = 11.sp, color = rot().muted)
-        Text("#${row.rank}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = rot().ink)
-        Box(Modifier.padding(top = 4.dp).width(64.dp).height(bar).clip(RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp)).background(medal))
-    }
-}
-
-@Composable
-private fun BoardRow(row: RankedXp, onEditYou: () -> Unit) {
-    val chrome = rot()
-    val rankColor = when (row.rank) {
-        1 -> Color(0xFFFFC747)
-        2 -> chrome.muted
-        else -> Color(0xFFC7C7CC)
-    }
-    Row(
-        Modifier.padding(vertical = 4.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(chrome.card).border(if (row.you) 2.dp else 0.dp, if (row.you) Color(0xFFFF8C2E) else Color.Transparent, RoundedCornerShape(22.dp)).clickable(enabled = row.you, onClick = onEditYou).padding(horizontal = 14.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("#${row.rank}", fontWeight = FontWeight.Black, color = rankColor, modifier = Modifier.width(36.dp))
-        PlayerAvatar(row.name, row.avatarUrl, 36.dp)
-        Column(Modifier.weight(1f).padding(start = 10.dp)) {
-            Text(row.name, color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                PixelBrain(Scoring.rank(row.xp).title, Modifier.size(18.dp))
-                Text(Scoring.rank(row.xp).title, color = chrome.muted, fontSize = 12.sp, modifier = Modifier.padding(start = 4.dp))
+        Text(
+            row.name,
+            color = BoardInk,
+            fontWeight = FontWeight.Bold,
+            fontSize = if (first) 15.sp else 13.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+        )
+        Box(Modifier.padding(top = 8.dp)) {
+            Box(Modifier.border(3.dp, medal, CircleShape).padding(3.dp)) {
+                PlayerAvatar(row.name, row.avatarUrl, avatar, fill = avatarFill(row.userId), ink = Color.White)
             }
+            RankBadge(row.rank, medal, Modifier.align(Alignment.TopEnd).offset(x = 8.dp, y = (-6).dp))
         }
-        ScoreCapsule(row.xp, row.you)
+        Text(
+            "${row.xp} XP",
+            color = BoardInk,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.Bold,
+            fontSize = if (first) 16.sp else 14.sp,
+            modifier = Modifier.padding(top = 8.dp),
+        )
     }
 }
 
 @Composable
-private fun PinnedYou(row: RankedXp, onEditYou: () -> Unit) {
+private fun RankBadge(rank: Int, fill: Color, modifier: Modifier = Modifier) {
+    Box(
+        modifier.clip(RoundedCornerShape(50)).background(fill).padding(horizontal = 6.dp, vertical = 2.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            "#$rank",
+            color = if (rank == 3) Color.White else Color.Black,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.Black,
+            fontSize = 11.sp,
+        )
+    }
+}
+
+@Composable
+private fun BoardLine(row: RankedXp, onEditYou: () -> Unit, onYouPlacement: (Boolean) -> Unit) {
     Row(
-        Modifier.padding(top = 8.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Color(0xFFFF8C2E)).clickable(onClick = onEditYou).padding(horizontal = 14.dp, vertical = 12.dp),
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp)
+            .then(if (row.you) Modifier.border(2.dp, BoardOrange, RoundedCornerShape(18.dp)) else Modifier)
+            .clickable(enabled = row.you, onClick = onEditYou)
+            .youWatch(row.you, onYouPlacement)
+            .padding(horizontal = 8.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("#${row.rank}", color = Color.White, fontWeight = FontWeight.Black)
-        Box(Modifier.padding(start = 10.dp)) { PlayerAvatar(row.name, row.avatarUrl, 36.dp) }
-        Text(row.name, color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 10.dp).weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text("${row.xp} XP", color = Color.White, fontWeight = FontWeight.Bold)
+        Text("#${row.rank}", color = BoardInk, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 15.sp, modifier = Modifier.width(40.dp))
+        PlayerAvatar(row.name, row.avatarUrl, 36.dp, fill = avatarFill(row.userId), ink = Color.White)
+        Text(
+            row.name,
+            color = BoardInk,
+            fontWeight = FontWeight.Bold,
+            fontSize = 16.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(start = 12.dp).weight(1f),
+        )
+        Text("${row.xp} XP", color = BoardInk, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 15.sp)
     }
 }
 
 @Composable
-private fun InitialAvatar(name: String) {
-    val letter = name.firstOrNull { it.isLetter() }?.uppercaseChar()?.toString() ?: "R"
-    Box(Modifier.size(36.dp).clip(CircleShape).background(rot().inset), contentAlignment = Alignment.Center) {
-        Text(letter, fontWeight = FontWeight.Bold, color = rot().ink)
+private fun YouPill(row: RankedXp, onEditYou: () -> Unit) {
+    val density = LocalDensity.current
+    val nav = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val lift = with(density) { (168.dp + nav).roundToPx() }
+    val width = with(density) { LocalWindowInfo.current.containerSize.width.toDp() } - 32.dp
+    Popup(
+        alignment = Alignment.BottomCenter,
+        offset = IntOffset(0, -lift),
+        properties = PopupProperties(focusable = false, clippingEnabled = false),
+    ) {
+        Row(
+            Modifier.width(width).clip(RoundedCornerShape(28.dp)).background(BoardOrange).clickable(onClick = onEditYou).padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("#${row.rank}", color = Color.White, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Black, fontSize = 15.sp)
+            Box(Modifier.padding(start = 10.dp)) {
+                PlayerAvatar(row.name, row.avatarUrl, 36.dp, fill = avatarFill(row.userId), ink = Color.White)
+            }
+            Text(
+                row.name,
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(start = 10.dp).weight(1f),
+            )
+            Text("${row.xp} XP", color = Color.White, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+        }
     }
 }
 
 @Composable
-private fun ScoreCapsule(score: Int, you: Boolean) {
-    Box(Modifier.clip(RoundedCornerShape(12.dp)).background(if (you) Color(0xFFFF8C2E) else rot().inset).padding(horizontal = 10.dp, vertical = 6.dp)) {
-        Text("$score", color = if (you) Color.White else rot().muted, fontWeight = FontWeight.Bold, fontSize = if (score > 999) 11.sp else 13.sp, maxLines = 1)
+private fun Modifier.youWatch(you: Boolean, onPlacement: (Boolean) -> Unit): Modifier {
+    if (!you) return this
+    val view = LocalView.current
+    val cover = with(LocalDensity.current) {
+        (148.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()).toPx()
+    }
+    return onGloballyPositioned { coords ->
+        val bounds = coords.boundsInWindow()
+        onPlacement(bounds.height > 0f && bounds.bottom > 0f && bounds.top < view.height - cover)
     }
 }
+
+private fun medalColor(rank: Int): Color = when (rank) {
+    1 -> Color(0xFFFFC747)
+    2 -> Color(0xFFC0C0C0)
+    else -> Color(0xFFCD7F32)
+}
+
+private val AvatarFills = listOf(
+    Color(0xFF3B82F6),
+    Color(0xFFEF4444),
+    Color(0xFF22C55E),
+    Color(0xFFA855F7),
+    Color(0xFFF59E0B),
+    Color(0xFF14B8A6),
+    Color(0xFFEC4899),
+    Color(0xFF6366F1),
+)
+
+private fun avatarFill(userId: String): Color = AvatarFills[userId.hashCode().mod(AvatarFills.size)]
+
+private val BoardInk = Color.White
+private val BoardMuted = Color(0xFF8E8E93)
+private val BoardOrange = Color(0xFFFF8C2E)
 
 @Composable
 private fun Segment(
@@ -409,7 +567,7 @@ private fun Segment(
     )
     BoxWithConstraints(modifier.fillMaxWidth().clip(CircleShape).background(rot().inset).padding(4.dp)) {
         Box(
-            Modifier.fillMaxWidth(0.5f).offset(x = maxWidth * 0.5f * slide).height(36.dp).clip(CircleShape).background(rot().blue),
+            Modifier.fillMaxWidth(0.5f).offset { IntOffset((maxWidth * 0.5f * slide).roundToPx(), 0) }.height(36.dp).clip(CircleShape).background(rot().blue),
         )
         Row(Modifier.fillMaxWidth()) {
             Toggle(left, !rightOn, Modifier.weight(1f), onLeft)

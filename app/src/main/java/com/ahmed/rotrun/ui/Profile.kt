@@ -159,7 +159,7 @@ private fun NameField(value: String, hint: String, onChange: (String) -> Unit) {
 }
 
 @Composable
-fun PlayerAvatar(name: String, url: String?, size: Dp) {
+fun PlayerAvatar(name: String, url: String?, size: Dp, fill: Color = rot().inset, ink: Color = rot().ink) {
     var bitmap by remember(url) { mutableStateOf<android.graphics.Bitmap?>(null) }
     LaunchedEffect(url) {
         bitmap = if (url.isNullOrBlank()) null else withContext(Dispatchers.IO) { loadBitmap(url) }
@@ -167,8 +167,8 @@ fun PlayerAvatar(name: String, url: String?, size: Dp) {
     if (bitmap != null) {
         Image(bitmap!!.asImageBitmap(), contentDescription = name, modifier = Modifier.size(size).clip(CircleShape), contentScale = ContentScale.Crop)
     } else {
-        Box(Modifier.size(size).clip(CircleShape).background(rot().inset), contentAlignment = Alignment.Center) {
-            Text(letter(name), color = rot().ink, fontWeight = FontWeight.Bold)
+        Box(Modifier.size(size).clip(CircleShape).background(fill), contentAlignment = Alignment.Center) {
+            Text(letter(name), color = ink, fontWeight = FontWeight.Bold)
         }
     }
 }

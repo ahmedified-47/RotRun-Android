@@ -55,7 +55,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -89,7 +88,6 @@ import com.ahmed.rotrun.logic.Products
 import com.ahmed.rotrun.logic.Scoring
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private enum class Tab { Home, Block, Stats, Settings }
@@ -107,36 +105,19 @@ fun RotRunRoot(repo: RotRunRepository) {
     Box(Modifier.fillMaxSize()) {
         val needsProfile by repo.backend.needsProfile.collectAsState()
         val ask by repo.askIntervention.collectAsState()
-        val scope = rememberCoroutineScope()
-        var namePrompt by rememberSaveable { mutableStateOf(false) }
         var editProfile by rememberSaveable { mutableStateOf(false) }
         LaunchedEffect(state.onboardingCompleted, needsProfile) {
-            if (!state.onboardingCompleted || !needsProfile) {
-                if (!needsProfile) namePrompt = false
-                return@LaunchedEffect
-            }
-            val found = withContext(Dispatchers.IO) { repo.backend.adoptRemoteDisplayName() }
-            if (!found) namePrompt = true
-        }
-        fun openNamePrompt() {
-            if (!repo.backend.needsProfile.value) return
-            scope.launch {
-                val found = withContext(Dispatchers.IO) { repo.backend.adoptRemoteDisplayName() }
-                if (!found) namePrompt = true
-            }
+            if (!state.onboardingCompleted || !needsProfile) return@LaunchedEffect
+            withContext(Dispatchers.IO) { repo.backend.adoptRemoteDisplayName() }
         }
         when {
             !state.onboardingCompleted -> OnboardingScreen(repo)
-            else -> MainShell(repo, onOpenBoard = ::openNamePrompt, onEditYou = { editProfile = true })
+            else -> MainShell(repo, onEditYou = { editProfile = true })
         }
-        if (ask == null && (namePrompt || editProfile)) {
-            ProfilePrompt(repo, editing = editProfile, onDismiss = {
-                namePrompt = false
-                editProfile = false
-            })
+        if (ask == null && editProfile) {
+            ProfilePrompt(repo, editing = true, onDismiss = { editProfile = false })
         }
-        BackHandler(enabled = ask == null && (namePrompt || editProfile)) {
-            namePrompt = false
+        BackHandler(enabled = ask == null && editProfile) {
             editProfile = false
         }
         if (toast != null) {
@@ -181,7 +162,7 @@ private fun Gate(repo: RotRunRepository) {
 }
 
 @Composable
-private fun MainShell(repo: RotRunRepository, onOpenBoard: () -> Unit, onEditYou: () -> Unit) {
+private fun MainShell(repo: RotRunRepository, onEditYou: () -> Unit) {
     val state by repo.state.collectAsState()
     val usage by repo.usage.collectAsState()
     val refreshing by repo.refreshing.collectAsState()
@@ -309,7 +290,7 @@ private fun MainShell(repo: RotRunRepository, onOpenBoard: () -> Unit, onEditYou
                     onOpenGate = { gateUp = true },
                 )
                 Tab.Block -> BlockScreen(state, installed, repo)
-                Tab.Stats -> StatsScreen(state, health, screenMinutes, repo, onLeaderboard = onOpenBoard, onEditYou = onEditYou)
+                Tab.Stats -> StatsScreen(state, health, screenMinutes, repo, onEditYou = onEditYou)
                 Tab.Settings -> SettingsScreen(state, installed, repo)
             }
         }
