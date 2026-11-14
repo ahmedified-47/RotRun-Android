@@ -16,6 +16,7 @@ class RefreshWorker(context: Context, params: WorkerParameters) : CoroutineWorke
         val repo = RotRunGraph.repo
         repo.refreshUsage()
         BlockScheduler.scheduleNext(applicationContext, repo.state.value)
+        WatchController.sync(applicationContext, repo.state.value, repo.armingReady())
         RotNudges.consider(applicationContext, repo)
         return Result.success()
     }

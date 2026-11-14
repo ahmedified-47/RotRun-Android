@@ -1,5 +1,6 @@
 package com.ahmed.rotrun.data
 
+import com.ahmed.rotrun.logic.BillingQuotes
 import com.ahmed.rotrun.logic.CatalogStatus
 import com.ahmed.rotrun.logic.PaywallGate
 import com.ahmed.rotrun.logic.PlayCatalog
@@ -51,15 +52,19 @@ enum class OnboardingStep(val raw: Int) {
 
     fun progress(): Float = if (this == GetAccess) 0.82f else raw / 39f
 
-    fun skipped(state: SavedState): Boolean = when (this) {
+    fun skipped(state: SavedState, userId: String? = null): Boolean = when (this) {
         SeeForYourself, ConnectScreenTime, LimitedOffer, ChoosePlan -> true
-        PurchaseComplete -> !state.premiumActive()
-        GetAccess -> !PaywallGate.shows || state.premiumActive() || PlayCatalog.status.value == CatalogStatus.Unavailable
-        OneTimeOffer -> {
-            if (!PaywallGate.shows || state.premiumActive() || state.yearly70Dismissed) true
-            else if (PlayCatalog.status.value == CatalogStatus.Unavailable) true
-            else PlayCatalog.status.value == CatalogStatus.Ready && PlayCatalog.quote(Products.YEARLY70) == null
-        }
+        PurchaseComplete -> !state.proFor(userId)
+        GetAccess -> !PaywallGate.shows || state.proFor(userId) || PlayCatalog.status.value == CatalogStatus.Unavailable
+        OneTimeOffer -> !BillingQuotes.yearly70Visible(
+            paywall = PaywallGate.shows,
+            premium = state.proFor(userId),
+            dismissed = state.yearly70Dismissed,
+            productId = state.productId,
+            catalogReady = PlayCatalog.status.value == CatalogStatus.Ready,
+            catalogUnavailable = PlayCatalog.status.value == CatalogStatus.Unavailable,
+            hasQuote = PlayCatalog.quote(Products.YEARLY70) != null,
+        )
         else -> false
     }
 
@@ -83,6 +88,7 @@ data class Blocker(
     val days: List<Int> = (0..6).toList(),
     val apps: List<TrackedApp> = emptyList(),
     val modeApps: Map<String, List<TrackedApp>> = emptyMap(),
+    val symbol: String = "phone",
 ) {
     /** Active apps first, then apps stashed on the other modes. */
     fun packageOrder(): List<String> =
@@ -104,6 +110,7 @@ data class SavedState(
     val productId: String? = null,
     val premiumUntil: Long = 0L,
     val lifetime: Boolean = false,
+    val purchaseToken: String = "",
     val introUsed: Boolean = false,
     val declinedGetAccess: Boolean = false,
     val skippedOneTimeOffer: Boolean = false,
@@ -134,6 +141,7 @@ data class SavedState(
     val lastOpenDay: String = "",
     val askBrainCount: Int = 0,
     val ransomDebit: Int = 0,
+    val askOpen: Boolean = false,
     val xpDay: String = "",
     val focusMinutesByDay: Map<String, Int> = emptyMap(),
     val appLists: List<AppList> = emptyList(),
@@ -150,9 +158,20 @@ data class SavedState(
     val duelUntil: Long = 0L,
     val lastAskToken: Long = 0L,
     val bailoutFrom: String = "",
+    val grantUserId: String = "",
 ) {
-    fun premiumActive(now: Long = System.currentTimeMillis()): Boolean =
-        premium && (lifetime || productId == Products.LIFETIME || premiumUntil > now)
+    /** Stored grant only. Settings and the paywall use [proFor] so a leftover grant is not Pro while signed out. */
+    fun premiumActive(now: Long = System.currentTimeMillis()): Boolean {
+        if (!premium) return false
+        if (lifetime || productId == Products.LIFETIME) return true
+        if (premiumUntil <= 0L || premiumUntil > now) return true
+        // The last known renewal can pass while Play still has the subscription.
+        // Billing setup failing, or sync-play-entitlements being undeployed, must not
+        // send that purchaser through checkout again. Play clears premium when the purchase is gone.
+        return productId in Products.subscriptions
+    }
+
+    fun proFor(userId: String?): Boolean = BillingQuotes.showsPlayPlan(userId, grantUserId, premiumActive())
 
     fun cameoToday(day: String = Scoring.dayKey()): Boolean = cameoName.isNotBlank() && cameoDay == day
 

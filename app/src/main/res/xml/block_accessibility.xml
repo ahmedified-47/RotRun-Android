@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:accessibilityEventTypes="typeWindowStateChanged|typeWindowsChanged"
-    android:accessibilityFlags="flagReportViewIds"
-    android:isAccessibilityTool="true"
+    android:accessibilityFlags="flagRetrieveInteractiveWindows"
+    android:isAccessibilityTool="false"
     android:accessibilityFeedbackType="feedbackGeneric"
-    android:canRetrieveWindowContent="false"
+    android:canRetrieveWindowContent="true"
     android:description="@string/accessibility_disclosure"
     android:notificationTimeout="100" />

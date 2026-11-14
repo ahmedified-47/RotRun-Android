@@ -51,7 +51,7 @@ fun LegalPage(asset: String, title: String, onBack: () -> Unit) {
     }
     val chrome = rot()
     Column(
-        Modifier.fillMaxSize().background(chrome.page).statusBarsPadding().navigationBarsPadding().verticalScroll(rememberScrollState()).padding(20.dp),
+        Modifier.fillMaxSize().background(chrome.page).rotInsets().verticalScroll(rememberScrollState()).padding(20.dp),
     ) {
         Text("‹ $title", color = chrome.blue, fontWeight = FontWeight.Bold, modifier = Modifier.clickable(onClick = onBack))
         Text(title, color = chrome.ink, fontSize = 32.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp))

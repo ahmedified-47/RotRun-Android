@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!-- The keystore key is not backed up. Restoring this file crashes the next launch. -->
+    <exclude domain="sharedpref" path="rotrun.session.xml" />
+    <!-- Onboarding-complete and the Play grant. A reinstall must start signed out, at signup. -->
+    <exclude domain="sharedpref" path="rotrun.xml" />
+    <exclude domain="sharedpref" path="rotrun.flags.xml" />
+</full-backup-content>

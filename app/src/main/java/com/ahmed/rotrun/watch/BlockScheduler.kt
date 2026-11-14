@@ -5,37 +5,24 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import com.ahmed.rotrun.data.Blocker
+import android.os.Build
 import com.ahmed.rotrun.data.RotRunGraph
 import com.ahmed.rotrun.data.SavedState
+import com.ahmed.rotrun.logic.BlockSchedule
 import java.time.ZonedDateTime
 
-/** Wakes the blocker at the next schedule edge. Accessibility still checks every app switch. */
+/** Wakes the blocker at the next schedule edge or when a timed unlock ends. */
 object BlockScheduler {
     fun scheduleNext(context: Context, state: SavedState) {
         val alarm = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val pending = pending(context)
-        val whenMillis = nextEdge(state) ?: run {
+        val whenMillis = BlockSchedule.nextWakeMillis(state, ZonedDateTime.now(), System.currentTimeMillis()) ?: run {
             alarm.cancel(pending)
             return
         }
-        alarm.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, whenMillis, pending)
-    }
-
-    private fun nextEdge(state: SavedState): Long? {
-        val now = ZonedDateTime.now()
-        var best: ZonedDateTime? = null
-        state.blockers.filter { it.mode == "schedule" || it.mode == "dailyLimit" }.forEach { blocker ->
-            listOf(edge(now, blocker.startHour), edge(now, blocker.endHour)).forEach { candidate ->
-                if (candidate.isAfter(now) && (best == null || candidate.isBefore(best))) best = candidate
-            }
-        }
-        return best?.toInstant()?.toEpochMilli()
-    }
-
-    private fun edge(now: ZonedDateTime, hour: Int): ZonedDateTime {
-        val today = now.withHour(hour.coerceIn(0, 23)).withMinute(0).withSecond(5).withNano(0)
-        return if (today.isAfter(now)) today else today.plusDays(1)
+        val exact = Build.VERSION.SDK_INT < 31 || alarm.canScheduleExactAlarms()
+        if (exact) alarm.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, whenMillis, pending)
+        else alarm.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, whenMillis, pending)
     }
 
     private fun pending(context: Context): PendingIntent {
@@ -55,7 +42,8 @@ class ScheduleTickReceiver : BroadcastReceiver() {
         val repo = RotRunGraph.repo
         repo.refreshUsage()
         BlockScheduler.scheduleNext(context, repo.state.value)
-        WatchController.sync(context, repo.state.value)
+        WatchController.sync(context, repo.state.value, repo.armingReady())
+        BlockAccessibilityService.recheck()
     }
 }
 

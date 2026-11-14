@@ -1,6 +1,8 @@
 package com.ahmed.rotrun.ui
 
 import android.Manifest
+import android.app.Activity
+import android.content.pm.PackageManager
 import androidx.activity.compose.BackHandler
 import android.content.Intent
 import android.net.Uri
@@ -9,11 +11,10 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,21 +28,25 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.CardGiftcard
-import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.automirrored.filled.Help
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Diamond
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.GridView
-import androidx.compose.material.icons.filled.Help
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Paid
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.QuestionMark
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -51,30 +56,29 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ahmed.rotrun.BuildConfig
 import com.ahmed.rotrun.R
-import com.ahmed.rotrun.icon.LauncherIcons
 import com.ahmed.rotrun.data.DeviceAccessReader
+import com.ahmed.rotrun.logic.NotificationPrompt
 import com.ahmed.rotrun.data.RotRunRepository
 import com.ahmed.rotrun.data.SavedState
 import com.ahmed.rotrun.data.TrackedApp
-import com.ahmed.rotrun.data.iconStreak
-import com.ahmed.rotrun.data.themeStreak
+import com.ahmed.rotrun.logic.BillingQuotes
 import com.ahmed.rotrun.logic.BrainHealthLevel
 import com.ahmed.rotrun.logic.Products
 import com.ahmed.rotrun.logic.SupportCopy
@@ -85,20 +89,26 @@ import kotlinx.coroutines.withContext
 @Composable
 fun SettingsScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunRepository) {
     var page by rememberSaveable { mutableStateOf("root") }
+    var showPlans by rememberSaveable { mutableStateOf(false) }
     var plan by remember { mutableStateOf(state.productId ?: Products.YEARLY) }
     var authError by remember { mutableStateOf(false) }
     var showDisclosure by remember { mutableStateOf(false) }
     val access by repo.access.collectAsState()
     val context = LocalContext.current
-    val askNotify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+    var askedNotifications by rememberSaveable { mutableStateOf(false) }
+    val askNotify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        askedNotifications = true
         repo.refreshAccess()
+        val rationale = (context as? Activity)?.shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS) == true
+        if (!granted && NotificationPrompt.afterDenial(rationale) == NotificationPrompt.SETTINGS) {
+            DeviceAccessReader.open(context, DeviceAccessReader.notificationIntent(context))
+        }
     }
-    BackHandler(enabled = page != "root" || showDisclosure || authError) {
+    BackHandler(enabled = !showPlans && (page != "root" || showDisclosure || authError)) {
         when {
             authError -> authError = false
             showDisclosure -> showDisclosure = false
             page == "help" || page == "feedback" || page == "contact" || page == "subscription" -> page = "support"
-            page == "plans" -> page = "subscription"
             else -> page = "root"
         }
     }
@@ -112,14 +122,7 @@ fun SettingsScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunR
         "contact" -> ContactPage { page = "support" }
         "widget" -> WidgetPage { page = "root" }
         "memory" -> MemoryPage(repo) { page = "root" }
-        "subscription" -> PremiumManage(state, repo, onBack = { page = "support" }, onChangePlan = { page = "plans" })
-        "plans" -> Column(Modifier.padding(bottom = 12.dp)) {
-            BackHeader("RotRun Premium") { page = "subscription" }
-            GetAccessPaywall(
-                state, showClose = false, showDiscountLink = false, onClose = {}, onDiscount = {},
-                onPurchase = repo::purchase, onRestore = repo::restore, selected = plan, onSelect = { plan = it }, settingsStyle = true,
-            )
-        }
+        "subscription" -> PremiumManage(state, repo, onBack = { page = "support" }, onChangePlan = { showPlans = true })
         else -> RootSettings(
             state = state,
             access = access,
@@ -128,28 +131,42 @@ fun SettingsScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunR
             onUsage = { DeviceAccessReader.open(context, DeviceAccessReader.usageIntent(context)) },
             onAccessibility = { showDisclosure = true },
             onNotifications = {
-                if (Build.VERSION.SDK_INT >= 33 && !access.notifications) askNotify.launch(Manifest.permission.POST_NOTIFICATIONS)
-                else DeviceAccessReader.open(context, DeviceAccessReader.notificationIntent(context))
+                val runtimeGranted = Build.VERSION.SDK_INT < 33 ||
+                    context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+                val rationale = (context as? Activity)?.shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS) == true
+                val next = NotificationPrompt.next(runtimeGranted, rationale, askedNotifications)
+                if (runtimeGranted || next == NotificationPrompt.SETTINGS) {
+                    DeviceAccessReader.open(context, DeviceAccessReader.notificationIntent(context))
+                } else {
+                    askedNotifications = true
+                    askNotify.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
             },
             onOverlay = { DeviceAccessReader.open(context, DeviceAccessReader.overlayIntent(context)) },
             onBattery = { DeviceAccessReader.open(context, DeviceAccessReader.batteryIntent(context)) },
         )
     }
+    if (showPlans) {
+        val notice by repo.purchaseError.collectAsState()
+        PaywallPopup(onDismiss = { showPlans = false }) {
+            GetAccessPaywall(
+                state, showClose = true, onClose = { showPlans = false },
+                onPurchase = repo::purchase, onRestore = repo::restore, onRetry = repo::refreshBilling,
+                selected = plan, onSelect = { plan = it }, notice = notice,
+                signedInUserId = repo.backend.userId,
+            )
+        }
+    }
     if (page == "brain") BrainHealthPage(state, repo) { page = "root" }
     if (page == "excluded") ExcludedPage(state, installed, repo) { page = "root" }
     if (showDisclosure) {
-        AlertDialog(
-            onDismissRequest = { showDisclosure = false },
-            title = { Text("Accessibility") },
-            text = { Text(stringResource(R.string.accessibility_disclosure)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    showDisclosure = false
-                    runCatching { context.startActivity(DeviceAccessReader.accessibilityIntent()) }
-                        .onFailure { authError = true }
-                }) { Text("Open settings") }
+        AccessibilityDisclosureDialog(
+            onDecline = { showDisclosure = false },
+            onAccept = {
+                showDisclosure = false
+                runCatching { context.startActivity(DeviceAccessReader.accessibilityIntent()) }
+                    .onFailure { authError = true }
             },
-            dismissButton = { TextButton(onClick = { showDisclosure = false }) { Text("Not now") } },
         )
     }
     if (authError) {
@@ -176,28 +193,36 @@ private fun RootSettings(
 ) {
     val context = LocalContext.current
     val chrome = rot()
-    Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(
-            Modifier.size(84.dp).clip(CircleShape).background(Brush.verticalGradient(listOf(Color(0xFF7DDE9A), Color(0xFF3CB371)))),
-            contentAlignment = Alignment.Center,
-        ) { CartoonBrain(BrainStyle.Meadow, Modifier.size(72.dp), animated = false) }
-        Text("Settings", color = chrome.ink, fontSize = 34.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 8.dp))
-        if (!access.usage) {
-            CardGroup {
-                Column(Modifier.fillMaxWidth().clickable(onClick = onUsage).padding(16.dp)) {
-                    Text("Usage access is off", color = chrome.danger, fontWeight = FontWeight.Bold, fontSize = 17.sp)
-                    Text(
-                        "Brain Health and Screen Time stay blank until you connect usage. Tap to open Settings.",
-                        color = chrome.muted,
-                        fontSize = 14.sp,
-                        modifier = Modifier.padding(top = 4.dp),
-                    )
-                }
-            }
+    val scope = rememberCoroutineScope()
+    var confirmDelete by remember { mutableStateOf(false) }
+    var deleting by remember { mutableStateOf(false) }
+    Column(
+        Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(22.dp),
+    ) {
+        SettingsHeader(state.theme)
+        SettingsGroup {
+            RowLink("Brain Health", state.brainHealth, Icons.Default.Favorite, Color(0xFFFF3B30)) { open("brain") }
+            Hairline()
+            RowLink("Excluded Apps", icon = Icons.Default.Diamond, tint = Color(0xFF59B8F2)) { open("excluded") }
         }
-        CardGroup {
+        SettingsGroup {
+            RowLink("Intervention Style", icon = Icons.AutoMirrored.Filled.Chat, tint = Color(0xFF598CF2)) { open("styles") }
+            Hairline()
+            RowLink("Rewards", icon = Icons.Default.CardGiftcard, tint = Color(0xFFF28C33)) { open("rewards") }
+            Hairline()
+            RowLink("App Icon", icon = Icons.Default.Apps, tint = Color(0xFF738CF2)) { open("icon") }
+        }
+        SettingsGroup {
+            RowLink("Support & Feedback", icon = Icons.AutoMirrored.Filled.Help, tint = Color(0xFFF25973)) { open("support") }
+            Hairline()
+            RowLink("Home Screen Widget", icon = Icons.Default.GridView, tint = Color(0xFF598CF2)) { open("widget") }
+        }
+        PermissionColumn(access, onUsage, onAccessibility, onNotifications, onOverlay, onBattery)
+        SettingsGroup {
             Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-                Text("Upgrade reminders", color = chrome.ink, fontWeight = FontWeight.Bold)
+                Text("Upgrade reminders", color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         "One local note a day from Rot about RotRun Premium. Off until you turn this on. RotRun will not ask for notification permission just to send these.",
@@ -207,56 +232,113 @@ private fun RootSettings(
                     )
                     GreenSwitch(state.upgradeReminders) { enabled ->
                         repo.update { it.copy(upgradeReminders = enabled) }
-                        com.ahmed.rotrun.watch.UpgradeReminders.sync(context, repo.state.value)
+                        com.ahmed.rotrun.watch.UpgradeReminders.sync(context, repo.state.value, repo.backend.userId)
                     }
                 }
             }
         }
-        CardGroup {
-            RowLink("Brain Health", state.brainHealth, Icons.Default.Favorite, Color(0xFFFF3B30)) { open("brain") }
-            Hairline()
-            RowLink("Excluded Apps", icon = Icons.Default.Diamond, tint = Color(0xFF5AC8FA)) { open("excluded") }
+        SettingsGroup {
+            RowLink("Rot's memory", icon = Icons.Default.Refresh, tint = chrome.blue) { open("memory") }
         }
-        CardGroup {
-            RowLink("Intervention Style", icon = Icons.Default.Chat, tint = Color(0xFF64B5F6)) { open("styles") }
-            Hairline()
-            RowLink("Rewards", icon = Icons.Default.CardGiftcard, tint = Color(0xFFFF9F0A)) { open("rewards") }
-            Hairline()
-            RowLink("App Icon", icon = Icons.Default.GridView, tint = Color(0xFF5E5CE6)) { open("icon") }
-        }
-        CardGroup {
-            RowLink("Support & Feedback", icon = Icons.Default.QuestionMark, tint = Color(0xFFFF375F)) { open("support") }
-            Hairline()
-            RowLink("Home Screen Widget", icon = Icons.Default.GridView, tint = Color(0xFF0A84FF)) { open("widget") }
-        }
-        Text("Permissions", color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 20.sp, modifier = Modifier.padding(top = 18.dp).fillMaxWidth())
-        Text("Request usage and blocking access", color = chrome.muted, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 4.dp, bottom = 8.dp).fillMaxWidth())
-        CardGroup {
-            PermissionRow("Usage Access", "Today’s screen time, pickups, and top apps.", access.usage, onUsage)
-            Hairline()
-            PermissionRow("Accessibility", stringResource(R.string.accessibility_disclosure), access.accessibility, onAccessibility)
-            Hairline()
-            PermissionRow("Notifications", "Rot’s notes, focus timer, and Ask my brain.", access.notifications, onNotifications)
-            if (!access.accessibility) {
-                Hairline()
-                PermissionRow("Display over other apps", "Fallback shield when Accessibility is off.", access.overlay, onOverlay)
+        if (repo.backend.signedIn) {
+            SettingsGroup {
+                Text(
+                    "Delete account",
+                    color = Color(0xFFFF3B30),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    modifier = Modifier.fillMaxWidth().clickable(enabled = !deleting) { confirmDelete = true }.padding(horizontal = 16.dp, vertical = 14.dp),
+                )
             }
-            Hairline()
-            PermissionRow("Battery", "Keep blocking after a restart and when RotRun is swiped away.", access.batteryUnrestricted, onBattery)
+            if (confirmDelete) {
+                AlertDialog(
+                    onDismissRequest = { if (!deleting) confirmDelete = false },
+                    title = { Text("Delete account") },
+                    text = {
+                        Text("This permanently deletes your account, chat history, memories, stats, and leaderboard entry. Subscriptions must be cancelled in Google Play separately.")
+                    },
+                    confirmButton = {
+                        TextButton(
+                            enabled = !deleting,
+                            onClick = {
+                                deleting = true
+                                scope.launch {
+                                    val error = withContext(Dispatchers.IO) { repo.backend.deleteAccount() }
+                                    if (error != null) {
+                                        deleting = false
+                                        confirmDelete = false
+                                        repo.toast(error)
+                                    } else {
+                                        repo.backend.signOut()
+                                        confirmDelete = false
+                                        repo.update { it.copy(onboardingCompleted = false, onboardingStep = 0) }
+                                    }
+                                }
+                            },
+                        ) { Text("Delete account", color = Color(0xFFFF3B30)) }
+                    },
+                    dismissButton = {
+                        TextButton(enabled = !deleting, onClick = { confirmDelete = false }) { Text("Cancel") }
+                    },
+                )
+            }
         }
-        Text(
-            "Rot's memory",
-            color = chrome.blue,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(top = 14.dp).clickable { open("memory") },
-        )
-        Text(
-            "Sync Screen Time now",
-            color = chrome.blue,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(top = 8.dp).clickable { repo.refreshUsage() },
-        )
     }
+}
+
+@Composable
+private fun SettingsHeader(theme: String) {
+    val chrome = rot()
+    val look = Looks.byId(theme)
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(top = 8.dp)) {
+        Box(
+            Modifier
+                .size(92.dp)
+                .shadow(8.dp, CircleShape, ambientColor = Color.Black.copy(alpha = 0.08f), spotColor = Color.Black.copy(alpha = 0.08f))
+                .clip(CircleShape)
+                .background(Brush.verticalGradient(themePreview(theme, chrome)))
+                .border(4.dp, chrome.page, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) { CartoonBrain(look.brain, Modifier.size(78.dp), animated = false) }
+        Text("Settings", color = chrome.ink, fontSize = 34.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp))
+    }
+}
+
+/** Same stops as iOS AppThemeOption.previewGradient. */
+private fun themePreview(theme: String, chrome: RotChrome): List<Color> = when (theme) {
+    "Default" -> listOf(chrome.inset, chrome.card)
+    "Sunrise" -> listOf(Color(0xFFFFB861), Color(0xFFFA6B47))
+    "Zen" -> listOf(Color(0xFFB8E0DB), Color(0xFF6BAD94))
+    "Twilight" -> listOf(Color(0xFF9E7AE0), Color(0xFF472E7A))
+    "Cosmic" -> listOf(Color(0xFF382E85), Color(0xFF0F1438))
+    else -> listOf(Color(0xFF8CD1ED), Color(0xFF3DB370))
+}
+
+@Composable
+private fun PermissionColumn(
+    access: com.ahmed.rotrun.data.DeviceAccess,
+    onUsage: () -> Unit,
+    onAccessibility: () -> Unit,
+    onNotifications: () -> Unit,
+    onOverlay: () -> Unit,
+    onBattery: () -> Unit,
+) {
+    SettingsGroup {
+        PermissionRow("Usage Access", "Which app is open, today’s time, and daily limits.", access.usage, onUsage)
+        PermissionRule()
+        PermissionRow("Accessibility", "Shows the Rot shield over apps you chose. RotRun does not read what you type.", access.accessibility, onAccessibility)
+        PermissionRule()
+        PermissionRow("Notifications", "The shield can still open if the overlay is off.", access.notifications, onNotifications)
+        PermissionRule()
+        PermissionRow("Display over other apps", "Fallback shield when Accessibility is off.", access.overlay, onOverlay)
+        PermissionRule()
+        PermissionRow("Battery", "Keep blocking after a restart and when RotRun is swiped away.", access.batteryUnrestricted, onBattery)
+    }
+}
+
+@Composable
+private fun PermissionRule() {
+    Box(Modifier.padding(start = 16.dp).fillMaxWidth().height(1.dp).background(rot().line))
 }
 
 @Composable
@@ -292,7 +374,7 @@ private fun GreenSwitch(checked: Boolean, onChange: (Boolean) -> Unit) {
 
 @Composable
 private fun Hairline() {
-    Box(Modifier.padding(start = 52.dp).fillMaxWidth().height(1.dp).background(rot().line))
+    Box(Modifier.padding(start = 56.dp).fillMaxWidth().height(1.dp).background(rot().line))
 }
 
 @Composable
@@ -333,6 +415,7 @@ private fun BrainHealthPage(state: SavedState, repo: RotRunRepository, onBack: (
                 Column(
                     Modifier.padding(vertical = 6.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(if (on) chrome.blue.copy(alpha = 0.16f) else chrome.card).clickable {
                         repo.update { it.copy(brainHealth = level.label) }
+                        repo.publishDailyXp()
                     }.padding(14.dp),
                 ) {
                     Text(level.label, color = chrome.ink, fontWeight = FontWeight.Bold)
@@ -388,7 +471,7 @@ private fun StylesPage(state: SavedState, repo: RotRunRepository, onBack: () -> 
         StyleToggle("Breathing Exercise", "4-2-4 then a question", state.breathingExercise) { value -> repo.update { it.copy(breathingExercise = value) } }
         StyleToggle("Mirror Mode", "FaceTime from your brain, requires camera", state.mirrorMode) { value -> repo.update { it.copy(mirrorMode = value) } }
         StyleToggle("Quick Check", "Need this? Then how long?", state.quickCheck) { value -> repo.update { it.copy(quickCheck = value) } }
-        StyleToggle("Friend cameo", "A roast from a Game Center friend, when they sent you one today", state.friendCameo) { value -> repo.update { it.copy(friendCameo = value) } }
+        StyleToggle("Friend cameo", "An accepted friend's name, photo, and today's Daily XP", state.friendCameo) { value -> repo.update { it.copy(friendCameo = value) } }
     }
 }
 
@@ -408,136 +491,37 @@ private fun StyleToggle(title: String, subtitle: String, on: Boolean, change: (B
 }
 
 @Composable
-private fun RewardsPage(state: SavedState, repo: RotRunRepository, onBack: () -> Unit) {
-    val chrome = rot()
-    val next = Looks.rewards.firstOrNull { reward -> reward.days != null && state.streak < reward.days }
-    val progress = if (next?.days == null) 1f else (state.streak.toFloat() / next.days).coerceIn(0f, 1f)
-    BackHeader("Rewards", onBack)
-    Text("Keep your streak alive to unlock Home looks, streak badges, and app icons.", color = chrome.muted, modifier = Modifier.padding(horizontal = 20.dp))
-    SettingsCard {
-        Column(Modifier.padding(16.dp)) {
-            Text("${state.streak.coerceAtLeast(1)}-day streak", color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 22.sp)
-            Text(
-                if (next == null) "Every streak reward is unlocked." else "Next: ${next.title} at ${next.days} days",
-                color = chrome.muted,
-                modifier = Modifier.padding(top = 4.dp, bottom = 10.dp),
-            )
-            LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth().height(8.dp).clip(CircleShape), color = chrome.blue, trackColor = chrome.inset)
-        }
-    }
-    Text("Themes", color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 22.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp).fillMaxWidth())
-    Text("Set a look for Home. Streak themes also change your Home brain and streak badge.", color = chrome.muted, modifier = Modifier.padding(horizontal = 20.dp))
-    Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(chrome.card)) {
-        Looks.rewards.forEachIndexed { index, reward ->
-            val unlocked = reward.days == null || state.streak >= reward.days
-            val look = Looks.byId(reward.themeId)
-            val selected = state.theme == reward.themeId
-            if (index > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(chrome.line))
-            Row(
-                Modifier.fillMaxWidth().clickable(enabled = unlocked) {
-                    repo.update { it.copy(theme = reward.themeId) }
-                    repo.toast("Using ${look.title}")
-                }.padding(14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)).background(look.canvas), contentAlignment = Alignment.Center) {
-                    if (unlocked) CartoonBrain(look.brain, Modifier.size(40.dp), animated = false)
-                    else Icon(Icons.Default.Lock, contentDescription = "Locked", tint = Color.White)
-                }
-                Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                    Text(look.title, color = if (unlocked) chrome.ink else chrome.muted, fontWeight = FontWeight.Bold, fontSize = 17.sp)
-                    if (!unlocked) Text("Unlock at ${reward.days}-day streak", color = chrome.muted, fontSize = 13.sp)
-                }
-                if (!unlocked) {
-                    Icon(Icons.Default.Lock, contentDescription = "Locked", tint = chrome.muted)
-                } else if (selected) {
-                    Box(Modifier.size(26.dp).clip(CircleShape).background(chrome.blue), contentAlignment = Alignment.Center) {
-                        Text("✓", color = Color.White, fontWeight = FontWeight.Bold)
-                    }
-                } else {
-                    Box(Modifier.size(26.dp).clip(CircleShape).border(1.5.dp, chrome.muted, CircleShape))
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun IconPage(state: SavedState, repo: RotRunRepository, onBack: () -> Unit) {
-    val chrome = rot()
-    BackHeader("App Icon", onBack)
-    Text(
-        "Use any unlocked icon on your Home Screen.",
-        color = chrome.muted,
-        modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
-    )
-    Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(chrome.card)) {
-        Looks.icons.forEachIndexed { index, (name, need) ->
-            val unlocked = need == null || state.streak >= need
-            val selected = state.appIcon == name
-            if (index > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(chrome.line))
-            Row(
-                Modifier.fillMaxWidth().clickable {
-                    if (!unlocked) repo.toast("Unlock at $need-day streak")
-                    else {
-                        repo.update { it.copy(appIcon = name) }
-                        repo.toast("Launcher icon set to $name")
-                    }
-                }.padding(14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Image(
-                    painterResource(LauncherIcons.preview(name)),
-                    contentDescription = name,
-                    modifier = Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)),
-                    alpha = if (unlocked) 1f else 0.45f,
-                )
-                Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                    Text(name, color = if (unlocked) chrome.ink else chrome.muted, fontWeight = FontWeight.Bold, fontSize = 17.sp)
-                    if (!unlocked) Text("Unlock at $need-day streak", color = chrome.muted, fontSize = 13.sp)
-                }
-                if (!unlocked) {
-                    Icon(Icons.Default.Lock, contentDescription = "Locked", tint = chrome.muted)
-                } else if (selected) {
-                    Box(Modifier.size(26.dp).clip(CircleShape).background(chrome.blue), contentAlignment = Alignment.Center) {
-                        Text("✓", color = Color.White, fontWeight = FontWeight.Bold)
-                    }
-                } else {
-                    Box(Modifier.size(26.dp).clip(CircleShape).border(1.5.dp, chrome.muted, CircleShape))
-                }
-            }
-        }
-    }
-}
-
-@Composable
 private fun SupportPage(open: (String) -> Unit) {
     var legal by remember { mutableStateOf<String?>(null) }
     LegalDialog(legal) { legal = null }
-    BackHeader("Support & Feedback") { open("root") }
-    Text("Need help? Reach out or leave us feedback!", color = Melt.Muted, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp))
-    CardGroup {
-        RowLink("Help") { open("help") }
-        RowLink("Feedback / Bug Report") { open("feedback") }
-        RowLink("Contact Us") { open("contact") }
-        RowLink("Privacy Policy") { legal = "privacy" }
-        RowLink("Terms & Conditions") { legal = "terms" }
-        RowLink("Manage Subscription") { open("subscription") }
-    }
-    Text("Follow us", fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp))
-    Row(Modifier.padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        FollowGlyph(Icons.Default.Close, "X")
-        FollowGlyph(Icons.Default.PhotoCamera, "Camera")
-        FollowGlyph(Icons.Default.MusicNote, "Music")
-    }
-    Text(SupportCopy.EMAIL, color = Melt.Action, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(20.dp))
-    Text(versionLine(), color = Melt.Muted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 20.dp))
-}
-
-@Composable
-private fun FollowGlyph(icon: ImageVector, label: String) {
-    Box(Modifier.size(44.dp).clip(CircleShape).background(rot().inset), contentAlignment = Alignment.Center) {
-        Icon(icon, contentDescription = label, tint = Melt.Ink)
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+        BackHeader(
+            "Support & Feedback",
+            { open("root") },
+            "Need help? Reach out or leave us feedback!",
+        )
+        Column(Modifier.padding(horizontal = 20.dp)) {
+            SettingsGroup {
+                RowLink("Help", icon = Icons.Default.QuestionMark, tint = Color(0xFFF25980)) { open("help") }
+                Hairline()
+                RowLink("Feedback / Bug Report", icon = Icons.Default.Warning, tint = Color(0xFFFF9F0A)) { open("feedback") }
+                Hairline()
+                RowLink("Contact Us", icon = Icons.AutoMirrored.Filled.Chat, tint = Color(0xFF73B3FA)) { open("contact") }
+                Hairline()
+                RowLink("Privacy Policy", icon = Icons.Default.Lock, tint = Color(0xFFFF9F0A)) { legal = "privacy" }
+                Hairline()
+                RowLink("Terms & Conditions", icon = Icons.Default.Search, tint = Color(0xFF8C8CF2)) { legal = "terms" }
+                Hairline()
+                RowLink("Manage Subscription", icon = Icons.Default.Paid, tint = Color(0xFFF2BF33)) { open("subscription") }
+            }
+        }
+        Text("Follow us", color = rot().ink, fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth())
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(28.dp, Alignment.CenterHorizontally)) {
+            Icon(Icons.Default.Close, contentDescription = "X", tint = rot().ink, modifier = Modifier.size(22.dp))
+            Icon(Icons.Default.PhotoCamera, contentDescription = "Camera", tint = rot().ink, modifier = Modifier.size(22.dp))
+            Icon(Icons.Default.MusicNote, contentDescription = "Music", tint = rot().ink, modifier = Modifier.size(22.dp))
+        }
+        Text(versionLine(), color = rot().muted, fontSize = 12.sp, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), textAlign = TextAlign.Center)
     }
 }
 
@@ -646,7 +630,7 @@ private fun WidgetPage(onBack: () -> Unit) {
     BackHeader("Home Screen Widget", onBack)
     Text("Brain Health on your home screen, and a Focus widget that starts a session.", color = Melt.Muted, modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp))
     Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Color(0xFF24754D)).padding(16.dp)) {
-        Text("ROTRUN", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+        Text("RotRun", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
         Text("Brain Health", color = Color.White.copy(alpha = 0.85f), fontSize = 13.sp)
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
@@ -687,19 +671,27 @@ private fun WidgetPage(onBack: () -> Unit) {
 }
 
 @Composable
-private fun BackHeader(title: String, onBack: () -> Unit) {
-    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+private fun BackHeader(title: String, onBack: () -> Unit, subtitle: String? = null) {
+    Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp).fillMaxWidth(), horizontalAlignment = Alignment.Start) {
         Box(
             Modifier.size(36.dp).clip(CircleShape).background(rot().card).clickable(onClick = onBack),
             contentAlignment = Alignment.Center,
-        ) { Text("‹", color = rot().ink, fontWeight = FontWeight.Bold, fontSize = 20.sp) }
-        Text(title, color = rot().ink, fontSize = 32.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp, start = 4.dp))
+        ) { Text("‹", color = rot().ink, fontWeight = FontWeight.SemiBold, fontSize = 16.sp) }
+        Text(title, color = rot().ink, fontSize = 32.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
+        if (subtitle != null) {
+            Text(subtitle, color = rot().muted, fontSize = 15.sp, modifier = Modifier.padding(top = 8.dp))
+        }
     }
 }
 
 @Composable
 private fun CardGroup(content: @Composable () -> Unit) {
-    Column(Modifier.padding(vertical = 6.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(rot().card)) { content() }
+    Column(Modifier.padding(vertical = 6.dp).fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(rot().card)) { content() }
+}
+
+@Composable
+private fun SettingsGroup(content: @Composable () -> Unit) {
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(rot().card)) { content() }
 }
 
 @Composable
@@ -718,11 +710,13 @@ private fun RowLink(
     val chrome = rot()
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
         if (icon != null) {
-            Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
+            Box(Modifier.size(28.dp), contentAlignment = Alignment.Center) {
+                Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(18.dp))
+            }
         }
-        Text(title, color = chrome.ink, modifier = Modifier.padding(start = if (icon != null) 12.dp else 0.dp).weight(1f), fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
-        if (value != null) Text(value, color = chrome.muted, fontSize = 15.sp)
-        Text("›", color = chrome.muted, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 6.dp))
+        Text(title, color = chrome.ink, modifier = Modifier.padding(start = if (icon != null) 12.dp else 0.dp).weight(1f), fontWeight = FontWeight.Bold, fontSize = 16.sp)
+        if (value != null) Text(value, color = chrome.muted, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+        Text("›", color = chrome.muted, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.padding(start = 6.dp))
     }
 }
 
@@ -733,38 +727,53 @@ private fun BoxButton(title: String, onClick: () -> Unit) {
 
 @Composable
 private fun PremiumManage(state: SavedState, repo: RotRunRepository, onBack: () -> Unit, onChangePlan: () -> Unit) {
+    BackHeader("RotRun Premium", onBack)
+    Column(Modifier.padding(horizontal = 16.dp)) {
+        SubscriptionSection(state, repo, onChangePlan)
+    }
+}
+
+@Composable
+private fun SubscriptionSection(state: SavedState, repo: RotRunRepository, onChangePlan: () -> Unit) {
     val context = LocalContext.current
     val chrome = rot()
-    val plan = Products.planName(state.productId)
-    val renews = if (state.premiumActive() && !state.lifetime && state.premiumUntil > System.currentTimeMillis()) {
-        "Renews ${java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(java.util.Date(state.premiumUntil))}"
-    } else if (state.lifetime) {
-        "Does not renew"
-    } else {
-        "Prices come from Google Play"
-    }
-    BackHeader("RotRun Premium", onBack)
+    val now = System.currentTimeMillis()
+    val shows = BillingQuotes.showsPlayPlan(repo.backend.userId, state.grantUserId, state.premiumActive())
+    val plan = BillingQuotes.planTitle(shows, state.productId)
+    val renewalText = "Renews ${java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(java.util.Date(state.premiumUntil))}"
+    val renews = BillingQuotes.statusLine(shows, state.lifetime, state.premiumUntil, now, state.productId, renewalText)
     Text(
-        "Buy, restore, or manage your plan. Blocking, Focus, Brick, and Ask-my-brain stay available without a subscription.",
+        "Buy, restore, or manage your plan. RotRun stays open while your subscription is active.",
         color = chrome.muted,
-        modifier = Modifier.padding(horizontal = 20.dp),
+        fontSize = 15.sp,
+        modifier = Modifier.padding(horizontal = 4.dp),
     )
-    Column(Modifier.padding(horizontal = 20.dp, vertical = 16.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(chrome.card).padding(vertical = 18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        CartoonBrain(BrainStyle.Meadow, Modifier.size(120.dp), animated = false)
-        Text(if (state.premiumActive()) plan else "No plan yet", color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 22.sp, modifier = Modifier.padding(top = 8.dp))
-        Text(renews, color = chrome.muted, modifier = Modifier.padding(top = 4.dp))
+    Column(Modifier.padding(vertical = 12.dp).fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(chrome.card).padding(vertical = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        CartoonBrain(BrainStyle.Meadow, Modifier.size(88.dp), animated = false)
+        Text(plan, color = chrome.ink, fontWeight = FontWeight.Bold, fontSize = 22.sp, modifier = Modifier.padding(top = 12.dp))
+        Text(renews, color = chrome.muted, fontSize = 15.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp, start = 16.dp, end = 16.dp))
     }
-    Column(Modifier.padding(horizontal = 16.dp)) {
     CardGroup {
-        RowLink("Change Plan", icon = Icons.Default.CardGiftcard, tint = Melt.Orange, onClick = onChangePlan)
+        RowLink(if (shows) "Change Plan" else "Get Premium", icon = Icons.Default.Star, tint = Color(0xFFF2BF33), onClick = onChangePlan)
         Hairline()
-        RowLink("Manage Subscription", if (state.premiumActive()) plan else null, icon = Icons.Default.GridView, tint = chrome.blue) {
-            val uri = android.net.Uri.parse("https://play.google.com/store/account/subscriptions?package=${context.packageName}")
+        RowLink("Manage Subscription", plan, icon = Icons.Default.Paid, tint = Color(0xFFF2BF33)) {
+            val product = state.productId
+            val uri = android.net.Uri.parse(
+                if (product.isNullOrBlank()) "https://play.google.com/store/account/subscriptions?package=${context.packageName}"
+                else "https://play.google.com/store/account/subscriptions?sku=$product&package=${context.packageName}",
+            )
             runCatching { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, uri)) }
         }
         Hairline()
-        RowLink("Restore Purchases", icon = Icons.Default.Refresh, tint = chrome.blue, onClick = repo::restore)
+        RowLink("Restore Purchases", icon = Icons.Default.Refresh, tint = Color(0xFF598CF2), onClick = repo::restore)
     }
+    if (!shows) {
+        Text(
+            "You're not subscribed. Get Premium to start a plan, or Restore Purchases if you already bought one on this Google account.",
+            color = chrome.muted,
+            fontSize = 14.sp,
+            modifier = Modifier.padding(horizontal = 4.dp),
+        )
     }
 }
 

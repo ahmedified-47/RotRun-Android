@@ -1,13 +1,21 @@
 package com.ahmed.rotrun
 
+import com.ahmed.rotrun.data.AppList
+import com.ahmed.rotrun.data.OnboardingStep
+import com.ahmed.rotrun.data.TrackedApp
 import com.ahmed.rotrun.data.freshState
+import com.ahmed.rotrun.data.stepForward
 import com.ahmed.rotrun.logic.BlockBackup
 import com.ahmed.rotrun.logic.BlockRules
+import com.ahmed.rotrun.logic.VoiceLimits
+import com.ahmed.rotrun.logic.withoutAppList
 import com.ahmed.rotrun.logic.InterventionCopy
 import com.ahmed.rotrun.logic.Marketing
 import com.ahmed.rotrun.logic.PickerSelection
 import com.ahmed.rotrun.logic.ScreenTimeSync
 import com.ahmed.rotrun.logic.ShieldPalette
+import com.ahmed.rotrun.logic.WidgetGlyph
+import com.ahmed.rotrun.logic.WidgetGlyphs
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -101,6 +109,9 @@ class BlockRulesTest {
         val again = InterventionCopy.forPackage("com.instagram.android", "Instagram")
         assertEquals(first.id, again.id)
         assertEquals(first.headline, again.headline)
+        assertEquals("brain-first", first.id)
+        assertEquals("Brain first. Instagram last.", first.headline)
+        assertEquals("stop-scrolling", InterventionCopy.forPackage("com.google.android.youtube", "YouTube").id)
         assertTrue(first.headline.contains("Instagram"))
         val other = InterventionCopy.forPackage("com.twitter.android", "X")
         assertTrue(other.headline.contains("X"))
@@ -181,6 +192,92 @@ class BlockRulesTest {
     }
 
     @Test
+    fun deletingAListClearsBrickAndDropsRulesThatUsedIt() {
+        val instagram = TrackedApp("com.instagram.android", "Instagram")
+        val state = freshState().copy(
+            appLists = listOf(
+                AppList("list.brainmelt", "RotRun Apps", listOf(instagram)),
+                AppList("list.other", "Night", listOf(TrackedApp("com.zhiliaoapp.musically", "TikTok"))),
+            ),
+            blockers = freshState().blockers.map { blocker ->
+                if (blocker.id == "brick") blocker.copy(apps = listOf(instagram)) else blocker
+            } + com.ahmed.rotrun.data.Blocker(
+                id = "custom",
+                name = "Custom",
+                mode = "allDay",
+                appListId = "list.other",
+                apps = listOf(TrackedApp("com.zhiliaoapp.musically", "TikTok")),
+            ),
+        )
+        val next = state.withoutAppList("list.brainmelt")
+        assertTrue(next.appLists.none { it.id == "list.brainmelt" })
+        assertEquals(emptyList<TrackedApp>(), next.blockers.first { it.id == "brick" }.apps)
+        assertTrue(next.blockers.none { it.id == "work" })
+        assertEquals("list.other", next.blockers.first { it.id == "custom" }.appListId)
+        assertEquals(state, state.withoutAppList("missing"))
+    }
+
+    @Test
+    fun androidBackupIdsDoNotMatchAnIosBlob() {
+        assertTrue(BlockBackup.clientId("list.brainmelt").startsWith("android:"))
+        assertFalse(BlockBackup.isAndroidOwned("""{"familyControls":true}"""))
+        assertTrue(BlockBackup.isAndroidOwned(BlockBackup.selectionData(emptyList())))
+    }
+
+    @Test
+    fun voiceStaysInsideTheProCaps() {
+        assertEquals(null, VoiceLimits.denial(4, 29))
+        assertEquals(VoiceLimits.dailyMessage, VoiceLimits.denial(5, 10))
+        assertEquals(VoiceLimits.monthlyMessage, VoiceLimits.denial(1, 30))
+        assertEquals(300.0, VoiceLimits.cappedSeconds(null), 0.0)
+        assertEquals(300.0, VoiceLimits.cappedSeconds(900.0), 0.0)
+        assertEquals(90.0, VoiceLimits.cappedSeconds(90.0), 0.0)
+    }
+
+    @Test
+    fun onboardingAsksForUsageAccess() {
+        val state = freshState().copy(onboardingStep = OnboardingStep.SelectApps.raw)
+        assertFalse(OnboardingStep.ScreenTimeDialog.skipped(state))
+        assertTrue(OnboardingStep.SeeForYourself.skipped(state))
+        assertTrue(OnboardingStep.ConnectScreenTime.skipped(state))
+        assertEquals(OnboardingStep.ScreenTimeDialog.raw, stepForward(state).onboardingStep)
+    }
+
+    @Test
+    fun askBrainChatDoesNotUncoverThatPackage() {
+        val window = BlockRules.Window(setOf("com.instagram.android", "com.whatsapp"), "allDay", allDays, 0, 24, 30)
+        assertTrue(blocked("com.instagram.android", listOf(window), tuesdayMorning, 0, chatPackage = "com.instagram.android"))
+        assertTrue(blocked("com.whatsapp", listOf(window), tuesdayMorning, 0, chatPackage = "com.instagram.android"))
+        assertTrue(blocked("com.instagram.android", listOf(window), tuesdayMorning, 0))
+        assertTrue(
+            BlockRules.isBlocked(
+                packageName = "com.instagram.android",
+                safety = emptySet(),
+                excluded = emptySet(),
+                focus = BlockRules.FocusGate(allApps = true, brainrot = emptySet()),
+                unlockUntil = 0,
+                nowMillis = 1_000,
+                now = tuesdayMorning,
+                usageSeconds = 0,
+                windows = emptyList(),
+                chatPackage = "com.instagram.android",
+            ),
+        )
+    }
+
+    @Test
+    fun widgetGlyphsFollowTheIosNameRules() {
+        assertEquals(WidgetGlyph.Instagram, WidgetGlyphs.forApp("Instagram"))
+        assertEquals(WidgetGlyph.Instagram, WidgetGlyphs.forApp("Photos", "com.instagram.android"))
+        assertEquals(WidgetGlyph.WhatsApp, WidgetGlyphs.forApp("WhatsApp"))
+        assertEquals(WidgetGlyph.Maps, WidgetGlyphs.forApp("Google Maps"))
+        assertEquals(WidgetGlyph.AppStore, WidgetGlyphs.forApp("App Store"))
+        assertEquals(WidgetGlyph.AppStore, WidgetGlyphs.forApp("Play Store", "com.android.vending"))
+        assertEquals(WidgetGlyph.Screenshots, WidgetGlyphs.forApp("Screenshots"))
+        assertEquals(WidgetGlyph.Other, WidgetGlyphs.forApp("Calendar"))
+    }
+
+    @Test
     fun dailyLimitZeroBlocksAsSoonAsTheAppIsOpened() {
         val window = BlockRules.Window(setOf("com.google.android.calendar"), "dailyLimit", allDays, 0, 24, 0)
         assertTrue(blocked("com.google.android.calendar", listOf(window), tuesdayMorning, 0))
@@ -192,6 +289,7 @@ class BlockRulesTest {
         now: ZonedDateTime,
         usageSeconds: Long,
         safety: Set<String> = emptySet(),
+        chatPackage: String? = null,
     ): Boolean = BlockRules.isBlocked(
         packageName = packageName,
         safety = safety,
@@ -202,5 +300,6 @@ class BlockRulesTest {
         now = now,
         usageSeconds = usageSeconds,
         windows = windows,
+        chatPackage = chatPackage,
     )
 }

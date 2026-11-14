@@ -14,6 +14,7 @@ enum class BrainHealthLevel(
     val goalMinutes: Int,
     val restoreMinutes: Int,
     val restoreCopy: String,
+    val xpMultiplier: Double,
 ) {
     Easy(
         "Easy",
@@ -22,6 +23,7 @@ enum class BrainHealthLevel(
         5 * 60,
         8,
         "Focus Mode restores 1 health every 8 min",
+        1.0,
     ),
     Medium(
         "Medium",
@@ -30,14 +32,16 @@ enum class BrainHealthLevel(
         3 * 60,
         6,
         "Focus Mode restores 1 health every 6 min",
+        1.25,
     ),
     Hard(
         "Hard",
         "Strict. Brain reacts quickly.",
         "1h daily goal",
-        60,
+        1 * 60,
         4,
         "Focus Mode restores 1 health every 4 min",
+        1.5,
     ),
     ;
 
@@ -93,12 +97,14 @@ object Scoring {
 
     /**
      * One Brain Health number for Home, Stats, and the widget.
+     * [todaySeconds] is total screen time, the same input as iOS
+     * `ScreenTimeFormatting.brainHealth(today:)`. The excluded-app drain is not used.
      * Missing usage access is unknown, not 0% and not 100%.
      * There is no minimum number of seconds before a real score is shown.
      */
-    fun shownHealth(authorized: Boolean, drainSeconds: Long, focusMinutes: Int, level: BrainHealthLevel): Int? {
+    fun shownHealth(authorized: Boolean, todaySeconds: Long, focusMinutes: Int, level: BrainHealthLevel): Int? {
         if (!authorized) return null
-        return displayedHealth(drainHealth(drainSeconds, level), focusMinutes, level.restoreMinutes)
+        return displayedHealth(drainHealth(todaySeconds, level), focusMinutes, level.restoreMinutes)
     }
 
     /** Streak after an open. Same calendar day keeps it. The next day adds one. A gap starts over. */
@@ -115,10 +121,108 @@ object Scoring {
         else -> "Time to unplug"
     }
 
-    fun dailyXp(screenMinutes: Int, goalMinutes: Int, askBrainCount: Int, ransomDebit: Int = 0): Int {
-        val delta = goalMinutes.coerceAtLeast(0) - screenMinutes.coerceAtLeast(0)
-        val screenXp = if (delta >= 0) delta * 10 else delta * 15
-        return (screenXp - 20 * askBrainCount.coerceAtLeast(0) - ransomDebit.coerceAtLeast(0)).coerceAtLeast(0)
+    /** Floor of seconds, the same minutes the Home card prints once it has a minute to show. */
+    fun screenMinutes(seconds: Long): Int = (seconds.coerceAtLeast(0) / 60L).toInt()
+
+    /**
+     * Minutes the Home card is actually showing. Under a minute the card says
+     * "Not in yet", and that is not scored as zero use.
+     */
+    fun scoredMinutes(seconds: Long, authorized: Boolean): Int? {
+        if (!authorized || seconds < 60L) return null
+        return screenMinutes(seconds)
+    }
+
+    /** Stored goal hours times 60. A missing goal is 4 hours. Daily XP uses [BrainHealthLevel.goalMinutes] instead. */
+    fun goalMinutes(storedHours: Int): Int = (if (storedHours > 0) storedHours else 4) * 60
+
+    /**
+     * Under the goal: (goal − used) × 10 × [multiplier], nearest int.
+     * Over the goal: (used − goal) × 15, with no multiplier.
+     * Then −20 per Ask and −100 per ransom, floored at 0.
+     */
+    fun dailyXp(
+        screenMinutes: Int,
+        goalMinutes: Int,
+        askBrainCount: Int,
+        ransomDebit: Int = 0,
+        multiplier: Double = 1.0,
+    ): Int {
+        val used = screenMinutes.coerceAtLeast(0)
+        val goal = goalMinutes.coerceAtLeast(0)
+        val screenXp = if (used <= goal) {
+            ((goal - used) * 10.0 * multiplier).roundToInt()
+        } else {
+            -((used - goal) * 15)
+        }
+        val ask = InterventionXp.ASK_XP * askBrainCount.coerceAtLeast(0)
+        return (screenXp - ask - ransomDebit.coerceAtLeast(0)).coerceAtLeast(0)
+    }
+
+    /**
+     * Last Daily XP written for one user on one local day.
+     * A later refresh uses it so missing or smaller minutes cannot replace a higher score.
+     */
+    data class DailyXpPost(
+        val day: String,
+        val xp: Int,
+        val minutes: Int,
+        val askCount: Int,
+        val ransomDebit: Int,
+        val level: String,
+        val userId: String,
+    ) {
+        fun encode(): String = listOf(day, xp, minutes, askCount, ransomDebit, level, userId).joinToString("|")
+
+        companion object {
+            fun decode(raw: String?): DailyXpPost? {
+                if (raw.isNullOrBlank()) return null
+                val parts = raw.split('|')
+                if (parts.size != 7 || parts[0].length != 10 || parts[5].isBlank()) return null
+                return DailyXpPost(
+                    day = parts[0],
+                    xp = parts[1].toIntOrNull() ?: return null,
+                    minutes = parts[2].toIntOrNull() ?: return null,
+                    askCount = parts[3].toIntOrNull() ?: return null,
+                    ransomDebit = parts[4].toIntOrNull() ?: return null,
+                    level = parts[5],
+                    userId = parts[6],
+                )
+            }
+        }
+    }
+
+    /**
+     * Score to upsert, or null when this refresh must not write.
+     * Missing minutes, or a smaller minute total than the one already stored today, are not a real drop.
+     * More minutes, a new Ask, a new ransom, or a new difficulty may lower today's score.
+     * A new local day does not keep yesterday's score.
+     */
+    fun nextDailyXp(
+        today: String,
+        minutesLoaded: Int?,
+        askCount: Int,
+        ransomDebit: Int,
+        level: BrainHealthLevel,
+        userId: String,
+        previous: DailyXpPost?,
+    ): DailyXpPost? {
+        val prior = previous?.takeIf { it.userId == userId && it.day == today }
+        val loaded = minutesLoaded?.coerceAtLeast(0)
+        val minutes = when {
+            loaded == null -> prior?.minutes
+            prior != null && loaded < prior.minutes -> prior.minutes
+            else -> loaded
+        } ?: return null
+        val candidate = dailyXp(minutes, level.goalMinutes, askCount, ransomDebit, level.xpMultiplier)
+        val post = DailyXpPost(today, candidate, minutes, askCount, ransomDebit, level.label, userId)
+        if (prior == null) return if (loaded == null) null else post
+        val usageGrew = loaded != null && loaded > prior.minutes
+        val ledgerChanged = askCount != prior.askCount || ransomDebit != prior.ransomDebit
+        val goalChanged = level.label != prior.level
+        if (candidate < prior.xp && !usageGrew && !ledgerChanged && !goalChanged) return null
+        if (candidate == prior.xp && !usageGrew && !ledgerChanged && !goalChanged) return null
+        return post
     }
 
     fun rank(score: Int): BrainRank = when (score.coerceAtLeast(0)) {
@@ -129,7 +233,7 @@ object Scoring {
     }
 
     fun formatDuration(seconds: Long): String {
-        val minutesTotal = (seconds.coerceAtLeast(0) / 60.0).roundToInt()
+        val minutesTotal = screenMinutes(seconds)
         val hours = minutesTotal / 60
         val minutes = minutesTotal % 60
         return when {

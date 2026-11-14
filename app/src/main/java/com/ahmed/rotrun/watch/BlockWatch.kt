@@ -17,17 +17,26 @@ import android.util.Log
 import android.view.View
 import android.view.WindowManager
 import androidx.core.app.NotificationCompat
-import com.ahmed.rotrun.InterventionActivity
 import com.ahmed.rotrun.R
 import com.ahmed.rotrun.data.RotRunGraph
+import com.ahmed.rotrun.logic.BlockArming
 import com.ahmed.rotrun.data.SavedState
 import com.ahmed.rotrun.data.UsageReader
-import com.ahmed.rotrun.logic.InterventionCopy
 import com.ahmed.rotrun.widget.FocusWidgetProvider
 
 object WatchController {
-    fun sync(context: Context, state: SavedState) {
-        val watching = state.focus != null || state.blockers.any { it.apps.isNotEmpty() } || state.appLists.any { it.apps.isNotEmpty() }
+    fun sync(context: Context, state: SavedState, armed: Boolean) {
+        if (armed) {
+            CoverHold.clear()
+            CoverLoose.clear()
+        }
+        val holdCover = CoverHold.packageName != null && android.provider.Settings.canDrawOverlays(context)
+        val watching = holdCover || BlockArming.shouldWatch(
+            armed,
+            state.focus != null,
+            state.blockers.any { it.apps.isNotEmpty() },
+            state.appLists.any { it.apps.isNotEmpty() },
+        )
         val intent = Intent(context, BlockWatchService::class.java)
         if (watching) {
             if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(intent) else context.startService(intent)
@@ -39,10 +48,11 @@ object WatchController {
 
 class BlockWatchService : Service() {
     private val handler = Handler(Looper.getMainLooper())
-    private val shownAt = HashMap<String, Long>()
     private var lastForeground: String? = null
     private var overlay: View? = null
     private var shownFor: String? = null
+    private var overlayShownAt = 0L
+    private var showingChat = false
     private var lastFocusWidget = 0L
     private val tick = object : Runnable {
         override fun run() {
@@ -54,6 +64,11 @@ class BlockWatchService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (RotRunGraph.ready() && !RotRunGraph.repo.armingReady() && !holdingCover()) {
+            startInForeground("Blocking is paused.")
+            stopSelf()
+            return START_NOT_STICKY
+        }
         live = this
         startInForeground("RotRun is watching the apps you chose.")
         handler.removeCallbacks(tick)
@@ -72,6 +87,10 @@ class BlockWatchService : Service() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
+        if (RotRunGraph.ready() && !RotRunGraph.repo.armingReady() && !holdingCover()) {
+            super.onTaskRemoved(rootIntent)
+            return
+        }
         val restart = Intent(applicationContext, BlockWatchService::class.java)
         runCatching {
             if (Build.VERSION.SDK_INT >= 26) applicationContext.startForegroundService(restart)
@@ -83,6 +102,7 @@ class BlockWatchService : Service() {
     private fun startInForeground(text: String = "RotRun is watching the apps you chose.") {
         val notification = buildNotification(text)
         if (Build.VERSION.SDK_INT >= 34) {
+            // Target 36 requires a declared type. specialUse is what a long-running block watcher is allowed to be.
             startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         } else {
             startForeground(NOTIFICATION_ID, notification)
@@ -92,6 +112,16 @@ class BlockWatchService : Service() {
     private fun checkForeground() {
         if (!RotRunGraph.ready()) return
         val repo = RotRunGraph.repo
+        if (GatePrompt.observe(repo.armingReady())) repo.refreshAccess()
+        if (!repo.armingReady()) {
+            if (!holdingCover()) {
+                hideOverlay()
+                stopSelf()
+                return
+            }
+            coverHeld()
+            return
+        }
         repo.maybeExpireFocus()
         val focus = repo.state.value.focus
         val watching = if (focus == null) {
@@ -107,93 +137,171 @@ class BlockWatchService : Service() {
             FocusWidgetProvider.updateAll(this)
         }
         startInForeground(watching)
-        if (BlockAccessibilityService.connected && BlockAccessibilityService.covering) {
+        if (AskLaunchPolicy.leaveOverlayUp(AskBrainLaunch.launching)) return
+        if (!AskLaunchPolicy.showShield(ShieldSession.chatPackage() != null)) {
             hideOverlay()
             return
         }
-        val packageName = UsageReader.foreground(this) ?: run {
+        if (BlockAccessibilityService.connected) {
             hideOverlay()
             return
         }
-        if (ShieldSession.blocks(packageName)) {
-            hideOverlay()
-            if (ShieldSession.openedInto(packageName) && !repo.isBlocked(packageName, repo.safetyPackages())) {
-                ShieldSession.release()
+        val reading = UsageReader.foregroundResume(this)
+        val safety = repo.safetyPackages()
+        val choice = ForegroundGate.coverChoice(
+            reported = reading?.packageName,
+            windowsFrontToBack = emptyList(),
+            usagePackage = reading?.packageName,
+            usageResumedAt = reading?.atMillis ?: 0L,
+            shownFor = shownFor,
+            shownAt = overlayShownAt,
+            ownPackage = packageName,
+            safety = safety,
+            blocked = { repo.isBlocked(it, safety) },
+            windowStateChanged = false,
+        )
+        when (choice.step) {
+            ShieldStep.Leave, ShieldStep.Keep -> return
+            ShieldStep.Hide -> {
+                hideOverlay()
+                return
             }
+            ShieldStep.Show -> Unit
+        }
+        val target = choice.packageName ?: return
+        if (ShieldSession.openedInto(target)) {
+            hideOverlay()
+            if (!repo.isBlocked(target, repo.safetyPackages())) ShieldSession.release()
             return
         }
-        val blocked = repo.isBlocked(packageName, repo.safetyPackages())
-        if (packageName != lastForeground) {
-            lastForeground = packageName
-            Log.i(ShieldOverlay.TAG, "fg=$packageName blocked=$blocked overlay=${Settings.canDrawOverlays(this)}")
+        val blocked = repo.isBlocked(target, repo.safetyPackages())
+        if (target != lastForeground) {
+            lastForeground = target
+            Log.i(ShieldOverlay.TAG, "fg=$target blocked=$blocked overlay=${Settings.canDrawOverlays(this)}")
         }
         if (!blocked) {
             hideOverlay()
             return
         }
-        val label = UsageReader.label(this, packageName)
+        val label = UsageReader.label(this, target)
         if (Settings.canDrawOverlays(this)) {
-            if (shownFor != packageName || overlay == null) {
+            val ask = repo.askIntervention.value
+            val wantChat = ask?.packageName == target
+            if (shownFor != target || overlay == null || showingChat != wantChat) {
                 hideOverlay()
-                overlay = ShieldOverlay.show(
+                overlay = ShieldOverlay.cover(
                     context = this,
                     type = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-                    packageName = packageName,
+                    packageName = target,
                     label = label,
-                    onAsk = { openAsk(packageName, label) },
+                    ask = if (wantChat) ask else null,
+                    onAsk = { openAsk(target, label) },
+                    onNah = {
+                        repo.clearAskIntervention()
+                        shownFor = null
+                        checkForeground()
+                    },
+                    onUnlock = { minutes ->
+                        if (!repo.grantUnlock(minutes)) {
+                            repo.toast("Unlock waits until Focus ends")
+                        } else {
+                            ShieldSession.markOpened(target)
+                            repo.clearAskIntervention()
+                            hideOverlay()
+                            packageManager.getLaunchIntentForPackage(target)?.let { launch ->
+                                launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                runCatching { startActivity(launch) }
+                            }
+                        }
+                    },
                 )
-                shownFor = if (overlay == null) null else packageName
+                showingChat = wantChat && overlay != null
+                shownFor = if (overlay == null) null else target
+                if (shownFor != null) overlayShownAt = System.currentTimeMillis()
             }
+        }
+        // No draw-over permission here. The accessibility service covers the blocked app.
+        // An activity would be a second RotRun card in the switcher, beside that app.
+    }
+
+    private fun holdingCover(): Boolean {
+        val held = CoverHold.packageName
+        return !held.isNullOrBlank() && Settings.canDrawOverlays(this)
+    }
+
+    private fun coverHeld() {
+        val held = CoverHold.packageName ?: return
+        if (!RotRunGraph.ready()) return
+        val repo = RotRunGraph.repo
+        startInForeground("Blocking paused: turn Accessibility back on.")
+        val reading = UsageReader.foregroundResume(this)?.packageName
+        if (reading == null || reading == packageName) {
+            hideOverlay()
             return
         }
-        if (now - (shownAt[packageName] ?: 0L) < 20_000) return
-        shownAt[packageName] = now
-        val copy = InterventionCopy.forPackage(packageName, label)
-        val open = Intent(this, InterventionActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-            putExtra(InterventionActivity.EXTRA_APP, label)
-            putExtra(InterventionActivity.EXTRA_PACKAGE, packageName)
-            putExtra(InterventionActivity.EXTRA_MODE, "shield")
+        val safety = repo.safetyPackages()
+        if (reading != held && !repo.rulesBlocked(reading, safety)) {
+            hideOverlay()
+            return
         }
-        val pending = PendingIntent.getActivity(
-            this,
-            packageName.hashCode(),
-            open,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        GatePrompt.open(this)
+        val ask = repo.askIntervention.value
+        val wantChat = ask?.packageName == reading
+        if (shownFor == reading && overlay != null && showingChat == wantChat) return
+        val label = UsageReader.label(this, reading)
+        hideOverlay()
+        overlay = ShieldOverlay.cover(
+            context = this,
+            type = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            packageName = reading,
+            label = label,
+            ask = if (wantChat) ask else null,
+            onAsk = { openAsk(reading, label) },
+            onNah = {
+                repo.clearAskIntervention()
+                shownFor = null
+                coverHeld()
+            },
+            onUnlock = { minutes ->
+                if (!repo.grantUnlock(minutes)) {
+                    repo.toast("Unlock waits until Focus ends")
+                } else {
+                    ShieldSession.markOpened(reading)
+                    repo.clearAskIntervention()
+                    CoverHold.clear()
+                    hideOverlay()
+                    packageManager.getLaunchIntentForPackage(reading)?.let { launch ->
+                        launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        runCatching { startActivity(launch) }
+                    }
+                }
+            },
         )
-        getSystemService(NotificationManager::class.java).notify(ALERT_ID, buildNotification(copy.headline, pending))
+        showingChat = wantChat && overlay != null
+        shownFor = if (overlay == null) null else reading
+        if (shownFor != null) overlayShownAt = System.currentTimeMillis()
     }
 
     private fun openAsk(packageName: String, label: String) {
-        ShieldSession.hold(packageName)
-        hideOverlay()
-        BlockAccessibilityService.dismiss()
-        if (!RotRunGraph.ready()) {
-            ShieldSession.release()
-            return
-        }
-        val mode = RotRunGraph.repo.pickStyle() ?: "standard"
-        val open = Intent(this, InterventionActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-            putExtra(InterventionActivity.EXTRA_APP, label)
-            putExtra(InterventionActivity.EXTRA_PACKAGE, packageName)
-            putExtra(InterventionActivity.EXTRA_MODE, mode)
-        }
-        val started = runCatching { startActivity(open) }.isSuccess
-        if (!started) ShieldSession.release()
+        if (!RotRunGraph.ready()) return
+        RotRunGraph.repo.requestAskIntervention(packageName, label)
+        shownFor = null
+        checkForeground()
     }
 
     private fun hideOverlay() {
         ShieldOverlay.hide(this, overlay)
         overlay = null
         shownFor = null
+        overlayShownAt = 0L
+        showingChat = false
     }
 
     private fun buildNotification(text: String, tap: PendingIntent? = null): Notification {
         ensureChannel()
         return NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_rot)
-            .setContentTitle("Your Brain")
+            .setContentTitle("RotRun")
             .setContentText(text)
             .setContentIntent(tap)
             .setOngoing(tap == null)
@@ -211,7 +319,6 @@ class BlockWatchService : Service() {
     companion object {
         private const val CHANNEL = "rotrun.watch"
         private const val NOTIFICATION_ID = 42
-        private const val ALERT_ID = 43
 
         @Volatile
         private var live: BlockWatchService? = null

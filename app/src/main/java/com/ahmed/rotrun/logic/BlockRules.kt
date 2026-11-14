@@ -42,7 +42,9 @@ object BlockRules {
         now: ZonedDateTime,
         usageSeconds: Long,
         windows: List<Window>,
+        @Suppress("UNUSED_PARAMETER") chatPackage: String? = null,
     ): Boolean {
+        // A chat hold used to uncover the blocked app. Recents and home then opened it with no shield.
         if (packageName in safety || packageName in excluded) return false
         if (focus != null) return if (focus.allApps) true else packageName in focus.brainrot
         if (nowMillis < unlockUntil) return false

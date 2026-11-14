@@ -4,9 +4,13 @@ import android.app.Activity
 import android.content.Context
 import com.ahmed.rotrun.billing.PlayBilling
 import com.ahmed.rotrun.icon.LauncherIcons
+import com.ahmed.rotrun.logic.BrainHealthLevel
 import com.ahmed.rotrun.logic.BlockRules
+import com.ahmed.rotrun.logic.InterventionXp
+import com.ahmed.rotrun.logic.withoutAppList
 import com.ahmed.rotrun.logic.PaywallGate
 import com.ahmed.rotrun.logic.Products
+import com.ahmed.rotrun.logic.PurchaseSignIn
 import com.ahmed.rotrun.logic.Scoring
 import com.ahmed.rotrun.watch.BlockScheduler
 import com.ahmed.rotrun.watch.WatchController
@@ -24,6 +28,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -36,6 +41,7 @@ sealed interface UiPulse {
     data object ShowAudioSlap : UiPulse
     data object OpenPaywall : UiPulse
     data object OpenChat : UiPulse
+    data object ClosePaywall : UiPulse
 }
 
 class RotRunRepository(context: Context) {
@@ -52,6 +58,8 @@ class RotRunRepository(context: Context) {
 
     private val _toast = MutableStateFlow<String?>(null)
     val toast: StateFlow<String?> = _toast.asStateFlow()
+    private val _purchaseError = MutableStateFlow<String?>(null)
+    val purchaseError: StateFlow<String?> = _purchaseError.asStateFlow()
 
     private val _refreshing = MutableStateFlow(false)
     val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
@@ -65,12 +73,30 @@ class RotRunRepository(context: Context) {
     private val _batteryAsk = MutableStateFlow(false)
     val batteryAsk: StateFlow<Boolean> = _batteryAsk.asStateFlow()
 
+    private val _accessGate = MutableStateFlow(false)
+    val accessGate: StateFlow<Boolean> = _accessGate.asStateFlow()
+
     private val _pulses = MutableSharedFlow<UiPulse>(extraBufferCapacity = 8)
     val pulses: SharedFlow<UiPulse> = _pulses.asSharedFlow()
     private var host: WeakReference<Activity>? = null
     val backend = Backend(app, this)
-    private val billing = PlayBilling(app, ::applyEntitlement, ::toast)
+    private val billing = PlayBilling(
+        app,
+        accountId = { backend.userId },
+        onEntitlement = ::applyEntitlement,
+        storedGrant = { _state.value.productId to _state.value.purchaseToken },
+        onMessage = ::note,
+        onPurchased = { _pulses.tryEmit(UiPulse.ClosePaywall) },
+        sync = { purchases -> backend.syncPlayPurchases(purchases) },
+    )
+
+    init {
+        backend.bindPlaySync { billing.uploadOwned() }
+        backend.onSignedIn = { billing.start() }
+        refreshAccess()
+    }
     private val launchFinished = AtomicBoolean(false)
+    private var usageGeneration = 0
 
     fun attach(activity: Activity) {
         host = WeakReference(activity)
@@ -88,6 +114,11 @@ class RotRunRepository(context: Context) {
         _toast.value = message
     }
 
+    private fun note(message: String) {
+        _purchaseError.value = message
+        toast(message)
+    }
+
     fun onLaunch() {
         update { current ->
             var next = rollDay(current)
@@ -96,10 +127,15 @@ class RotRunRepository(context: Context) {
             next
         }
         val state = _state.value
-        val watching = state.focus != null || state.blockers.any { it.apps.isNotEmpty() } || state.appLists.any { it.apps.isNotEmpty() }
+        val startWatcher = com.ahmed.rotrun.logic.BlockArming.shouldWatch(
+            armingReady(),
+            state.focus != null,
+            state.blockers.any { it.apps.isNotEmpty() },
+            state.appLists.any { it.apps.isNotEmpty() },
+        )
         // When the watcher starts, it calls finishLaunch after startForeground.
         // Doing that work here first blows the foreground-service deadline.
-        if (!watching) finishLaunch()
+        if (!startWatcher) finishLaunch()
     }
 
     fun finishLaunch() {
@@ -122,7 +158,7 @@ class RotRunRepository(context: Context) {
         refreshUsage()
         loadInstalled()
         billing.start()
-        com.ahmed.rotrun.watch.UpgradeReminders.sync(app, _state.value)
+        com.ahmed.rotrun.watch.UpgradeReminders.sync(app, _state.value, backend.userId)
         com.ahmed.rotrun.watch.RotNudges.consider(app, this)
     }
 
@@ -132,6 +168,19 @@ class RotRunRepository(context: Context) {
 
     fun refreshAccess() {
         _access.value = DeviceAccessReader.read(app)
+        val ready = armingReady()
+        com.ahmed.rotrun.watch.GatePrompt.latch(ready)
+        if (ready) {
+            _accessGate.value = false
+            com.ahmed.rotrun.watch.GatePrompt.reset()
+            com.ahmed.rotrun.watch.CoverHold.clear()
+            com.ahmed.rotrun.watch.CoverLoose.clear()
+        }
+        com.ahmed.rotrun.watch.WatchController.sync(app, _state.value, armingReady())
+    }
+
+    fun requestAccessGate() {
+        _accessGate.value = true
     }
 
     fun dismissBatteryAsk() {
@@ -141,21 +190,68 @@ class RotRunRepository(context: Context) {
 
     fun refreshUsage() {
         rollOpenDay()
+        val generation = ++usageGeneration
+        val previous = _usage.value
+        val saved = _state.value
         _refreshing.value = true
         scope.launch {
-            val snapshot = withContext(Dispatchers.Default) { UsageReader.read(app, _state.value) }
-            _usage.value = snapshot
+            val snapshot = try {
+                withContext(Dispatchers.Default) { UsageReader.read(app, saved) }
+            } catch (cancelled: CancellationException) {
+                if (generation == usageGeneration) _refreshing.value = false
+                throw cancelled
+            } catch (_: Exception) {
+                previous
+            }
+            if (generation != usageGeneration) return@launch
+            val shown = mergeHomeUsage(previous, snapshot)
+            _usage.value = shown
             publishWidget()
             _refreshing.value = false
             withContext(Dispatchers.IO) {
-                backend.syncScreenTime(snapshot)
+                backend.syncScreenTime(shown)
                 backend.syncStreak(_state.value)
-                if (snapshot.authorized) {
-                    val xp = Scoring.dailyXp((snapshot.todaySeconds / 60).toInt(), _state.value.goalHours * 60, _state.value.askBrainCount, _state.value.ransomDebit)
-                    backend.syncXp(xp, "You")
-                }
+                publishDailyXp()
             }
         }
+    }
+
+    /**
+     * Upsert today's score from the chosen Easy, Medium, or Hard goal.
+     * A refresh with no new minutes does not replace a higher same-day score.
+     */
+    fun syncDailyXp() {
+        val state = _state.value
+        val level = BrainHealthLevel.fromLabel(state.brainHealth)
+        val post = Scoring.nextDailyXp(
+            today = Scoring.dayKey(),
+            minutesLoaded = Scoring.scoredMinutes(_usage.value.todaySeconds, _usage.value.authorized),
+            askCount = state.askBrainCount,
+            ransomDebit = state.ransomDebit,
+            level = level,
+            userId = backend.userId.orEmpty(),
+            previous = backend.storedDailyXp(),
+        ) ?: return
+        if (backend.publishXp(post.xp, hasReading = true)) backend.rememberDailyXp(post)
+    }
+
+    fun publishDailyXp() {
+        scope.launch(Dispatchers.IO) {
+            syncDailyXp()
+            backend.refreshFriendCameo(shownDailyXp())
+        }
+    }
+
+    /** Today's score for the friend cameo cache. A day with no minutes yet is 0, not a perfect score. */
+    fun shownDailyXp(): Int {
+        val state = _state.value
+        val level = BrainHealthLevel.fromLabel(state.brainHealth)
+        val minutes = Scoring.scoredMinutes(_usage.value.todaySeconds, _usage.value.authorized)
+        if (minutes != null) {
+            return Scoring.dailyXp(minutes, level.goalMinutes, state.askBrainCount, state.ransomDebit, level.xpMultiplier)
+        }
+        val stored = backend.storedDailyXp()
+        return if (stored?.day == Scoring.dayKey() && stored.userId == backend.userId) stored.xp else 0
     }
 
     fun loadInstalled() {
@@ -165,17 +261,17 @@ class RotRunRepository(context: Context) {
         }
     }
 
-    fun update(block: (SavedState) -> SavedState) {
+    fun update(commit: Boolean = false, block: (SavedState) -> SavedState) {
         val previous: SavedState
         val next: SavedState
         synchronized(lock) {
             previous = _state.value
             next = block(previous)
             _state.value = next
-            persist(next)
+            persist(next, commit)
         }
         publishWidget()
-        WatchController.sync(app, next)
+        WatchController.sync(app, next, armingReady())
         if (previous.appIcon != next.appIcon) LauncherIcons.apply(app, next.appIcon)
         if (previous.blockers != next.blockers || previous.appLists != next.appLists) {
             considerBatteryPrompt(next)
@@ -188,22 +284,35 @@ class RotRunRepository(context: Context) {
 
     fun applyRemoteBlocks(lists: List<AppList>, blockers: List<Blocker>) {
         if (lists.isEmpty() && blockers.isEmpty()) return
+        var trimmed = false
         update { current ->
+            val mergedLists = lists.ifEmpty { current.appLists }
+            val mergedBlockers = blockers.ifEmpty { current.blockers }
+            val ordered = mergedBlockers.flatMap { it.packageOrder() } + mergedLists.flatMap { list -> list.apps.map { it.packageName } }
+            val (kept, cut) = com.ahmed.rotrun.logic.BillingQuotes.keepingFirst(
+                emptyList(),
+                ordered,
+                current.proFor(backend.userId),
+                PaywallGate.shows,
+            )
+            trimmed = cut
+            val allow = kept.toSet()
             current.copy(
-                appLists = lists.ifEmpty { current.appLists },
-                blockers = blockers.ifEmpty { current.blockers },
+                appLists = mergedLists.map { list -> list.copy(apps = list.apps.filter { it.packageName in allow }) },
+                blockers = mergedBlockers.map { blocker -> blocker.copy(apps = blocker.apps.filter { it.packageName in allow }) },
             )
         }
+        if (trimmed) requestPaywall()
     }
 
-    fun advance() = update { stepForward(it) }
+    fun advance() = update { stepForward(it, backend.userId) }
 
-    fun back() = update { stepBack(it) }
+    fun back() = update { stepBack(it, backend.userId) }
 
     fun declineAccess() = update { current ->
-        val offerMissing = OnboardingStep.OneTimeOffer.skipped(current.copy(yearly70Dismissed = false, premium = false))
+        val offerMissing = OnboardingStep.OneTimeOffer.skipped(current.copy(yearly70Dismissed = false, premium = false), backend.userId)
         if (current.yearly70Dismissed || offerMissing) {
-            stepForward(current.copy(declinedGetAccess = true, onboardingStep = OnboardingStep.OneTimeOffer.raw))
+            stepForward(current.copy(declinedGetAccess = true, onboardingStep = OnboardingStep.OneTimeOffer.raw), backend.userId)
         } else {
             current.copy(declinedGetAccess = true, onboardingStep = OnboardingStep.OneTimeOffer.raw)
         }
@@ -211,7 +320,7 @@ class RotRunRepository(context: Context) {
 
     fun leaveOffer() = update { current ->
         val marked = current.copy(yearly70Dismissed = true, skippedOneTimeOffer = true, declinedGetAccess = true)
-        stepForward(marked.copy(onboardingStep = OnboardingStep.OneTimeOffer.raw))
+        stepForward(marked.copy(onboardingStep = OnboardingStep.OneTimeOffer.raw), backend.userId)
     }
 
     fun dismissYearly70() = update { it.copy(yearly70Dismissed = true, skippedOneTimeOffer = true) }
@@ -219,57 +328,130 @@ class RotRunRepository(context: Context) {
     fun purchase(productId: String) {
         val activity = host?.get()
         if (activity == null) {
-            toast("Open RotRun and try that purchase again.")
+            note("Open RotRun and try that purchase again.")
             return
         }
-        billing.buy(activity, productId)
-    }
-
-    fun restore() = billing.restore()
-
-    private fun applyEntitlement(productId: String?, lifetime: Boolean, active: Boolean) {
-        update { current ->
-            if (!active) {
-                current.copy(premium = false, lifetime = false, productId = null, premiumUntil = 0L)
-            } else {
-                val next = current.copy(
-                    premium = true,
-                    lifetime = lifetime,
-                    productId = productId,
-                    premiumUntil = if (lifetime) Long.MAX_VALUE / 4 else System.currentTimeMillis() + 400L * 24 * 60 * 60 * 1000,
-                )
-                if (!next.onboardingCompleted && OnboardingStep.fromRaw(next.onboardingStep).let {
-                        it == OnboardingStep.GetAccess || it == OnboardingStep.OneTimeOffer || it == OnboardingStep.PurchaseComplete
-                    }
-                ) {
-                    stepForward(next.copy(onboardingStep = OnboardingStep.PurchaseComplete.raw - 1))
-                } else {
-                    next
+        _purchaseError.value = null
+        when (PurchaseSignIn.beforeBilling(backend.userId)) {
+            PurchaseSignIn.Next.LaunchBilling -> billing.buy(activity, productId)
+            PurchaseSignIn.Next.StartSignIn -> backend.signIn(activity) { error ->
+                when (PurchaseSignIn.afterSignIn(backend.userId, error)) {
+                    PurchaseSignIn.Next.LaunchBilling -> billing.buy(activity, productId)
+                    else -> note(error?.takeIf { it.isNotBlank() } ?: "Google sign-in didn’t finish.")
                 }
             }
+            PurchaseSignIn.Next.StayOnPaywall -> note("Google sign-in didn’t finish.")
         }
-        if (active) toast("RotRun Premium is on.")
+    }
+
+    fun restore() {
+        val activity = host?.get()
+        if (!com.ahmed.rotrun.logic.BillingQuotes.acceptDevicePurchase(backend.userId)) {
+            if (activity == null) {
+                note(com.ahmed.rotrun.logic.BillingQuotes.SIGN_IN_MESSAGE)
+                return
+            }
+            backend.signIn(activity) { error ->
+                if (!com.ahmed.rotrun.logic.BillingQuotes.acceptDevicePurchase(backend.userId)) {
+                    note(error?.takeIf { it.isNotBlank() } ?: com.ahmed.rotrun.logic.BillingQuotes.SIGN_IN_MESSAGE)
+                } else {
+                    billing.restore()
+                }
+            }
+            return
+        }
+        billing.restore()
+    }
+
+    fun refreshBilling() = billing.start()
+
+    private fun applyEntitlement(
+        productId: String?,
+        lifetime: Boolean,
+        active: Boolean,
+        expiresAtMillis: Long?,
+        purchaseToken: String?,
+        playReportedGone: Boolean,
+    ) {
+        if (!com.ahmed.rotrun.logic.BillingQuotes.acceptDevicePurchase(backend.userId)) return
+        update(commit = true) { current ->
+            val grant = com.ahmed.rotrun.logic.BillingQuotes.grantAfterQuery(
+                storedPremium = current.premium,
+                storedProductId = current.productId,
+                storedToken = current.purchaseToken,
+                storedLifetime = current.lifetime,
+                storedUntil = current.premiumUntil,
+                playActive = active,
+                playReportedGone = playReportedGone,
+                playProductId = productId,
+                playToken = purchaseToken,
+                playLifetime = lifetime,
+                serverExpiresAt = expiresAtMillis,
+                now = System.currentTimeMillis(),
+            )
+            val playConfirmed = active && !productId.isNullOrBlank()
+            val owner = com.ahmed.rotrun.logic.BillingQuotes.grantOwner(
+                signedInUserId = backend.userId,
+                storedGrantUserId = current.grantUserId,
+                grantPremium = grant.premium,
+                playConfirmed = playConfirmed,
+                playReportedGone = playReportedGone,
+            )
+            val next = current.copy(
+                premium = grant.premium,
+                lifetime = grant.lifetime,
+                productId = grant.productId,
+                premiumUntil = grant.premiumUntil,
+                purchaseToken = grant.token,
+                grantUserId = owner,
+            )
+            if (grant.premium && !next.onboardingCompleted && OnboardingStep.fromRaw(next.onboardingStep).let {
+                    it == OnboardingStep.GetAccess || it == OnboardingStep.OneTimeOffer || it == OnboardingStep.PurchaseComplete
+                }
+            ) {
+                stepForward(next.copy(onboardingStep = OnboardingStep.PurchaseComplete.raw - 1), backend.userId)
+            } else {
+                next
+            }
+        }
     }
 
     fun saveBlocker(blocker: Blocker): Boolean {
-        val proposed = blocker.packageOrder().toSet()
-        if (overFreeCap(proposed, exceptBlocker = blocker.id, exceptList = if (blocker.id == "brick") blocker.appListId else null)) {
-            toast(BlockRules.FREE_LIMIT_MESSAGE)
-            requestPaywall()
+        if (!armingReady()) {
+            toast("Turn on every block permission first")
             return false
         }
-        update { current ->
-            val without = current.blockers.filterNot { it.id == blocker.id }
-            val lists = if (blocker.id == "brick") {
-                current.appLists.map { list ->
-                    if (list.id == blocker.appListId) list.copy(apps = blocker.apps) else list
+        val current = _state.value
+        val previous = current.blockers.firstOrNull { it.id == blocker.id }?.packageOrder().orEmpty()
+        val (kept, trimmed) = com.ahmed.rotrun.logic.BillingQuotes.keepingFirst(
+            previous,
+            blocker.packageOrder(),
+            current.proFor(backend.userId),
+            PaywallGate.shows,
+        )
+        val allow = kept.toSet()
+        val nextBlocker = blocker.copy(
+            apps = blocker.apps.filter { it.packageName in allow },
+            modeApps = blocker.modeApps.mapValues { (_, apps) -> apps.filter { it.packageName in allow } },
+        )
+        update { saved ->
+            val without = saved.blockers.filterNot { it.id == nextBlocker.id }
+            val lists = if (nextBlocker.id == "brick") {
+                saved.appLists.map { list ->
+                    if (list.id == nextBlocker.appListId) list.copy(apps = nextBlocker.apps) else list
                 }
             } else {
-                current.appLists
+                saved.appLists
             }
-            current.copy(blockers = listOf(blocker) + without, appLists = lists)
+            saved.copy(blockers = listOf(nextBlocker) + without, appLists = lists)
         }
-        toast("Saved ${blocker.name}")
+        if (trimmed) {
+            toast(BlockRules.FREE_LIMIT_MESSAGE)
+            requestPaywall()
+        } else {
+            toast("Saved ${blocker.name}")
+        }
+        com.ahmed.rotrun.watch.BlockScheduler.scheduleNext(app, _state.value)
         return true
     }
 
@@ -281,26 +463,68 @@ class RotRunRepository(context: Context) {
         toast("Deleted $name")
     }
 
-    fun saveList(list: AppList): Boolean {
-        if (overFreeCap(list.apps.map { it.packageName }.toSet(), exceptList = list.id)) {
+    fun saveRotRunApps(apps: List<TrackedApp>) {
+        val current = _state.value
+        val previous = current.appLists.firstOrNull { it.id == "list.brainmelt" }?.apps?.map { it.packageName }.orEmpty()
+        val (kept, trimmed) = com.ahmed.rotrun.logic.BillingQuotes.keepingFirst(
+            previous,
+            apps.map { it.packageName },
+            current.proFor(backend.userId),
+            PaywallGate.shows,
+        )
+        val allow = kept.toSet()
+        val chosen = apps.filter { it.packageName in allow }
+        update { saved ->
+            val lists = saved.appLists.ifEmpty { listOf(AppList("list.brainmelt", "RotRun Apps")) }.map { list ->
+                if (list.id == "list.brainmelt") list.copy(apps = chosen) else list
+            }
+            saved.copy(appLists = lists, blockers = saved.blockers.map { if (it.id == "brick") it.copy(apps = chosen) else it })
+        }
+        if (trimmed) {
             toast(BlockRules.FREE_LIMIT_MESSAGE)
             requestPaywall()
-            return false
         }
-        update { current ->
-            val lists = current.appLists.toMutableList()
-            val index = lists.indexOfFirst { it.id == list.id }
-            if (index >= 0) lists[index] = list else lists.add(list)
-            val blockers = current.blockers.map { blocker ->
-                if (blocker.appListId == list.id && blocker.id == "brick") blocker.copy(apps = list.apps) else blocker
+    }
+
+    fun saveList(list: AppList): Boolean {
+        val current = _state.value
+        val previous = current.appLists.firstOrNull { it.id == list.id }?.apps?.map { it.packageName }.orEmpty()
+        val (kept, trimmed) = com.ahmed.rotrun.logic.BillingQuotes.keepingFirst(
+            previous,
+            list.apps.map { it.packageName },
+            current.proFor(backend.userId),
+            PaywallGate.shows,
+        )
+        val chosen = list.copy(apps = list.apps.filter { it.packageName in kept.toSet() })
+        update { saved ->
+            val lists = saved.appLists.toMutableList()
+            val index = lists.indexOfFirst { it.id == chosen.id }
+            if (index >= 0) lists[index] = chosen else lists.add(chosen)
+            val blockers = saved.blockers.map { blocker ->
+                if (blocker.appListId == chosen.id && blocker.id == "brick") blocker.copy(apps = chosen.apps) else blocker
             }
-            current.copy(appLists = lists, blockers = blockers)
+            saved.copy(appLists = lists, blockers = blockers)
         }
-        toast("Saved ${list.name}")
+        if (trimmed) {
+            toast(BlockRules.FREE_LIMIT_MESSAGE)
+            requestPaywall()
+        } else {
+            toast("Saved ${list.name}")
+        }
         return true
     }
 
+    fun deleteList(id: String) {
+        val name = _state.value.appLists.firstOrNull { it.id == id }?.name ?: return
+        update { it.withoutAppList(id) }
+        toast("Deleted $name")
+    }
+
     fun startFocus(targetMinutes: Int?, legendary: Boolean, scopeName: String) {
+        if (!armingReady()) {
+            toast("Turn on every block permission first")
+            return
+        }
         val session = FocusSession(
             startedAt = System.currentTimeMillis(),
             targetMinutes = if (legendary) null else targetMinutes,
@@ -309,7 +533,7 @@ class RotRunRepository(context: Context) {
         )
         update { it.copy(focus = session) }
         val target = if (legendary || targetMinutes == null) "As long as you can!" else "${targetMinutes}m"
-        val apps = if (scopeName == "brainrot") "Brainrot Apps" else "All Apps"
+        val apps = if (scopeName == "brainrot") "RotRun Apps" else "All Apps"
         val legend = if (legendary) " · Legendary" else ""
         toast("Focus started · $target · $apps$legend")
     }
@@ -326,26 +550,33 @@ class RotRunRepository(context: Context) {
 
     fun chargeAskBrain(token: Long) {
         var charged = false
-        update { current ->
-            if (token == current.lastAskToken) current
-            else {
-                charged = true
-                current.copy(askBrainCount = current.askBrainCount + 1, lastAskToken = token)
-            }
+        update(commit = true) { current ->
+            val ledger = InterventionXp.presentAsk(current.dayLedger(), token, Scoring.dayKey())
+            charged = ledger.askBrainCount > (if (current.xpDay == ledger.xpDay) current.askBrainCount else 0)
+            current.withLedger(ledger)
         }
-        if (charged) toast("−20 XP · caught rotting")
+        if (charged) {
+            toast("−${InterventionXp.ASK_XP} XP · caught rotting")
+            publishDailyXp()
+        }
     }
 
     fun grantUnlock(minutes: Int): Boolean {
         if (_state.value.focus != null) return false
         val until = System.currentTimeMillis() + minutes * 60_000L
-        update { it.copy(unlockUntil = until) }
+        update(commit = true) { current ->
+            current.withLedger(InterventionXp.unlock(current.dayLedger(), minutes)).copy(unlockUntil = until)
+        }
+        com.ahmed.rotrun.watch.BlockScheduler.scheduleNext(app, _state.value)
         return true
     }
 
     fun payRansom() {
-        update { it.copy(ransomDebit = it.ransomDebit + 100) }
-        toast("−100 XP · ransom paid")
+        update(commit = true) { current ->
+            current.withLedger(InterventionXp.payRansom(current.dayLedger(), Scoring.dayKey()))
+        }
+        toast("−${InterventionXp.RANSOM_XP} XP · ransom paid")
+        publishDailyXp()
     }
 
     fun noteBailout(from: String) {
@@ -385,6 +616,44 @@ class RotRunRepository(context: Context) {
         _pulses.tryEmit(UiPulse.OpenFocusChooser)
     }
 
+    @Volatile
+    private var chatPending = false
+
+    /** Talk sheet. Buffered so a launch that arrives before the shell collects still opens chat. */
+    fun requestChat() {
+        chatPending = true
+        _pulses.tryEmit(UiPulse.OpenChat)
+    }
+
+    private val _askIntervention = MutableStateFlow<AskIntervention?>(null)
+    val askIntervention: StateFlow<AskIntervention?> = _askIntervention.asStateFlow()
+
+    /** One enabled intervention style, shown until the user leaves it. A second call does not roll again. */
+    fun requestAskIntervention(packageName: String, label: String, forcedMode: String? = null) {
+        if (packageName.isBlank()) return
+        if (AskInterventionPlan.alreadyShowing(_askIntervention.value)) return
+        val mode = forcedMode?.takeIf { it.isNotBlank() } ?: AskInterventionPlan.mode(pickStyle())
+        _askIntervention.value = AskIntervention(
+            packageName = packageName,
+            label = label.ifBlank { "this app" },
+            mode = mode,
+        )
+        chargeAskBrain(System.currentTimeMillis())
+    }
+
+    fun clearAskIntervention() {
+        _askIntervention.value = null
+        if (_state.value.askOpen) {
+            update(commit = true) { current -> current.withLedger(InterventionXp.dismiss(current.dayLedger())) }
+        }
+    }
+
+    fun takeChatRequest(): Boolean {
+        if (!chatPending) return false
+        chatPending = false
+        return true
+    }
+
     fun pickStyle(): String? {
         val current = _state.value
         val styles = buildList {
@@ -392,19 +661,23 @@ class RotRunRepository(context: Context) {
             if (current.mirrorMode) add("mirror")
             if (current.quickCheck) add("quick")
             if (current.breathingExercise) add("breathing")
-            if (current.friendCameo && current.cameoToday()) add("cameo")
+            if (current.friendCameo) add("cameo")
         }
         return styles.randomOrNull()
     }
 
-    fun isBlocked(packageName: String, safety: Set<String>): Boolean {
+    fun isBlocked(packageName: String, safety: Set<String>): Boolean =
+        com.ahmed.rotrun.logic.BlockArming.enforced(armingReady(), rulesBlocked(packageName, safety))
+
+    /** Schedule and limit rules, ignoring whether the grants are armed. */
+    fun rulesBlocked(packageName: String, safety: Set<String>): Boolean {
         val current = _state.value
         val excluded = current.excluded.map { it.packageName }.toSet()
         val ordered = buildList {
             current.blockers.forEach { addAll(it.packageOrder()) }
             current.appLists.forEach { list -> addAll(list.apps.map { it.packageName }) }
         }
-        val allowed = BlockRules.freeAllowed(ordered, current.premiumActive(), PaywallGate.shows)
+        val allowed = BlockRules.freeAllowed(ordered, current.proFor(backend.userId), PaywallGate.shows)
         val windows = current.blockers.map { blocker ->
             val active = blocker.apps.ifEmpty {
                 current.appLists.firstOrNull { it.id == blocker.appListId }?.apps.orEmpty()
@@ -437,6 +710,7 @@ class RotRunRepository(context: Context) {
             now = ZonedDateTime.now(),
             usageSeconds = seconds,
             windows = windows,
+            chatPackage = com.ahmed.rotrun.watch.ShieldSession.chatPackage(),
         )
     }
 
@@ -453,7 +727,7 @@ class RotRunRepository(context: Context) {
                 addAll(list.apps.map { it.packageName })
             }
         }
-        return BlockRules.overFreeCap(existing, proposed, excluded, current.premiumActive(), PaywallGate.shows)
+        return BlockRules.overFreeCap(existing, proposed, excluded, current.proFor(backend.userId), PaywallGate.shows)
     }
 
     private fun considerBatteryPrompt(state: SavedState) {
@@ -464,6 +738,24 @@ class RotRunRepository(context: Context) {
         if (DeviceAccessReader.read(app).batteryUnrestricted) return
         _batteryAsk.value = true
     }
+
+    fun armingSteps(): List<com.ahmed.rotrun.logic.BlockArming.Step> {
+        val access = DeviceAccessReader.read(app)
+        val alarm = app.getSystemService(android.app.AlarmManager::class.java)
+        val exact = android.os.Build.VERSION.SDK_INT < 31 || alarm.canScheduleExactAlarms()
+        return com.ahmed.rotrun.logic.BlockArming.steps(
+            usage = access.usage,
+            accessibilityEnabled = access.accessibility,
+            accessibilityBound = com.ahmed.rotrun.watch.BlockAccessibilityService.connected,
+            overlay = access.overlay,
+            notificationsGranted = access.notifications,
+            needsNotifications = android.os.Build.VERSION.SDK_INT >= 33,
+            batteryUnrestricted = access.batteryUnrestricted,
+            exactAlarms = exact,
+        )
+    }
+
+    fun armingReady(): Boolean = com.ahmed.rotrun.logic.BlockArming.canArm(armingSteps())
 
     fun safetyPackages(): Set<String> = UsageReader.safetyPackages(app)
 
@@ -487,18 +779,33 @@ class RotRunRepository(context: Context) {
         }
         if (changed) {
             publishWidget()
-            WatchController.sync(app, _state.value)
+            WatchController.sync(app, _state.value, armingReady())
         }
     }
+
+    private fun SavedState.dayLedger() = InterventionXp.DayLedger(
+        xpDay = xpDay,
+        askBrainCount = askBrainCount,
+        ransomDebit = ransomDebit,
+        askOpen = askOpen,
+        lastAskToken = lastAskToken,
+    )
+
+    private fun SavedState.withLedger(ledger: InterventionXp.DayLedger) = copy(
+        xpDay = ledger.xpDay,
+        askBrainCount = ledger.askBrainCount,
+        ransomDebit = ledger.ransomDebit,
+        askOpen = ledger.askOpen,
+        lastAskToken = ledger.lastAskToken,
+    )
 
     private fun rollDay(current: SavedState): SavedState {
         val today = Scoring.dayKey()
         val yesterday = Scoring.dayKey(LocalDate.now().minusDays(1))
         val streak = Scoring.nextOpenStreak(current.lastOpenDay, current.streak, today, yesterday)
         var next = current.copy(streak = streak, longestStreak = maxOf(current.longestStreak, streak), lastOpenDay = today)
-        if (next.xpDay != today) {
-            next = next.copy(xpDay = today, askBrainCount = 0, ransomDebit = 0)
-        }
+        val ledger = InterventionXp.roll(next.dayLedger(), today)
+        next = next.withLedger(ledger)
         return next
     }
 
@@ -507,6 +814,12 @@ class RotRunRepository(context: Context) {
         if (themeStreak(next.theme) > next.streak) next = next.copy(theme = "Grassy")
         if (iconStreak(next.appIcon) > next.streak) next = next.copy(appIcon = "Default")
         return next
+    }
+
+    /** Same re-check RootView runs when Rewards or App Icon opens. */
+    fun recheckRewards() {
+        val next = clampRewards(_state.value)
+        if (next != _state.value) update { next }
     }
 
     private fun expireFocus(current: SavedState, force: Boolean = false): SavedState {
@@ -526,15 +839,15 @@ class RotRunRepository(context: Context) {
     private fun publishWidget() {
         val current = _state.value
         val level = com.ahmed.rotrun.logic.BrainHealthLevel.fromLabel(current.brainHealth)
-        val health = Scoring.shownHealth(_usage.value.authorized, _usage.value.drainSeconds, current.focusMinutesToday(), level)
+        val health = Scoring.shownHealth(_usage.value.authorized, _usage.value.todaySeconds, current.focusMinutesToday(), level)
         val known = health != null
         val shown = health ?: 0
         val offenders = if (!known) {
             "Connect usage"
         } else {
-            _usage.value.offenders.filter { it.seconds >= 60 }.take(3)
-                .joinToString("\n") { "${it.label}  ${Scoring.formatDuration(it.seconds)}" }
-                .ifBlank { "No apps yet" }
+            _usage.value.offenders.filter { it.seconds > 0 }.take(5)
+                .joinToString("\n") { "${it.label}\t${it.seconds}\t${it.packageName}" }
+                .ifBlank { "" }
         }
         val focus = current.focus
         prefs.edit()
@@ -556,8 +869,9 @@ class RotRunRepository(context: Context) {
         return runCatching { decode(JSONObject(raw)) }.getOrElse { freshState() }
     }
 
-    private fun persist(state: SavedState) {
-        prefs.edit().putString("state", encode(state).toString()).apply()
+    private fun persist(state: SavedState, commit: Boolean = false) {
+        val editor = prefs.edit().putString("state", encode(state).toString())
+        if (commit) editor.commit() else editor.apply()
     }
 
     private fun encode(state: SavedState): JSONObject = JSONObject().apply {
@@ -568,6 +882,8 @@ class RotRunRepository(context: Context) {
         put("productId", state.productId ?: "")
         put("premiumUntil", state.premiumUntil)
         put("lifetime", state.lifetime)
+        put("purchaseToken", state.purchaseToken)
+        put("grantUserId", state.grantUserId)
         put("introUsed", state.introUsed)
         put("declinedGetAccess", state.declinedGetAccess)
         put("skippedOneTimeOffer", state.skippedOneTimeOffer)
@@ -598,6 +914,7 @@ class RotRunRepository(context: Context) {
         put("lastOpenDay", state.lastOpenDay)
         put("askBrainCount", state.askBrainCount)
         put("ransomDebit", state.ransomDebit)
+        put("askOpen", state.askOpen)
         put("xpDay", state.xpDay)
         put("focusMinutesByDay", JSONObject(state.focusMinutesByDay.mapValues { it.value }))
         put("appLists", JSONArray().apply { state.appLists.forEach { put(encodeList(it)) } })
@@ -618,7 +935,7 @@ class RotRunRepository(context: Context) {
 
     private fun decode(json: JSONObject): SavedState {
         val fresh = freshState()
-        val lists = json.optJSONArray("appLists").toLists().ifEmpty { fresh.appLists }
+        val lists = if (json.has("appLists")) json.optJSONArray("appLists").toLists() else fresh.appLists
         val blockers = json.optJSONArray("blockers").toBlockers().ifEmpty { fresh.blockers }
         val focusJson = json.optJSONObject("focus")
         return SavedState(
@@ -629,6 +946,8 @@ class RotRunRepository(context: Context) {
             productId = json.optString("productId").ifBlank { null },
             premiumUntil = json.optLong("premiumUntil"),
             lifetime = json.optBoolean("lifetime") || json.optString("productId") == Products.LIFETIME,
+            purchaseToken = json.optString("purchaseToken"),
+            grantUserId = json.optString("grantUserId"),
             introUsed = json.optBoolean("introUsed"),
             declinedGetAccess = json.optBoolean("declinedGetAccess"),
             skippedOneTimeOffer = json.optBoolean("skippedOneTimeOffer"),
@@ -659,6 +978,7 @@ class RotRunRepository(context: Context) {
             lastOpenDay = json.optString("lastOpenDay"),
             askBrainCount = json.optInt("askBrainCount"),
             ransomDebit = json.optInt("ransomDebit"),
+            askOpen = json.optBoolean("askOpen"),
             xpDay = json.optString("xpDay"),
             focusMinutesByDay = json.optJSONObject("focusMinutesByDay").toIntMap(),
             appLists = lists,
@@ -702,22 +1022,22 @@ fun iconStreak(icon: String): Int = when (icon) {
     else -> 0
 }
 
-fun stepForward(state: SavedState): SavedState {
+fun stepForward(state: SavedState, userId: String? = null): SavedState {
     var cursor = state.onboardingStep + 1
     while (cursor <= OnboardingStep.EnableFirstRule.raw) {
         val next = OnboardingStep.fromRaw(cursor)
-        if (!next.skipped(state)) return state.copy(onboardingStep = next.raw)
+        if (!next.skipped(state, userId)) return state.copy(onboardingStep = next.raw)
         cursor++
     }
     return state.copy(onboardingCompleted = true)
 }
 
-fun stepBack(state: SavedState): SavedState {
+fun stepBack(state: SavedState, userId: String? = null): SavedState {
     if (state.onboardingStep <= 0) return state
     var cursor = state.onboardingStep - 1
     while (cursor > 0) {
         val next = OnboardingStep.fromRaw(cursor)
-        if (!next.skipped(state)) return state.copy(onboardingStep = next.raw)
+        if (!next.skipped(state, userId)) return state.copy(onboardingStep = next.raw)
         cursor--
     }
     return state.copy(onboardingStep = 0)
@@ -739,6 +1059,7 @@ private fun encodeBlocker(blocker: Blocker) = JSONObject()
     .put("endHour", blocker.endHour)
     .put("limitMinutes", blocker.limitMinutes)
     .put("days", JSONArray(blocker.days))
+    .put("symbol", blocker.symbol)
     .put("apps", JSONArray().apply { blocker.apps.forEach { put(encodeApp(it)) } })
     .put("modeApps", JSONObject().apply {
         blocker.modeApps.forEach { (mode, apps) ->
@@ -795,6 +1116,7 @@ private fun JSONArray?.toBlockers(): List<Blocker> {
                     endHour = item.optInt("endHour", 17),
                     limitMinutes = item.optInt("limitMinutes", 30),
                     days = days,
+                    symbol = item.optString("symbol", "phone").ifBlank { "phone" },
                     apps = item.optJSONArray("apps").toApps(),
                     modeApps = item.optJSONObject("modeApps").toModeApps(),
                 ),

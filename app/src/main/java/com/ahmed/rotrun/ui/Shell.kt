@@ -1,9 +1,19 @@
 package com.ahmed.rotrun.ui
 
+import android.Manifest
+import android.app.Activity
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -12,9 +22,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -58,15 +74,21 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
+import com.ahmed.rotrun.R
 import com.ahmed.rotrun.data.DeviceAccessReader
+import com.ahmed.rotrun.logic.NotificationPrompt
 import com.ahmed.rotrun.data.RotRunRepository
 import com.ahmed.rotrun.data.UiPulse
+import com.ahmed.rotrun.watch.ShieldSession
+import com.ahmed.rotrun.logic.AccessPrompt
 import com.ahmed.rotrun.logic.BrainHealthLevel
 import com.ahmed.rotrun.logic.PaywallGate
 import com.ahmed.rotrun.logic.PlayCatalog
 import com.ahmed.rotrun.logic.Products
 import com.ahmed.rotrun.logic.Scoring
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 private enum class Tab { Home, Block, Stats, Settings }
 
@@ -76,14 +98,27 @@ fun RotRunRoot(repo: RotRunRepository) {
     val toast by repo.toast.collectAsState()
     LaunchedEffect(toast) {
         if (toast != null) {
-            delay(2400)
+            delay(2200)
             repo.clearToast()
         }
     }
     Box(Modifier.fillMaxSize()) {
+        val needsProfile by repo.backend.needsProfile.collectAsState()
+        val ask by repo.askIntervention.collectAsState()
+        var editProfile by rememberSaveable { mutableStateOf(false) }
+        LaunchedEffect(state.onboardingCompleted, needsProfile) {
+            if (!state.onboardingCompleted || !needsProfile) return@LaunchedEffect
+            withContext(Dispatchers.IO) { repo.backend.adoptRemoteDisplayName() }
+        }
         when {
             !state.onboardingCompleted -> OnboardingScreen(repo)
-            else -> MainShell(repo)
+            else -> MainShell(repo, onEditYou = { editProfile = true })
+        }
+        if (ask == null && editProfile) {
+            ProfilePrompt(repo, editing = true, onDismiss = { editProfile = false })
+        }
+        BackHandler(enabled = ask == null && editProfile) {
+            editProfile = false
         }
         if (toast != null) {
             Text(
@@ -94,11 +129,13 @@ fun RotRunRoot(repo: RotRunRepository) {
         }
         if (state.bailoutFrom.isNotBlank()) {
             LaunchedEffect(state.bailoutFrom) { delay(4000); repo.clearBailout() }
+            Appear(0f, Modifier.align(Alignment.TopCenter).padding(top = 96.dp)) {
             Text(
                 "${state.bailoutFrom} bailed you out. You owe them a coffee.",
                 color = Color.White,
-                modifier = Modifier.align(Alignment.TopCenter).padding(top = 96.dp).clip(CircleShape).background(Melt.House).padding(horizontal = 14.dp, vertical = 8.dp),
+                modifier = Modifier.clip(CircleShape).background(Melt.House).padding(horizontal = 14.dp, vertical = 8.dp),
             )
+            }
         }
     }
 }
@@ -107,69 +144,114 @@ fun RotRunRoot(repo: RotRunRepository) {
 private fun Gate(repo: RotRunRepository) {
     val state by repo.state.collectAsState()
     var plan by remember { mutableStateOf(Products.YEARLY) }
-    var offer by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxSize().background(rot().page).verticalScroll(rememberScrollState())) {
-        if (offer && !state.skippedOneTimeOffer) {
-            OneTimeOffer(
-                onRedeem = { repo.purchase(Products.YEARLY70) },
-                onOther = { repo.leaveOffer(); offer = false },
-                showClose = true,
-                onClose = { repo.leaveOffer(); offer = false },
-            )
-        } else {
-            GetAccessPaywall(
-                state = state,
-                showClose = !state.skippedOneTimeOffer,
-                showDiscountLink = !state.skippedOneTimeOffer,
-                onClose = { offer = true },
-                onDiscount = { offer = true },
-                onPurchase = repo::purchase,
-                onRestore = repo::restore,
-                selected = plan,
-                onSelect = { plan = it },
-            )
-        }
+    val notice by repo.purchaseError.collectAsState()
+    PaywallPopup(onDismiss = {}) {
+        GetAccessPaywall(
+            state = state,
+            showClose = true,
+            onClose = {},
+            onPurchase = repo::purchase,
+            onRestore = repo::restore,
+            onRetry = repo::refreshBilling,
+            selected = plan,
+            onSelect = { plan = it },
+            notice = notice,
+            signedInUserId = repo.backend.userId,
+        )
     }
 }
 
 @Composable
-private fun MainShell(repo: RotRunRepository) {
+private fun MainShell(repo: RotRunRepository, onEditYou: () -> Unit) {
     val state by repo.state.collectAsState()
     val usage by repo.usage.collectAsState()
     val refreshing by repo.refreshing.collectAsState()
     val installed by repo.installed.collectAsState()
     val batteryAsk by repo.batteryAsk.collectAsState()
+    val access by repo.access.collectAsState()
+    val accessGate by repo.accessGate.collectAsState()
+    val ask by repo.askIntervention.collectAsState()
+    var accessAsk by rememberSaveable { mutableStateOf(false) }
+    var accessDisclosure by rememberSaveable { mutableStateOf(false) }
     var tabName by rememberSaveable { mutableStateOf(Tab.Home.name) }
     val tab = runCatching { Tab.valueOf(tabName) }.getOrDefault(Tab.Home)
     var focusSheet by rememberSaveable { mutableStateOf(false) }
     var audio by rememberSaveable { mutableStateOf(false) }
     var talk by rememberSaveable { mutableStateOf(false) }
     var upgrade by rememberSaveable { mutableStateOf(false) }
-    var offer by rememberSaveable { mutableStateOf(false) }
     var plan by remember { mutableStateOf(Products.YEARLY) }
-    val offerNow by androidx.compose.runtime.rememberUpdatedState(offer)
     val context = LocalContext.current
-    val look = Looks.byId(state.theme)
+    var arming by remember { mutableStateOf(repo.armingSteps()) }
+    var gateUp by rememberSaveable { mutableStateOf(true) }
+    var askedNotifications by rememberSaveable { mutableStateOf(false) }
+    val askNotify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        askedNotifications = true
+        repo.refreshAccess()
+        arming = repo.armingSteps()
+        val rationale = (context as? Activity)?.shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS) == true
+        if (!granted && NotificationPrompt.afterDenial(rationale) == NotificationPrompt.SETTINGS) {
+            DeviceAccessReader.open(context, DeviceAccessReader.notificationIntent(context))
+        }
+    }
+    fun openNotificationGrant() {
+        val granted = Build.VERSION.SDK_INT < 33 ||
+            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        val rationale = (context as? Activity)?.shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS) == true
+        when (NotificationPrompt.next(granted, rationale, askedNotifications)) {
+            NotificationPrompt.REQUEST -> {
+                askedNotifications = true
+                askNotify.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+            NotificationPrompt.SETTINGS -> DeviceAccessReader.open(context, DeviceAccessReader.notificationIntent(context))
+        }
+    }
     val level = BrainHealthLevel.fromLabel(state.brainHealth)
-    val health = Scoring.shownHealth(usage.authorized, usage.drainSeconds, state.focusMinutesToday(), level)
-    val screenMinutes = if (usage.authorized) (usage.todaySeconds / 60).toInt() else null
+    val health = Scoring.shownHealth(usage.authorized, usage.todaySeconds, state.focusMinutesToday(), level)
+    val screenMinutes = Scoring.scoredMinutes(usage.todaySeconds, usage.authorized)
+    LaunchedEffect(accessGate) {
+        if (!accessGate) return@LaunchedEffect
+        tabName = Tab.Home.name
+        gateUp = true
+        arming = repo.armingSteps()
+        if (arming.any { it.id == "accessibility" }) accessDisclosure = true
+    }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         repo.onForeground()
-        if (com.ahmed.rotrun.logic.PaywallGate.shows && !repo.state.value.premiumActive() && !offerNow) upgrade = true
+        arming = repo.armingSteps()
+        val now = repo.access.value
+        if (arming.isNotEmpty()) {
+            accessAsk = false
+        } else if (AccessPrompt.shouldPrompt(now.usage, now.accessibility, now.overlay)) {
+            accessAsk = true
+        } else if (PaywallGate.shows && !repo.state.value.proFor(repo.backend.userId) && !PlayCatalog.purchasing.value && repo.askIntervention.value == null) {
+            accessAsk = false
+            upgrade = true
+        }
     }
     LaunchedEffect(Unit) {
+        if (repo.takeChatRequest()) talk = true
         repo.pulses.collect { pulse ->
             when (pulse) {
                 UiPulse.OpenFocusChooser -> focusSheet = true
                 UiPulse.ShowAudioSlap -> audio = true
                 UiPulse.OpenPaywall -> upgrade = true
-                UiPulse.OpenChat -> talk = true
+                UiPulse.ClosePaywall -> upgrade = false
+                UiPulse.OpenChat -> {
+                    repo.takeChatRequest()
+                    talk = true
+                }
             }
         }
     }
-    val scenicHome = tab == Tab.Home && sceneFor(state.theme) != null
-    val canvas = if (scenicHome) look.canvas else rot().page
-    val barColor = if (scenicHome) look.tab else rot().tab
+    val scene = com.ahmed.rotrun.logic.RewardSceneTint.resolve(state.theme)
+    val scenicHome = tab == Tab.Home && !scene.system
+    val canvas = when {
+        tab != Tab.Home -> rot().page
+        scene.system -> if (rot().dark) Color.Black else Color.White
+        else -> Color(scene.canvas)
+    }
+    val barColor = if (scenicHome) Color(scene.tabBar) else rot().tab
+    val contentInk = if (scenicHome) Color(com.ahmed.rotrun.logic.RewardSceneTint.label(scene.lightInk)) else rot().ink
     val tabClearance = 148.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val homeScroll = rememberScrollState()
     val blockScroll = rememberScrollState()
@@ -182,17 +264,50 @@ private fun MainShell(repo: RotRunRepository) {
         Tab.Settings -> settingsScroll
     }
     Box(Modifier.fillMaxSize().background(canvas)) {
-        CompositionLocalProvider(LocalContentColor provides if (scenicHome) Color.White else rot().ink) {
-        Column(Modifier.fillMaxSize().statusBarsPadding().verticalScroll(scroll).padding(bottom = tabClearance)) {
+        CompositionLocalProvider(LocalContentColor provides contentInk) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .windowInsetsPadding(
+                    WindowInsets.statusBars
+                        .union(WindowInsets.systemBars.only(WindowInsetsSides.Top))
+                        .union(WindowInsets.ime),
+                )
+                .verticalScroll(scroll)
+                .padding(bottom = tabClearance),
+        ) {
             when (tab) {
-                Tab.Home -> HomeScreen(state, usage, refreshing, repo::refreshUsage, { talk = true }) {
-                    context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
-                }
+                Tab.Home -> HomeScreen(
+                    state,
+                    usage,
+                    access,
+                    refreshing,
+                    repo::refreshUsage,
+                    onTalk = { talk = true },
+                    onFixAccess = { accessAsk = true },
+                    onConnect = { context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) },
+                    pausedGrant = arming.firstOrNull()?.title,
+                    onOpenGate = { gateUp = true },
+                )
                 Tab.Block -> BlockScreen(state, installed, repo)
-                Tab.Stats -> StatsScreen(state, health, screenMinutes, repo)
+                Tab.Stats -> StatsScreen(state, health, screenMinutes, repo, onEditYou = onEditYou)
                 Tab.Settings -> SettingsScreen(state, installed, repo)
             }
         }
+        }
+        if (arming.isNotEmpty() && gateUp && tab == Tab.Home) {
+            val step = arming.first()
+            Box(Modifier.fillMaxSize().padding(bottom = tabClearance)) {
+                PermissionGate(
+                    step,
+                    onOpen = {
+                        if (step.id == "accessibility") accessDisclosure = true
+                        else if (step.id == "notifications") openNotificationGrant()
+                        else openArmingStep(context, step.id) {}
+                    },
+                    onLeave = { gateUp = false },
+                )
+            }
         }
         TabBar(
             tab = tab,
@@ -205,38 +320,63 @@ private fun MainShell(repo: RotRunRepository) {
             onFocus = { if (state.focus == null) focusSheet = true },
             modifier = Modifier.align(Alignment.BottomCenter),
         )
-        if (focusSheet) {
-            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)).clickable { focusSheet = false })
-            Box(Modifier.align(Alignment.BottomCenter).padding(12.dp).navigationBarsPadding()) {
-                FocusChooser(onClose = { focusSheet = false }, repo = repo)
-            }
+        var focusShown by remember { mutableStateOf(state.focus) }
+        LaunchedEffect(state.focus?.startedAt) {
+            if (state.focus != null) focusShown = state.focus
         }
-        state.focus?.let { FocusOverlay(it, repo) }
-        if (talk) TalkSheet(repo) { talk = false }
-        if (offer && PaywallGate.shows && !state.yearly70Dismissed) {
-            Box(Modifier.fillMaxSize().background(rot().page).statusBarsPadding().verticalScroll(rememberScrollState())) {
-                OneTimeOffer(
-                    onRedeem = { repo.purchase(Products.YEARLY70) },
-                    onOther = { repo.dismissYearly70(); offer = false },
-                    showClose = true,
-                    onClose = { repo.dismissYearly70(); offer = false },
-                )
-            }
-        } else if (upgrade && PaywallGate.shows && !state.premiumActive()) {
-            Box(Modifier.fillMaxSize().background(rot().page).statusBarsPadding().verticalScroll(rememberScrollState())) {
+        AnimatedVisibility(visible = state.focus != null && !focusSheet, modifier = Modifier.fillMaxSize(), enter = focusFadeIn(), exit = focusFadeOut()) {
+            focusShown?.let { FocusOverlay(it, repo) }
+        }
+        AnimatedVisibility(visible = focusSheet, modifier = Modifier.fillMaxSize(), enter = focusFadeIn(), exit = focusFadeOut()) {
+            FocusChooser(onClose = { focusSheet = false }, repo = repo)
+        }
+        if (accessAsk && AccessPrompt.shouldPrompt(access.usage, access.accessibility, access.overlay)) {
+            AlertDialog(
+                onDismissRequest = { accessAsk = false },
+                title = { Text("Blocking is off") },
+                text = { Text(AccessPrompt.message(access.usage, access.accessibility, access.overlay, access.batteryUnrestricted)) },
+                confirmButton = {
+                    TextButton(onClick = {
+                        accessAsk = false
+                        when (AccessPrompt.firstMissing(access.usage, access.accessibility, access.overlay)) {
+                            "usage" -> DeviceAccessReader.open(context, DeviceAccessReader.usageIntent(context))
+                            "accessibility" -> accessDisclosure = true
+                            "overlay" -> DeviceAccessReader.open(context, DeviceAccessReader.overlayIntent(context))
+                        }
+                    }) { Text("Turn on") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { accessAsk = false }) { Text("Not now") }
+                },
+            )
+        }
+        if (accessDisclosure) {
+            AccessibilityDisclosureDialog(
+                onDecline = { accessDisclosure = false },
+                onAccept = {
+                    accessDisclosure = false
+                    DeviceAccessReader.open(context, DeviceAccessReader.accessibilityIntent())
+                },
+            )
+        }
+        if (talk) TalkSheet(repo) {
+            talk = false
+            ShieldSession.endChat()
+        }
+        if (upgrade && PaywallGate.shows && !state.proFor(repo.backend.userId)) {
+            val notice by repo.purchaseError.collectAsState()
+            PaywallPopup(onDismiss = { upgrade = false }) {
                 GetAccessPaywall(
                     state = state,
                     showClose = true,
-                    showDiscountLink = false,
-                    onClose = {
-                        upgrade = false
-                        if (!state.yearly70Dismissed && PlayCatalog.quote(Products.YEARLY70) != null) offer = true
-                    },
-                    onDiscount = {},
+                    onClose = { upgrade = false },
                     onPurchase = repo::purchase,
                     onRestore = repo::restore,
+                    onRetry = repo::refreshBilling,
                     selected = plan,
                     onSelect = { plan = it },
+                    notice = notice,
+                    signedInUserId = repo.backend.userId,
                 )
             }
         }
@@ -254,20 +394,23 @@ private fun MainShell(repo: RotRunRepository) {
                 dismissButton = { TextButton(onClick = repo::dismissBatteryAsk) { Text("Not now") } },
             )
         }
-        if (audio) {
-            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.55f)), contentAlignment = Alignment.Center) {
+        AnimatedVisibility(visible = audio, modifier = Modifier.fillMaxSize(), enter = coverEnter(reduceMotion()), exit = coverExit(reduceMotion())) {
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.55f)).rotInsets(), contentAlignment = Alignment.Center) {
                 AudioSlap(state.cameoName.ifBlank { "a friend" }) { audio = false }
             }
         }
-        val offerUp = offer && PaywallGate.shows && !state.yearly70Dismissed
-        val upgradeUp = !offerUp && upgrade && PaywallGate.shows && !state.premiumActive()
-        BackHandler(enabled = audio || offerUp || upgradeUp || talk || focusSheet || state.focus != null) {
+        val upgradeUp = upgrade && PaywallGate.shows && !state.proFor(repo.backend.userId)
+        val gateShowing = arming.isNotEmpty() && gateUp && tab == Tab.Home
+        BackHandler(enabled = audio || upgradeUp || talk || focusSheet || state.focus != null || gateShowing) {
             when {
                 audio -> audio = false
-                offerUp -> offer = false
                 upgradeUp -> upgrade = false
-                talk -> talk = false
+                talk -> {
+                    talk = false
+                    ShieldSession.endChat()
+                }
                 focusSheet -> focusSheet = false
+                gateShowing -> gateUp = false
                 else -> Unit
             }
         }
@@ -312,7 +455,7 @@ private fun TabBar(
     onFocus: () -> Unit,
     modifier: Modifier,
 ) {
-    val nav = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val nav = WindowInsets.navigationBars.union(WindowInsets.systemBars).asPaddingValues().calculateBottomPadding()
     val item = if (light) Melt.Muted else Color.White.copy(alpha = 0.72f)
     val glyph = if (light) Color(0xFFF2F2F7) else Color.White.copy(alpha = 0.12f)
     Box(modifier.fillMaxWidth().height(36.dp + 88.dp + nav)) {
