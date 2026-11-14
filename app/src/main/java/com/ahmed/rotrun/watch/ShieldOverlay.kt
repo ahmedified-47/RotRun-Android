@@ -114,19 +114,30 @@ object ShieldOverlay {
         onAsk: () -> Unit,
     ): View? {
         val copy = InterventionCopy.forPackage(packageName, label)
+        val cameo = friendShield(context)
         val density = context.resources.displayMetrics.density
         fun px(dp: Int) = (dp * density).toInt()
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            setBackgroundColor(ShieldPalette.background(copy.id))
+            setBackgroundColor(cameo?.background ?: ShieldPalette.background(copy.id))
         }
         val topGap = android.view.View(context).apply {
             minimumHeight = px(24)
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
         }
         val mascot = ImageView(context).apply {
-            setImageResource(R.drawable.rot_brain_character)
+            if (cameo?.icon != null) {
+                setImageBitmap(cameo.icon)
+                outlineProvider = object : android.view.ViewOutlineProvider() {
+                    override fun getOutline(view: View, outline: android.graphics.Outline) {
+                        outline.setOval(0, 0, view.width, view.height)
+                    }
+                }
+                clipToOutline = true
+            } else {
+                setImageResource(R.drawable.rot_brain_character)
+            }
             val scale = Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
             if (scale != 0f) {
                 val breath = ObjectAnimator.ofPropertyValuesHolder(
@@ -151,7 +162,7 @@ object ShieldOverlay {
             }
         }
         val title = TextView(context).apply {
-            text = copy.headline
+            text = cameo?.title ?: copy.headline
             setTextColor(android.graphics.Color.WHITE)
             textSize = 32f
             typeface = android.graphics.Typeface.DEFAULT_BOLD
@@ -159,13 +170,13 @@ object ShieldOverlay {
             setPadding(px(28), 0, px(28), 0)
         }
         val body = TextView(context).apply {
-            text = copy.body
-            setTextColor(0xFF9E9EA3.toInt())
+            text = cameo?.body ?: copy.body
+            setTextColor(if (cameo != null) 0xD1FFFFFF.toInt() else 0xFF9E9EA3.toInt())
             textSize = 17f
             gravity = Gravity.CENTER
             setPadding(px(36), px(16), px(36), 0)
         }
-        val footer = copy.footer?.let { line ->
+        val footer = if (cameo != null) null else copy.footer?.let { line ->
             TextView(context).apply {
                 text = line
                 setTextColor(0xFF9E9EA3.toInt())
@@ -186,7 +197,7 @@ object ShieldOverlay {
             gravity = Gravity.CENTER
             background = GradientDrawable().apply {
                 cornerRadius = 999f * density
-                setColor(ShieldPalette.accent(copy.id))
+                setColor(cameo?.accent ?: ShieldPalette.accent(copy.id))
             }
             val padH = px(18)
             setPadding(padH, padH, padH, padH)
@@ -288,6 +299,45 @@ object ShieldOverlay {
             Log.w(TAG, "chat failed for $packageName: ${error.javaClass.simpleName}")
             host.destroy()
         }.getOrNull()
+    }
+
+    private data class FriendShield(val title: String, val body: String, val icon: android.graphics.Bitmap?, val background: Int, val accent: Int)
+
+    /** Accepted friend from the local cache. Null keeps the existing shield copy. */
+    private fun friendShield(context: Context): FriendShield? {
+        val enabled = com.ahmed.rotrun.data.FriendCameoDisk.friendCameoEnabled(context)
+        val accent = ShieldPalette.accent("how-much-today")
+        val background = ShieldPalette.background("how-much-today")
+        return when (val surface = com.ahmed.rotrun.data.FriendCameoDisk.surface(context, enabled)) {
+            is com.ahmed.rotrun.logic.FriendCameoSurface.Hidden -> null
+            is com.ahmed.rotrun.logic.FriendCameoSurface.Fallback -> FriendShield("Friend cameo", surface.text, null, background, accent)
+            is com.ahmed.rotrun.logic.FriendCameoSurface.Friend -> FriendShield(
+                surface.choice.name,
+                surface.choice.line,
+                friendIcon(context, surface.choice.userId, surface.choice.name),
+                background,
+                accent,
+            )
+        }
+    }
+
+    private fun friendIcon(context: Context, userId: String, name: String): android.graphics.Bitmap {
+        val bytes = com.ahmed.rotrun.data.FriendCameoDisk.portraitBytes(context, userId)
+        val photo = bytes?.let { android.graphics.BitmapFactory.decodeByteArray(it, 0, it.size) }
+        if (photo != null) return photo
+        val side = 256
+        val bitmap = androidx.core.graphics.createBitmap(side, side)
+        val canvas = android.graphics.Canvas(bitmap)
+        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        paint.color = 0xFFED6B38.toInt()
+        canvas.drawCircle(side / 2f, side / 2f, side / 2f, paint)
+        paint.color = android.graphics.Color.WHITE
+        paint.textSize = 120f
+        paint.textAlign = android.graphics.Paint.Align.CENTER
+        val letter = name.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "?"
+        val baseline = side / 2f - (paint.descent() + paint.ascent()) / 2f
+        canvas.drawText(letter, side / 2f, baseline, paint)
+        return bitmap
     }
 
     fun hide(context: Context, view: View?) {

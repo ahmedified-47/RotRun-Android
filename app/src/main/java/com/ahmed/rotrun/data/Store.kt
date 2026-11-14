@@ -236,7 +236,22 @@ class RotRunRepository(context: Context) {
     }
 
     fun publishDailyXp() {
-        scope.launch(Dispatchers.IO) { syncDailyXp() }
+        scope.launch(Dispatchers.IO) {
+            syncDailyXp()
+            backend.refreshFriendCameo(shownDailyXp())
+        }
+    }
+
+    /** Today's score for the friend cameo cache. A day with no minutes yet is 0, not a perfect score. */
+    fun shownDailyXp(): Int {
+        val state = _state.value
+        val level = BrainHealthLevel.fromLabel(state.brainHealth)
+        val minutes = Scoring.scoredMinutes(_usage.value.todaySeconds, _usage.value.authorized)
+        if (minutes != null) {
+            return Scoring.dailyXp(minutes, level.goalMinutes, state.askBrainCount, state.ransomDebit, level.xpMultiplier)
+        }
+        val stored = backend.storedDailyXp()
+        return if (stored?.day == Scoring.dayKey() && stored.userId == backend.userId) stored.xp else 0
     }
 
     fun loadInstalled() {
@@ -646,7 +661,7 @@ class RotRunRepository(context: Context) {
             if (current.mirrorMode) add("mirror")
             if (current.quickCheck) add("quick")
             if (current.breathingExercise) add("breathing")
-            if (current.friendCameo && current.cameoToday()) add("cameo")
+            if (current.friendCameo) add("cameo")
         }
         return styles.randomOrNull()
     }

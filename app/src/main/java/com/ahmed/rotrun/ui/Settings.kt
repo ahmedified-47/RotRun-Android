@@ -471,7 +471,7 @@ private fun StylesPage(state: SavedState, repo: RotRunRepository, onBack: () -> 
         StyleToggle("Breathing Exercise", "4-2-4 then a question", state.breathingExercise) { value -> repo.update { it.copy(breathingExercise = value) } }
         StyleToggle("Mirror Mode", "FaceTime from your brain, requires camera", state.mirrorMode) { value -> repo.update { it.copy(mirrorMode = value) } }
         StyleToggle("Quick Check", "Need this? Then how long?", state.quickCheck) { value -> repo.update { it.copy(quickCheck = value) } }
-        StyleToggle("Friend cameo", "A roast from a Game Center friend, when they sent you one today", state.friendCameo) { value -> repo.update { it.copy(friendCameo = value) } }
+        StyleToggle("Friend cameo", "An accepted friend's name, photo, and today's Daily XP", state.friendCameo) { value -> repo.update { it.copy(friendCameo = value) } }
     }
 }
 

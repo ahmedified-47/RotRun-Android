@@ -10,6 +10,13 @@ import com.ahmed.rotrun.billing.PlaySyncResult
 import com.ahmed.rotrun.billing.ServerEntitlement
 import com.ahmed.rotrun.logic.BoardSnapshot
 import com.ahmed.rotrun.logic.DailyBoard
+import com.ahmed.rotrun.logic.FriendCameoPayload
+import com.ahmed.rotrun.logic.FriendGraph
+import com.ahmed.rotrun.logic.FriendCameoPick
+import com.ahmed.rotrun.logic.FriendXPRow
+import com.ahmed.rotrun.logic.FriendshipPair
+import com.ahmed.rotrun.logic.FriendshipRecord
+import com.ahmed.rotrun.logic.FriendCode
 import com.ahmed.rotrun.logic.RankedXp
 import com.ahmed.rotrun.logic.XpRow
 import com.ahmed.rotrun.logic.BlockBackup
@@ -523,6 +530,199 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
         val pinned = if (ranked.none { it.you } && yourXp != null) pinnedYou(day, yourXp) else null
         return BoardSnapshot(rows = ranked, pinned = pinned)
     }
+
+    /** Signed-in user's friendships, invite code, and accepted friends' today XP. Null when the read fails. */
+    fun loadFriendGraph(): FriendGraph? {
+        val token = freshToken() ?: return null
+        val me = userId ?: return null
+        val records = fetchFriendships(token, me) ?: return null
+        val code = fetchFriendCode(token)
+        val counterparts = records.map { FriendCameoPick.otherId(it, me) }
+        val xpRows = fetchFriendXp(token, counterparts + me)
+        val names = xpRows.associate { it.userId.lowercase() to FriendCameoPick.displayName(it.displayName) }
+        val accepted = records.mapNotNull { record ->
+            if (record.status != "accepted") return@mapNotNull null
+            val other = FriendCameoPick.otherId(record, me).lowercase()
+            other.takeIf { it != me.lowercase() }
+        }.toSet()
+        val friendXp = xpRows.mapNotNull { row ->
+            val id = row.userId.lowercase()
+            if (id !in accepted || id == me.lowercase()) return@mapNotNull null
+            FriendXPRow(row.userId, FriendCameoPick.displayName(row.displayName), row.xp.coerceAtLeast(0), FriendCameoPick.httpsAvatar(row.avatarUrl))
+        }.sortedWith(compareByDescending<FriendXPRow> { it.xp }.thenBy { it.name })
+        return FriendGraph(me, records, code, friendXp, names)
+    }
+
+    fun refreshFriendCameo(yourXp: Int) {
+        val graph = loadFriendGraph() ?: return
+        rememberFriendCameo(graph, yourXp)
+    }
+
+    fun rememberFriendCameo(graph: FriendGraph, yourXp: Int) {
+        val payload = FriendCameoPayload(
+            writtenAtMillis = System.currentTimeMillis(),
+            yourUserId = graph.yourUserId,
+            yourXp = yourXp.coerceAtLeast(0),
+            friends = graph.friendXp.map { FriendCameoPick.Candidate(it.userId, it.name, it.xp, it.avatarUrl) },
+        )
+        FriendCameoDisk.save(app, payload)
+        val portraits = linkedMapOf<String, ByteArray>()
+        graph.friendXp.take(12).forEach { row ->
+            val url = row.avatarUrl ?: return@forEach
+            val bytes = downloadPortrait(url) ?: return@forEach
+            portraits[row.userId] = bytes
+        }
+        FriendCameoDisk.replacePortraits(app, portraits)
+    }
+
+    fun requestFriend(userId: String, records: List<FriendshipRecord>): String? {
+        val me = userIdOrSignIn() ?: return "Sign in to add friends."
+        if (FriendshipPair.of(me, userId) == null) return "You can't add yourself."
+        val existing = FriendCameoPick.match(me, userId, records)
+        if (existing != null) {
+            when (existing.status) {
+                "accepted", "pending" -> return null
+                "declined" -> deleteFriendship(existing.id)
+            }
+        }
+        return insertPending(me, userId)
+    }
+
+    fun addFriendByCode(raw: String): String? {
+        val code = FriendCode.normalize(raw) ?: return "That code doesn't look right."
+        return rpcFriendMessage("add_friend_by_code", JSONObject().put("p_code", code))
+    }
+
+    fun setFriendStatus(id: String, status: String): String? {
+        if (status != "accepted" && status != "declined") return "That reply isn't valid."
+        val token = freshToken() ?: return "Couldn't update that request."
+        val response = call(
+            "PATCH",
+            "/rest/v1/friendships?id=eq.${encode(id)}",
+            JSONObject().put("status", status).toString(),
+            token,
+            "return=minimal",
+        )
+        return if (response.code in 200..299) null else "Couldn't update that request."
+    }
+
+    fun profileName(): String = storedDisplayName()
+
+    fun profileAvatar(): String? = FriendCameoPick.httpsAvatar(storedAvatar())
+
+    private fun fetchFriendships(token: String, userId: String): List<FriendshipRecord>? {
+        val filter = encode("(requester_id.eq.$userId,addressee_id.eq.$userId)")
+        val response = call(
+            "GET",
+            "/rest/v1/friendships?select=id,requester_id,addressee_id,status&or=$filter",
+            null,
+            token,
+        )
+        if (response.code !in 200..299 || response.array == null) return null
+        return buildList {
+            for (index in 0 until response.array.length()) {
+                val row = response.array.optJSONObject(index) ?: continue
+                val id = row.optString("id")
+                if (id.isBlank()) continue
+                add(
+                    FriendshipRecord(
+                        id = id,
+                        requesterId = row.optString("requester_id"),
+                        addresseeId = row.optString("addressee_id"),
+                        status = row.optString("status"),
+                    ),
+                )
+            }
+        }
+    }
+
+    private fun fetchFriendCode(token: String): String? {
+        val response = call("POST", "/rest/v1/rpc/my_friend_code", "{}", token)
+        if (response.code !in 200..299) return null
+        return jsonText(response.raw)
+    }
+
+    private fun fetchFriendXp(token: String, userIds: List<String>): List<StoredFriendXp> {
+        val ids = userIds.map { it.lowercase() }.distinct().filter { it.isNotBlank() }.take(40)
+        if (ids.isEmpty()) return emptyList()
+        val day = Scoring.dayKey()
+        val list = encode("in.(${ids.joinToString(",")})")
+        val response = call(
+            "GET",
+            "/rest/v1/daily_xp?select=user_id,display_name,xp,avatar_url&day=eq.$day&user_id=$list",
+            null,
+            token,
+        )
+        if (response.code !in 200..299 || response.array == null) return emptyList()
+        return buildList {
+            for (index in 0 until response.array.length()) {
+                val row = response.array.optJSONObject(index) ?: continue
+                val id = row.optString("user_id")
+                if (id.isBlank()) continue
+                add(StoredFriendXp(id, row.optString("display_name"), row.optInt("xp"), row.optString("avatar_url")))
+            }
+        }
+    }
+
+    private fun insertPending(requester: String, addressee: String): String? {
+        val token = freshToken() ?: return "Couldn't send that request."
+        val body = JSONObject()
+            .put("requester_id", requester)
+            .put("addressee_id", addressee)
+            .put("status", "pending")
+        val response = call("POST", "/rest/v1/friendships", body.toString(), token, "return=minimal")
+        return if (response.code in 200..299) null else "Couldn't send that request."
+    }
+
+    private fun deleteFriendship(id: String) {
+        val token = freshToken() ?: return
+        call("DELETE", "/rest/v1/friendships?id=eq.${encode(id)}", null, token)
+    }
+
+    private fun rpcFriendMessage(name: String, body: JSONObject): String? {
+        val token = freshToken() ?: return "Couldn't add that friend."
+        val response = call("POST", "/rest/v1/rpc/$name", body.toString(), token)
+        if (response.code in 200..299) return null
+        val text = response.raw
+        return when {
+            "no self-friend" in text -> "You can't add yourself."
+            "not found" in text -> "No one has that code."
+            "invalid" in text -> "That code doesn't look right."
+            else -> "Couldn't add that friend."
+        }
+    }
+
+    private fun downloadPortrait(url: String): ByteArray? {
+        if (!url.startsWith("https://", ignoreCase = true)) return null
+        val bytes = runCatching {
+            http.newCall(Request.Builder().url(url).build()).execute().use { response ->
+                if (!response.isSuccessful) return null
+                response.body?.bytes()
+            }
+        }.getOrNull() ?: return null
+        return FriendCameoDisk.thumbnail(bytes)
+    }
+
+    private fun freshToken(): String? {
+        if (!signedIn) return null
+        if (expiresAt() < System.currentTimeMillis() + 60_000) refresh()
+        if (!signedIn) return null
+        return accessToken()
+    }
+
+    private fun userIdOrSignIn(): String? = if (freshToken() == null) null else userId
+
+    private fun encode(value: String): String = URLEncoder.encode(value, Charsets.UTF_8.name())
+
+    private fun jsonText(raw: String): String? {
+        val trimmed = raw.trim()
+        if (trimmed.startsWith("\"")) {
+            return runCatching { JSONArray("[$trimmed]").getString(0) }.getOrNull()?.takeIf { it.isNotBlank() }
+        }
+        return null
+    }
+
+    private data class StoredFriendXp(val userId: String, val displayName: String, val xp: Int, val avatarUrl: String)
 
     fun syncAccount(state: SavedState, allowPull: Boolean) {
         if (!signedIn) return
@@ -1239,6 +1439,7 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
         when (method) {
             "GET" -> builder.get()
             "HEAD" -> builder.head()
+            "DELETE" -> builder.delete()
             else -> builder.method(method, (body ?: "{}").toRequestBody(jsonType))
         }
         return runCatching {
@@ -1252,6 +1453,7 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
                     array,
                     obj?.optString("error")?.ifBlank { obj.optString("msg") },
                     response.header("Content-Range"),
+                    text,
                 )
             }
         }.getOrElse { HttpResult(0, null, null, it.message, null) }
@@ -1265,6 +1467,7 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
         val array: JSONArray?,
         val error: String?,
         val contentRange: String? = null,
+        val raw: String = "",
     )
 
     companion object {

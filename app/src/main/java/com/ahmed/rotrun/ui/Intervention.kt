@@ -79,7 +79,9 @@ import com.ahmed.rotrun.logic.InterventionCopy
 import com.ahmed.rotrun.logic.ShieldPalette
 import com.ahmed.rotrun.watch.AskBrainLaunch
 import kotlin.math.sin
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -150,7 +152,7 @@ fun InterventionFlow(
                         Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 20.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        Cameo(name, friend ?: "a friend", state.cameoKind, retreat, onUnlock)
+                        FriendXpCameo(name, repo, state.friendCameo, retreat, onUnlock)
                     }
                 }
             } else {
@@ -867,22 +869,39 @@ private fun MirrorPreview(modifier: Modifier) {
 }
 
 @Composable
-private fun Cameo(appName: String, friend: String, kind: String, onDismiss: () -> Unit, onUnlock: (Int) -> Unit) {
+private fun FriendXpCameo(
+    appName: String,
+    repo: RotRunRepository,
+    enabled: Boolean,
+    onDismiss: () -> Unit,
+    onUnlock: (Int) -> Unit,
+) {
+    val context = LocalContext.current
+    var surface by remember {
+        mutableStateOf(com.ahmed.rotrun.data.FriendCameoDisk.surface(context, enabled))
+    }
+    LaunchedEffect(enabled) {
+        val fresh = withContext(Dispatchers.IO) {
+            repo.backend.refreshFriendCameo(repo.shownDailyXp())
+            com.ahmed.rotrun.data.FriendCameoDisk.surface(context, enabled)
+        }
+        surface = fresh
+    }
+    val choice = (surface as? com.ahmed.rotrun.logic.FriendCameoSurface.Friend)?.choice
+    val line = choice?.line ?: com.ahmed.rotrun.logic.FriendCameoPick.fallback
+    val who = choice?.name ?: "a friend"
     var howLong by remember { mutableStateOf(false) }
-    val stepSpring = swiftSpring<Float>(0.4f, 0.1f)
-    val reveal by androidx.compose.animation.core.animateFloatAsState(if (howLong) 1f else 0f, stepSpring, label = "cameo")
-    val roast = InterventionCopy.roast(kind.ifBlank { "note" }, friend)
-    val pieces = roast.split(". ").map { it.trim().trimEnd('.') }.filter { it.isNotEmpty() }
-    Appear(0f) { Text("Note from $friend", fontWeight = FontWeight.Bold, fontSize = 22.sp) }
-    Appear(0.06f) { Text(pieces.first(), textAlign = TextAlign.Center, modifier = Modifier.padding(vertical = 8.dp)) }
-    Appear(0.10f) { Text("Opening $appName anyway?") }
-    Appear(0.14f) { Text(pieces.getOrElse(1) { "This does not look important" }, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp)) }
-    Appear(0.16f) { CartoonBrain(BrainStyle.Sleeping, Modifier.padding(top = 8.dp).size(96.dp), animated = false) }
+    Appear(0f) {
+        PlayerAvatar(who, choice?.avatarUrl, 96.dp, fill = Color(0xFFED6B38), ink = Color.White)
+    }
+    Appear(0.06f) { Text("Note from $who", fontWeight = FontWeight.Bold, fontSize = 22.sp) }
+    Appear(0.10f) { Text(line, textAlign = TextAlign.Center, modifier = Modifier.padding(vertical = 8.dp)) }
+    Appear(0.14f) { Text("Opening $appName anyway?") }
     if (!howLong) {
         Appear(0.20f) { Pill("Walk away") { onDismiss() } }
         Appear(0.26f) { Pill("Continue") { howLong = true } }
     } else {
-        Box(Modifier.graphicsLayer { alpha = reveal }) { DurationTiles(onUnlock) }
+        DurationTiles(onUnlock)
         Pill("Nah, never mind") { onDismiss() }
     }
 }

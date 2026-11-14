@@ -253,6 +253,24 @@ private fun LeaderboardBody(
     var refreshing by remember { mutableStateOf(false) }
     var scope by remember { mutableStateOf(BoardScope.Daily) }
     val day = Scoring.dayKey()
+    var graph by remember { mutableStateOf<com.ahmed.rotrun.logic.FriendGraph?>(null) }
+    var friendNote by remember { mutableStateOf<String?>(null) }
+    var inviteDraft by remember { mutableStateOf("") }
+    var friendTarget by remember { mutableStateOf<RankedXp?>(null) }
+    fun reloadFriends() {
+        CoroutineScope(Dispatchers.IO).launch {
+            val yours = repo.shownDailyXp()
+            val loaded = repo.backend.loadFriendGraph()
+            if (loaded != null) repo.backend.rememberFriendCameo(loaded, yours)
+            withContext(Dispatchers.Main) {
+                if (loaded != null) {
+                    graph = loaded
+                } else if (friendNote.isNullOrBlank()) {
+                    friendNote = "Friends aren't available yet."
+                }
+            }
+        }
+    }
     fun reload() {
         refreshing = true
         CoroutineScope(Dispatchers.IO).launch {
@@ -264,8 +282,14 @@ private fun LeaderboardBody(
             }
         }
     }
-    LaunchedEffect(xp, repo.backend.signedIn, day, state.askBrainCount, state.ransomDebit) { reload() }
-    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { reload() }
+    LaunchedEffect(xp, repo.backend.signedIn, day, state.askBrainCount, state.ransomDebit) {
+        reload()
+        reloadFriends()
+    }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        reload()
+        reloadFriends()
+    }
     val reduce = reduceMotion()
     val trophy = remember { androidx.compose.animation.core.Animatable(if (reduce) 1f else 0.72f) }
     LaunchedEffect(Unit) {
@@ -277,18 +301,55 @@ private fun LeaderboardBody(
             Text(" Leaderboard", color = BoardInk, fontFamily = Nunito, fontSize = 28.sp, fontWeight = FontWeight.Black)
         }
     }
-    Appear(0.06f) { Text("See how your Daily XP stacks up.", color = BoardMuted, fontFamily = Nunito, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) }
+    Appear(0.06f) {
+        Text(
+            if (scope == BoardScope.Friends) "Accepted friends, today only." else "See how your Daily XP stacks up.",
+            color = BoardMuted,
+            fontFamily = Nunito,
+            modifier = Modifier.fillMaxWidth(),
+            textAlign = TextAlign.Center,
+        )
+    }
     Appear(0.1f) {
         BoardTabs(scope) { scope = it }
     }
     if (scope == BoardScope.Friends) {
-        EmptyFriends()
+        FriendsBoard(
+            graph = graph,
+            note = friendNote,
+            draft = inviteDraft,
+            signedIn = repo.backend.signedIn,
+            youName = repo.backend.profileName(),
+            youXp = xp ?: repo.shownDailyXp(),
+            youAvatar = repo.backend.profileAvatar(),
+            onDraft = { inviteDraft = it },
+            onAddCode = {
+                val typed = inviteDraft
+                inviteDraft = ""
+                CoroutineScope(Dispatchers.IO).launch {
+                    val message = repo.backend.addFriendByCode(typed)
+                    withContext(Dispatchers.Main) { friendNote = message }
+                    reloadFriends()
+                }
+            },
+            onRespond = { id, accept ->
+                CoroutineScope(Dispatchers.IO).launch {
+                    val message = repo.backend.setFriendStatus(id, if (accept) "accepted" else "declined")
+                    withContext(Dispatchers.Main) { friendNote = message }
+                    reloadFriends()
+                }
+            },
+            onOpen = { row -> if (row.you) onEditYou() else friendTarget = row },
+            repo = repo,
+            onEditYou = onEditYou,
+            onSignIn = { reload(); reloadFriends() },
+        )
     } else {
         val you = board.rows.firstOrNull { it.you } ?: board.pinned
         var youOnScreen by remember(you?.userId, you?.rank, board.rows.size) {
             mutableStateOf(board.rows.any { it.you })
         }
-        PullToRefreshBox(isRefreshing = refreshing, onRefresh = { repo.refreshUsage(); reload() }) {
+        PullToRefreshBox(isRefreshing = refreshing, onRefresh = { repo.refreshUsage(); reload(); reloadFriends() }) {
             Column(Modifier.fillMaxWidth()) {
                 when {
                     !repo.backend.signedIn || board.signedOut -> Appear(0f) { SignInBoard(context, repo) { reload() } }
@@ -296,10 +357,14 @@ private fun LeaderboardBody(
                     board.rows.isEmpty() && board.pinned == null -> Appear(0.12f) { EmptyBoard() }
                     else -> {
                         if (board.rows.isNotEmpty()) {
-                            Appear(0.04f) { TopAvatars(board.rows, onEditYou) { youOnScreen = it } }
+                            Appear(0.04f) {
+                                TopAvatars(board.rows, { row -> if (row.you) onEditYou() else friendTarget = row }) { youOnScreen = it }
+                            }
                         }
                         board.rows.drop(3).forEachIndexed { index, row ->
-                            Appear(0.12f + minOf(index, 7) * 0.05f) { BoardLine(row, onEditYou) { youOnScreen = it } }
+                            Appear(0.12f + minOf(index, 7) * 0.05f) {
+                                BoardLine(row, { tapped -> if (tapped.you) onEditYou() else friendTarget = tapped }) { youOnScreen = it }
+                            }
                         }
                     }
                 }
@@ -311,6 +376,56 @@ private fun LeaderboardBody(
         if (you != null && !youOnScreen && repo.backend.signedIn && xp != null && !board.signedOut) {
             YouPill(you, onEditYou)
         }
+    }
+    friendTarget?.let { row ->
+        FriendActionDialog(
+            name = com.ahmed.rotrun.logic.FriendCameoPick.displayName(row.name),
+            state = com.ahmed.rotrun.logic.FriendCameoPick.actionState(
+                repo.backend.userId.orEmpty(),
+                row.userId,
+                graph?.records.orEmpty(),
+            ),
+            onAdd = {
+                val id = row.userId
+                friendTarget = null
+                CoroutineScope(Dispatchers.IO).launch {
+                    val message = repo.backend.requestFriend(id, graph?.records.orEmpty())
+                    withContext(Dispatchers.Main) { friendNote = message }
+                    reloadFriends()
+                }
+            },
+            onAccept = {
+                val record = com.ahmed.rotrun.logic.FriendCameoPick.match(
+                    repo.backend.userId.orEmpty(),
+                    row.userId,
+                    graph?.records.orEmpty(),
+                )
+                friendTarget = null
+                if (record != null) {
+                    CoroutineScope(Dispatchers.IO).launch {
+                        val message = repo.backend.setFriendStatus(record.id, "accepted")
+                        withContext(Dispatchers.Main) { friendNote = message }
+                        reloadFriends()
+                    }
+                }
+            },
+            onDecline = {
+                val record = com.ahmed.rotrun.logic.FriendCameoPick.match(
+                    repo.backend.userId.orEmpty(),
+                    row.userId,
+                    graph?.records.orEmpty(),
+                )
+                friendTarget = null
+                if (record != null) {
+                    CoroutineScope(Dispatchers.IO).launch {
+                        val message = repo.backend.setFriendStatus(record.id, "declined")
+                        withContext(Dispatchers.Main) { friendNote = message }
+                        reloadFriends()
+                    }
+                }
+            },
+            onDismiss = { friendTarget = null },
+        )
     }
 }
 
@@ -374,33 +489,187 @@ private fun EmptyBoard() {
 }
 
 @Composable
-private fun EmptyFriends() {
-    Column(Modifier.fillMaxWidth().padding(vertical = 28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("No friends on the board yet", color = BoardInk, fontWeight = FontWeight.Bold, fontSize = 18.sp, textAlign = TextAlign.Center)
-        Text(
-            "RotRun has no friends list on Android, so this board stays empty.",
-            color = BoardMuted,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(top = 4.dp, start = 24.dp, end = 24.dp),
+private fun FriendsBoard(
+    graph: com.ahmed.rotrun.logic.FriendGraph?,
+    note: String?,
+    draft: String,
+    signedIn: Boolean,
+    youName: String,
+    youXp: Int,
+    youAvatar: String?,
+    onDraft: (String) -> Unit,
+    onAddCode: () -> Unit,
+    onRespond: (String, Boolean) -> Unit,
+    repo: RotRunRepository,
+    onOpen: (RankedXp) -> Unit,
+    onEditYou: () -> Unit,
+    onSignIn: () -> Unit,
+) {
+    val context = LocalContext.current
+    if (!signedIn) {
+        SignInBoard(context, repo, onSignIn)
+        return
+    }
+    FriendInviteBar(graph?.inviteCode, draft, note, graph, onDraft, onAddCode, onRespond)
+    val rows = friendRanks(graph?.friendXp.orEmpty(), graph?.yourUserId.orEmpty(), youName, youXp, youAvatar)
+    if (graph?.friendXp.isNullOrEmpty()) {
+        Column(Modifier.fillMaxWidth().padding(vertical = 28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            CartoonBrain(BrainStyle.Meadow, Modifier.size(96.dp), animated = false)
+            Text("No friends yet", color = BoardInk, fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.padding(top = 8.dp))
+            Text(
+                "Add someone with their invite code. Accepted friends show today's Daily XP here.",
+                color = BoardMuted,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 4.dp, start = 24.dp, end = 24.dp),
+            )
+        }
+        return
+    }
+    var youOnScreen by remember(rows.size) { mutableStateOf(rows.any { it.you }) }
+    if (rows.isNotEmpty()) {
+        TopAvatars(rows, onOpen) { youOnScreen = it }
+        rows.drop(3).forEach { row -> BoardLine(row, onOpen) { youOnScreen = it } }
+    }
+    val you = rows.firstOrNull { it.you }
+    if (you != null && !youOnScreen) YouPill(you, onEditYou)
+}
+
+private fun friendRanks(
+    friends: List<com.ahmed.rotrun.logic.FriendXPRow>,
+    youId: String,
+    youName: String,
+    youXp: Int,
+    youAvatar: String?,
+): List<RankedXp> {
+    if (friends.isEmpty()) return emptyList()
+    val people = friends.map { row ->
+        RankedXp(row.userId, row.name, row.xp, 0, youId.isNotBlank() && row.userId.equals(youId, ignoreCase = true), row.avatarUrl)
+    }.toMutableList()
+    if (youId.isNotBlank() && people.none { it.userId.equals(youId, ignoreCase = true) }) {
+        people.add(
+            RankedXp(
+                youId,
+                com.ahmed.rotrun.logic.FriendCameoPick.displayName(youName),
+                youXp.coerceAtLeast(0),
+                0,
+                true,
+                youAvatar,
+            ),
         )
+    }
+    return people.sortedWith(compareByDescending<RankedXp> { it.xp }.thenBy { it.name })
+        .mapIndexed { index, row -> row.copy(rank = index + 1) }
+}
+
+@Composable
+private fun FriendInviteBar(
+    code: String?,
+    draft: String,
+    note: String?,
+    graph: com.ahmed.rotrun.logic.FriendGraph?,
+    onDraft: (String) -> Unit,
+    onAdd: () -> Unit,
+    onRespond: (String, Boolean) -> Unit,
+) {
+    val me = graph?.yourUserId.orEmpty()
+    val incoming = graph?.records.orEmpty().filter { it.status == "pending" && it.addresseeId.equals(me, ignoreCase = true) }
+    Column(Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text("Your code", color = BoardMuted, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+        Text(code ?: "——", color = BoardInk, fontWeight = FontWeight.Black, fontSize = 22.sp)
+        Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            androidx.compose.foundation.text.BasicTextField(
+                value = draft,
+                onValueChange = { onDraft(it.uppercase()) },
+                textStyle = androidx.compose.ui.text.TextStyle(color = BoardInk, fontWeight = FontWeight.Bold, fontSize = 16.sp),
+                singleLine = true,
+                modifier = Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).background(Color.White.copy(alpha = 0.08f)).padding(horizontal = 14.dp, vertical = 10.dp),
+                decorationBox = { inner ->
+                    if (draft.isEmpty()) Text("Invite code", color = BoardMuted, fontWeight = FontWeight.Bold)
+                    inner()
+                },
+            )
+            Text(
+                "Add",
+                color = Color.Black,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(start = 8.dp).clip(CircleShape).background(BoardOrange).clickable(onClick = onAdd).padding(horizontal = 16.dp, vertical = 10.dp),
+            )
+        }
+        if (!note.isNullOrBlank()) {
+            Text(note, color = BoardInk.copy(alpha = 0.8f), fontWeight = FontWeight.SemiBold, fontSize = 13.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp))
+        }
+        incoming.forEach { request ->
+            val name = graph?.names[request.requesterId.lowercase()] ?: "RotRun user"
+            Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(name, color = BoardInk, fontWeight = FontWeight.Bold, maxLines = 1, modifier = Modifier.weight(1f))
+                Text("Accept", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.clip(CircleShape).background(Color.White).clickable { onRespond(request.id, true) }.padding(horizontal = 10.dp, vertical = 6.dp))
+                Text("Decline", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.padding(start = 8.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.16f)).clickable { onRespond(request.id, false) }.padding(horizontal = 10.dp, vertical = 6.dp))
+            }
+        }
     }
 }
 
 @Composable
-private fun TopAvatars(rows: List<RankedXp>, onEditYou: () -> Unit, onYouPlacement: (Boolean) -> Unit) {
+private fun FriendActionDialog(
+    name: String,
+    state: com.ahmed.rotrun.logic.FriendActionState,
+    onAdd: () -> Unit,
+    onAccept: () -> Unit,
+    onDecline: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.clip(RoundedCornerShape(24.dp)).background(Color(0xFF1C1C1E)).padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(name, color = BoardInk, fontWeight = FontWeight.Black, fontSize = 22.sp)
+            val line = when (state) {
+                com.ahmed.rotrun.logic.FriendActionState.Add -> "Send a friend request"
+                com.ahmed.rotrun.logic.FriendActionState.Pending -> "Waiting for them to answer"
+                com.ahmed.rotrun.logic.FriendActionState.Incoming -> "They asked to be friends"
+                com.ahmed.rotrun.logic.FriendActionState.Friends -> "You're friends"
+            }
+            Text(line, color = BoardMuted, modifier = Modifier.padding(top = 6.dp, bottom = 16.dp))
+            when (state) {
+                com.ahmed.rotrun.logic.FriendActionState.Add -> FriendActionButton("Add friend", onAdd)
+                com.ahmed.rotrun.logic.FriendActionState.Pending -> Text("Request pending", color = BoardInk, fontWeight = FontWeight.Bold)
+                com.ahmed.rotrun.logic.FriendActionState.Incoming -> {
+                    FriendActionButton("Accept", onAccept)
+                    Text("Decline", color = BoardInk, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp).clickable(onClick = onDecline))
+                }
+                com.ahmed.rotrun.logic.FriendActionState.Friends -> Text("Friends", color = BoardInk, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@Composable
+private fun FriendActionButton(label: String, onClick: () -> Unit) {
+    Text(
+        label,
+        color = Color.White,
+        fontWeight = FontWeight.Bold,
+        textAlign = TextAlign.Center,
+        modifier = Modifier.fillMaxWidth().clip(CircleShape).background(BoardOrange).clickable(onClick = onClick).padding(vertical = 12.dp),
+    )
+}
+
+@Composable
+private fun TopAvatars(rows: List<RankedXp>, onOpen: (RankedXp) -> Unit, onYouPlacement: (Boolean) -> Unit) {
     Row(
         Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 8.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.Bottom,
     ) {
         DailyBoard.topRow(rows).forEach { row ->
-            TopPlace(row, onEditYou, onYouPlacement)
+            TopPlace(row, onOpen, onYouPlacement)
         }
     }
 }
 
 @Composable
-private fun TopPlace(row: RankedXp, onEditYou: () -> Unit, onYouPlacement: (Boolean) -> Unit) {
+private fun TopPlace(row: RankedXp, onOpen: (RankedXp) -> Unit, onYouPlacement: (Boolean) -> Unit) {
     val first = row.rank == 1
     val medal = medalColor(row.rank)
     val avatar = if (first) 104.dp else 76.dp
@@ -411,7 +680,7 @@ private fun TopPlace(row: RankedXp, onEditYou: () -> Unit, onYouPlacement: (Bool
             .offset(y = if (first) (-14).dp else 0.dp)
             .padding(horizontal = 4.dp)
             .then(if (row.you) Modifier.border(2.dp, BoardOrange, RoundedCornerShape(22.dp)) else Modifier)
-            .clickable(enabled = row.you, onClick = onEditYou)
+            .clickable { onOpen(row) }
             .youWatch(row.you, onYouPlacement)
             .padding(horizontal = 6.dp, vertical = 8.dp),
     ) {
@@ -458,13 +727,13 @@ private fun RankBadge(rank: Int, fill: Color, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun BoardLine(row: RankedXp, onEditYou: () -> Unit, onYouPlacement: (Boolean) -> Unit) {
+private fun BoardLine(row: RankedXp, onOpen: (RankedXp) -> Unit, onYouPlacement: (Boolean) -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
             .padding(vertical = 2.dp)
             .then(if (row.you) Modifier.border(2.dp, BoardOrange, RoundedCornerShape(18.dp)) else Modifier)
-            .clickable(enabled = row.you, onClick = onEditYou)
+            .clickable { onOpen(row) }
             .youWatch(row.you, onYouPlacement)
             .padding(horizontal = 8.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
