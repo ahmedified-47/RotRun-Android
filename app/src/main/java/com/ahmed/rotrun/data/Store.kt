@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import com.ahmed.rotrun.billing.PlayBilling
 import com.ahmed.rotrun.icon.LauncherIcons
+import com.ahmed.rotrun.logic.BrainHealthLevel
 import com.ahmed.rotrun.logic.BlockRules
 import com.ahmed.rotrun.logic.InterventionXp
 import com.ahmed.rotrun.logic.withoutAppList
@@ -210,25 +211,31 @@ class RotRunRepository(context: Context) {
             withContext(Dispatchers.IO) {
                 backend.syncScreenTime(shown)
                 backend.syncStreak(_state.value)
-                publishCurrentXp(shown.authorized)
+                publishDailyXp()
             }
         }
     }
 
-    /** Upsert today's score when Home has minutes to show. Unchanged fingerprints are skipped inside publishXp. */
+    /**
+     * Upsert today's score from the chosen Easy, Medium, or Hard goal.
+     * A refresh with no new minutes does not replace a higher same-day score.
+     */
     fun syncDailyXp() {
-        val minutes = Scoring.scoredMinutes(_usage.value.todaySeconds, _usage.value.authorized) ?: return
-        val xp = Scoring.dailyXp(
-            minutes,
-            Scoring.goalMinutes(_state.value.goalHours),
-            _state.value.askBrainCount,
-            _state.value.ransomDebit,
-        )
-        backend.publishXp(xp, hasReading = true)
+        val state = _state.value
+        val level = BrainHealthLevel.fromLabel(state.brainHealth)
+        val post = Scoring.nextDailyXp(
+            today = Scoring.dayKey(),
+            minutesLoaded = Scoring.scoredMinutes(_usage.value.todaySeconds, _usage.value.authorized),
+            askCount = state.askBrainCount,
+            ransomDebit = state.ransomDebit,
+            level = level,
+            userId = backend.userId.orEmpty(),
+            previous = backend.storedDailyXp(),
+        ) ?: return
+        if (backend.publishXp(post.xp, hasReading = true)) backend.rememberDailyXp(post)
     }
 
-    private fun publishCurrentXp(hasReading: Boolean) {
-        if (!hasReading) return
+    fun publishDailyXp() {
         scope.launch(Dispatchers.IO) { syncDailyXp() }
     }
 
@@ -535,7 +542,7 @@ class RotRunRepository(context: Context) {
         }
         if (charged) {
             toast("−${InterventionXp.ASK_XP} XP · caught rotting")
-            publishCurrentXp(_usage.value.authorized)
+            publishDailyXp()
         }
     }
 
@@ -554,7 +561,7 @@ class RotRunRepository(context: Context) {
             current.withLedger(InterventionXp.payRansom(current.dayLedger(), Scoring.dayKey()))
         }
         toast("−${InterventionXp.RANSOM_XP} XP · ransom paid")
-        publishCurrentXp(_usage.value.authorized)
+        publishDailyXp()
     }
 
     fun noteBailout(from: String) {

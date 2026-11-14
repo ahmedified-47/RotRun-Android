@@ -65,6 +65,7 @@ import com.ahmed.rotrun.R
 import com.ahmed.rotrun.data.RotRunRepository
 import com.ahmed.rotrun.data.SavedState
 import com.ahmed.rotrun.logic.InterventionCopy
+import com.ahmed.rotrun.logic.BrainHealthLevel
 import com.ahmed.rotrun.logic.Scoring
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -246,7 +247,8 @@ private fun LeaderboardBody(
     onEditYou: () -> Unit,
 ) {
     val context = LocalContext.current
-    val xp = screenMinutes?.let { Scoring.dailyXp(it, Scoring.goalMinutes(state.goalHours), state.askBrainCount, state.ransomDebit) }
+    val level = BrainHealthLevel.fromLabel(state.brainHealth)
+    val xp = screenMinutes?.let { Scoring.dailyXp(it, level.goalMinutes, state.askBrainCount, state.ransomDebit, level.xpMultiplier) }
     var board by remember { mutableStateOf(BoardSnapshot()) }
     var refreshing by remember { mutableStateOf(false) }
     var scope by remember { mutableStateOf(BoardScope.Daily) }

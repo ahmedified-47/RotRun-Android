@@ -415,6 +415,7 @@ private fun BrainHealthPage(state: SavedState, repo: RotRunRepository, onBack: (
                 Column(
                     Modifier.padding(vertical = 6.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(if (on) chrome.blue.copy(alpha = 0.16f) else chrome.card).clickable {
                         repo.update { it.copy(brainHealth = level.label) }
+                        repo.publishDailyXp()
                     }.padding(14.dp),
                 ) {
                     Text(level.label, color = chrome.ink, fontWeight = FontWeight.Bold)

@@ -3,6 +3,7 @@ package com.ahmed.rotrun.data
 import android.app.Activity
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.core.content.edit
 import com.ahmed.rotrun.BuildConfig
 import com.ahmed.rotrun.billing.PlayPurchaseUpload
 import com.ahmed.rotrun.billing.PlaySyncResult
@@ -97,6 +98,7 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
         voice?.stop()
         session.edit().clear().apply()
         app.getSharedPreferences("rotrun", Context.MODE_PRIVATE).edit().remove("chat.turns").apply()
+        flags().edit { remove(XP_POST) }
         syncProfileGate()
     }
 
@@ -463,24 +465,33 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
         return if (response.code in 200..299) null else response.error ?: "Couldn’t forget memories."
     }
 
-    fun publishXp(xp: Int, hasReading: Boolean) {
-        if (!signedIn) return
+    fun storedDailyXp(): Scoring.DailyXpPost? = Scoring.DailyXpPost.decode(flags().getString(XP_POST, null))
+
+    fun rememberDailyXp(post: Scoring.DailyXpPost) {
+        flags().edit { putString(XP_POST, post.encode()) }
+    }
+
+    /** True when this score is already on the server or the upsert succeeded. */
+    fun publishXp(xp: Int, hasReading: Boolean): Boolean {
+        if (!signedIn) return false
         flushPendingXp()
-        if (!DailyBoard.shouldUpload(authorized = true, hasReading = hasReading)) return
-        val id = userId ?: return
+        if (!DailyBoard.shouldUpload(authorized = true, hasReading = hasReading)) return false
+        val id = userId ?: return false
         ensureProfile()
         val name = storedDisplayName()
         val avatar = storedAvatar()
         val day = Scoring.dayKey()
         val finger = DailyBoard.fingerprint(id, day, xp.coerceAtLeast(0), name, avatar)
         val prefs = flags()
-        if (DailyBoard.shouldSkip(prefs.getString(XP_FINGER, null), prefs.getString(XP_PENDING, null), finger)) return
+        if (DailyBoard.shouldSkip(prefs.getString(XP_FINGER, null), prefs.getString(XP_PENDING, null), finger)) return true
         val body = xpBody(id, day, xp.coerceAtLeast(0), name, avatar)
         val code = postDaily(body.toString())
-        if (code in 200..299) {
+        return if (code in 200..299) {
             prefs.edit().putString(XP_FINGER, finger).remove(XP_PENDING).apply()
+            true
         } else {
             prefs.edit().putString(XP_PENDING, body.toString()).apply()
+            false
         }
     }
 
@@ -1064,7 +1075,7 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
             .put("timezone", ZoneId.systemDefault().id)
             .put("unlock_minutes_left", ((state.unlockUntil - System.currentTimeMillis()) / 60_000).toInt().coerceAtLeast(0))
             .put("streak_days", state.streak)
-            .put("screen_time_goal_min", Scoring.goalMinutes(state.goalHours))
+            .put("screen_time_goal_min", level.goalMinutes)
             .put("is_premium", state.proFor(userId))
             .put("app_version", BuildConfig.VERSION_NAME)
             .put("caught_doomscrolling", false)
@@ -1072,7 +1083,7 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
         if (usage.authorized) {
             val minutes = Scoring.scoredMinutes(usage.todaySeconds, authorized = true)
             if (minutes != null) {
-                val xp = Scoring.dailyXp(minutes, Scoring.goalMinutes(state.goalHours), state.askBrainCount, state.ransomDebit)
+                val xp = Scoring.dailyXp(minutes, level.goalMinutes, state.askBrainCount, state.ransomDebit, level.xpMultiplier)
                 objectJson.put("xp", xp)
                 objectJson.put("screen_time_today_min", minutes)
             }
@@ -1260,6 +1271,7 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
         private fun openSession(context: Context): SharedPreferences = SessionStore.open(context)
 
         private const val XP_FINGER = "xp.finger"
+        private const val XP_POST = "xp.post"
         private const val XP_PENDING = "xp.pending"
         private const val BOARD_CACHE = "board.cache"
         private const val BOARD_DAY = "board.day"

@@ -5,6 +5,7 @@ import com.ahmed.rotrun.logic.BrainRank
 import com.ahmed.rotrun.logic.Products
 import com.ahmed.rotrun.logic.Scoring
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 import java.time.LocalDate
 
@@ -44,11 +45,49 @@ class ScoringTest {
         assertEquals(BrainRank.CosmicMind, Scoring.rank(3000))
         assertEquals(240, Scoring.goalMinutes(4))
         assertEquals(240, Scoring.goalMinutes(0))
+        assertEquals(300, BrainHealthLevel.Easy.goalMinutes)
+        assertEquals(180, BrainHealthLevel.Medium.goalMinutes)
+        assertEquals(60, BrainHealthLevel.Hard.goalMinutes)
+        assertEquals(1.0, BrainHealthLevel.Easy.xpMultiplier, 0.0)
+        assertEquals(1.25, BrainHealthLevel.Medium.xpMultiplier, 0.0)
+        assertEquals(1.5, BrainHealthLevel.Hard.xpMultiplier, 0.0)
         assertEquals(1, Scoring.screenMinutes(90))
         assertEquals(1, Scoring.screenMinutes(119))
         assertEquals(1, Scoring.scoredMinutes(90, authorized = true))
         assertEquals(null, Scoring.scoredMinutes(59, authorized = true))
         assertEquals(null, Scoring.scoredMinutes(3_600, authorized = false))
+    }
+
+    @Test
+    fun eachGoalScoresUnderAndOver() {
+        assertEquals(2000, Scoring.dailyXp(100, BrainHealthLevel.Easy.goalMinutes, 0, 0, BrainHealthLevel.Easy.xpMultiplier))
+        assertEquals(0, Scoring.dailyXp(360, BrainHealthLevel.Easy.goalMinutes, 0, 0, BrainHealthLevel.Easy.xpMultiplier))
+        assertEquals(1500, Scoring.dailyXp(60, BrainHealthLevel.Medium.goalMinutes, 0, 0, BrainHealthLevel.Medium.xpMultiplier))
+        assertEquals(13, Scoring.dailyXp(179, BrainHealthLevel.Medium.goalMinutes, 0, 0, BrainHealthLevel.Medium.xpMultiplier))
+        assertEquals(0, Scoring.dailyXp(200, BrainHealthLevel.Medium.goalMinutes, 0, 0, BrainHealthLevel.Medium.xpMultiplier))
+        assertEquals(600, Scoring.dailyXp(20, BrainHealthLevel.Hard.goalMinutes, 0, 0, BrainHealthLevel.Hard.xpMultiplier))
+        assertEquals(0, Scoring.dailyXp(80, BrainHealthLevel.Hard.goalMinutes, 0, 0, BrainHealthLevel.Hard.xpMultiplier))
+        assertEquals(1880, Scoring.dailyXp(100, BrainHealthLevel.Easy.goalMinutes, 1, 100, BrainHealthLevel.Easy.xpMultiplier))
+    }
+
+    @Test
+    fun staleRefreshDoesNotLowerTheSameDayScore() {
+        val today = "2026-11-14"
+        val stored = Scoring.DailyXpPost(today, 1500, 60, 0, 0, BrainHealthLevel.Medium.label, "user")
+        assertNull(Scoring.nextDailyXp(today, null, 0, 0, BrainHealthLevel.Medium, "user", stored))
+        val shrunk = Scoring.nextDailyXp(today, 10, 0, 0, BrainHealthLevel.Medium, "user", stored)
+        assertNull(shrunk)
+        val moreUse = Scoring.nextDailyXp(today, 120, 0, 0, BrainHealthLevel.Medium, "user", stored)
+        assertEquals(750, moreUse?.xp)
+        val asked = Scoring.nextDailyXp(today, null, 1, 0, BrainHealthLevel.Medium, "user", stored)
+        assertEquals(1480, asked?.xp)
+        assertEquals(60, asked?.minutes)
+        val paid = Scoring.nextDailyXp(today, null, 0, 100, BrainHealthLevel.Medium, "user", stored)
+        assertEquals(1400, paid?.xp)
+        val tomorrow = Scoring.nextDailyXp("2026-11-15", 170, 0, 0, BrainHealthLevel.Medium, "user", stored)
+        assertEquals(125, tomorrow?.xp)
+        assertNull(Scoring.nextDailyXp("2026-11-15", null, 0, 0, BrainHealthLevel.Medium, "user", stored))
+        assertEquals(stored, Scoring.DailyXpPost.decode(stored.encode()))
     }
 
     @Test
