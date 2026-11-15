@@ -925,7 +925,9 @@ private fun CameoConfirm(
                 CameoPerson(choice.userId, choice.name, choice.avatarUrl, choice.name, "${choice.xp} XP")
                 CameoPerson(userId = null, name = "You", url = null, title = "You", xp = "${choice.yourXp} XP", mascot = true)
             }
-            val spoken = CameoOffer.friendLine(choice.name, choice.xp, choice.yourXp)
+            val spoken = remember(choice.name, choice.xp, choice.yourXp) {
+                CameoOffer.friendLine(choice.name, choice.xp, choice.yourXp)
+            }
             Text(
                 spoken.sentence,
                 color = Color.White,

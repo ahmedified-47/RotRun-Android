@@ -101,20 +101,63 @@ class CameoOfferTest {
     @Test
     fun friendCameoSpeaksWithTheFirstNameAndTheRealGap() {
         assertEquals(3, CameoOffer.motivationCount())
+        val aheadPool = CameoOffer.aheadLines("Sam", 900)
+        val tiedPool = CameoOffer.tiedLines(40)
+        val behindPool = CameoOffer.userAheadLines(20)
+        assertEquals("It's Sam. I'm 900 XP ahead of you today — close this and catch me.", aheadPool.first())
+        assertEquals("We're level at 40 XP. Don't let this app be the reason I pass you.", tiedPool.first())
+        assertEquals("You're 20 XP ahead of me. Don't throw it away on this app.", behindPool.first())
         val ahead = CameoOffer.friendLine("Sam", friendXp = 900, yourXp = 0)
         assertEquals("Sam", ahead.speaker)
-        assertEquals("It's Sam. I'm 900 XP ahead of you today — close this and catch me.", ahead.sentence)
+        assertTrue(ahead.sentence in aheadPool)
         val tied = CameoOffer.friendLine("Sara J.", friendXp = 40, yourXp = 40)
         assertEquals("Sara", tied.speaker)
-        assertEquals("We're level at 40 XP. Don't let this app be the reason I pass you.", tied.sentence)
+        assertTrue(tied.sentence in tiedPool)
         val behind = CameoOffer.friendLine("Sam Jones", friendXp = 10, yourXp = 30)
         assertEquals("Sam", behind.speaker)
-        assertEquals("You're 20 XP ahead of me. Don't throw it away on this app.", behind.sentence)
-        listOf(ahead, tied, behind).forEach { line ->
-            assertFalse(line.sentence.contains("Not now"))
-            assertFalse(line.sentence.contains("workout"))
+        assertTrue(behind.sentence in behindPool)
+        listOf(aheadPool, tiedPool, behindPool).flatten().forEach { sentence ->
+            assertFalse(sentence.contains("Not now"))
+            assertFalse(sentence.contains("workout"))
         }
         assertEquals(CameoOffer.confirmQuestion, "You're at 0 XP. Do you want to continue and open the app?")
+    }
+
+    @Test
+    fun cameoRotatesALineFromTheRealComparison() {
+        val ahead = CameoOffer.linePool("Sam", friendXp = 900, yourXp = 0)
+        val tied = CameoOffer.linePool("Sara J.", friendXp = 40, yourXp = 40)
+        val behind = CameoOffer.linePool("Sam Jones", friendXp = 10, yourXp = 30)
+        assertEquals(CameoOffer.aheadLines("Sam", 900), ahead)
+        assertEquals(CameoOffer.tiedLines(40), tied)
+        assertEquals(CameoOffer.userAheadLines(20), behind)
+        listOf(ahead, tied, behind).forEach { pool ->
+            assertTrue(pool.size >= 3)
+            assertEquals(pool.size, pool.distinct().size)
+        }
+        ahead.forEach { line ->
+            assertTrue(line.contains("Sam"))
+            assertTrue(line.contains("900"))
+            assertFalse(line.contains("Not now"))
+        }
+        tied.forEach { line ->
+            assertTrue(line.contains("40"))
+            assertFalse(line.contains("Not now"))
+        }
+        behind.forEach { line ->
+            assertTrue(line.contains("20"))
+            assertFalse(line.contains("Not now"))
+        }
+        val seen = mutableSetOf<String>()
+        repeat(36) {
+            val line = CameoOffer.friendLine("Sam", 900, 0)
+            assertTrue(line.sentence in ahead)
+            assertEquals("Sam", line.speaker)
+            seen += line.sentence
+            assertTrue(CameoOffer.friendLine("Sara J.", 40, 40).sentence in tied)
+            assertTrue(CameoOffer.friendLine("Sam Jones", 10, 30).sentence in behind)
+        }
+        assertTrue(seen.size > 1)
     }
 
     @Test

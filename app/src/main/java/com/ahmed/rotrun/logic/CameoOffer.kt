@@ -11,7 +11,7 @@ object CameoOffer {
 
     data class WalkAway(val payout: Int, val goHome: Boolean)
 
-    fun motivationCount(): Int = 3
+    fun motivationCount(): Int = aheadLines("A friend", 1).size
 
     /** First name only. "Sara J." and "Sam" both stay a name the friend would answer to. */
     fun firstName(displayName: String): String {
@@ -20,21 +20,47 @@ object CameoOffer {
         return trimmed.substringBefore(' ').trim().trimEnd('.').ifBlank { "A friend" }
     }
 
-    /**
-     * The friend's voice, from today's Daily XP.
-     * One line when the friend is ahead, one when the scores are level, one when the user is ahead.
-     * The iOS checkout did not have a longer list.
-     */
-    fun friendLine(displayName: String, friendXp: Int, yourXp: Int): FriendLine {
+    /** Friend is ahead. The first line is the written one. Later lines are extra Android variants. */
+    fun aheadLines(name: String, gap: Int): List<String> = listOf(
+        "It's $name. I'm $gap XP ahead of you today — close this and catch me.",
+        "It's $name. Close this. I'm $gap XP ahead of you today, so come catch me.",
+        "$name here. I'm $gap XP ahead of you today — close this and catch me.",
+    )
+
+    /** Scores are level. The first line is the written one. Later lines are extra Android variants. */
+    fun tiedLines(xp: Int): List<String> = listOf(
+        "We're level at $xp XP. Don't let this app be the reason I pass you.",
+        "We're level at $xp XP. Close this before I pass you.",
+        "Tied at $xp XP. Close this — don't let this app be the reason I pass you.",
+    )
+
+    /** User is ahead. The first line is the written one. Later lines are extra Android variants. */
+    fun userAheadLines(gap: Int): List<String> = listOf(
+        "You're $gap XP ahead of me. Don't throw it away on this app.",
+        "You're $gap XP ahead of me. Close this and don't throw that lead away.",
+        "You've got a $gap XP lead on me. Don't throw it away on this app — close this.",
+    )
+
+    /** The lines for this Daily XP comparison. The first entry is the written line. */
+    fun linePool(displayName: String, friendXp: Int, yourXp: Int): List<String> {
         val name = firstName(displayName)
         val friend = friendXp.coerceAtLeast(0)
         val yours = yourXp.coerceAtLeast(0)
-        val sentence = when {
-            friend > yours -> "It's $name. I'm ${friend - yours} XP ahead of you today — close this and catch me."
-            friend == yours -> "We're level at $friend XP. Don't let this app be the reason I pass you."
-            else -> "You're ${yours - friend} XP ahead of me. Don't throw it away on this app."
+        return when {
+            friend > yours -> aheadLines(name, friend - yours)
+            friend == yours -> tiedLines(friend)
+            else -> userAheadLines(yours - friend)
         }
-        return FriendLine(sentence, name)
+    }
+
+    /**
+     * The friend's voice, from today's Daily XP.
+     * Each showing picks one line at random from the comparison that matches the real gap.
+     * The pick is not locked to a seed for the day.
+     */
+    fun friendLine(displayName: String, friendXp: Int, yourXp: Int): FriendLine {
+        val options = linePool(displayName, friendXp, yourXp)
+        return FriendLine(options.random(), firstName(displayName))
     }
 
     enum class Confirm { Open, WalkAway }
