@@ -680,9 +680,10 @@ class RotRunRepository(context: Context) {
     }
 
     /**
-     * Cameo up front only when health is exactly 0, every standard style is disabled,
-     * and a real friend is cached. A style that is on still runs at 0 health.
-     * Continuing out of that style is handled by [holdCameoBeforeOpen].
+     * Random pool includes Cameo at any health when a real friend is cached and the device is online.
+     * At health 0, Cameo is still forced when every standard style is off.
+     * Continuing out of a standard style at 0 health is handled by [holdCameoBeforeOpen].
+     * The friend comes from the local cache. This does not call Supabase.
      */
     fun askMode(): String {
         val current = _state.value
@@ -701,19 +702,12 @@ class RotRunRepository(context: Context) {
             current.mirrorMode,
             current.quickCheck,
             friend,
+            isDeviceOnline(app),
         )
     }
 
-    /** The four standard styles only. Cameo is decided by [askMode], not this pool. */
-    fun pickStyle(): String? {
-        val current = _state.value
-        return CameoOffer.pool(
-            current.standardDialogue,
-            current.breathingExercise,
-            current.mirrorMode,
-            current.quickCheck,
-        ).randomOrNull()
-    }
+    /** Same pick as [askMode]. */
+    fun pickStyle(): String? = askMode()
 
     private var cameoBeforeOpen = false
 
@@ -728,11 +722,27 @@ class RotRunRepository(context: Context) {
 
     /**
      * Walk-away from a last-resort Cameo. Pays the difficulty bailout the first time today.
-     * Opening the app does not call this. A later walk-away the same day pays nothing.
+     * A random Cameo from the Ask-my-brain pool pays nothing. Opening the app does not call this.
      */
     fun recordWalkAwayBailout() {
-        val offered = cameoBeforeOpen || _askIntervention.value?.mode == "cameo"
-        if (!offered) return
+        val current = _state.value
+        val level = BrainHealthLevel.fromLabel(current.brainHealth)
+        val health = Scoring.shownHealth(
+            _usage.value.authorized,
+            _usage.value.todaySeconds,
+            current.focusMinutesToday(),
+            level,
+        )
+        val friend = FriendCameoDisk.surface(app, current.friendCameo) is FriendCameoSurface.Friend
+        val lastResortConfirm = cameoBeforeOpen || CameoOffer.lastResort(
+            health,
+            current.standardDialogue,
+            current.breathingExercise,
+            current.mirrorMode,
+            current.quickCheck,
+            friend,
+        )
+        if (!lastResortConfirm) return
         val reward = Scoring.bailoutReward(BrainHealthLevel.fromLabel(_state.value.brainHealth))
         var granted = false
         update(commit = true) { current ->

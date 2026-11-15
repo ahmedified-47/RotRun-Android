@@ -1,6 +1,7 @@
 package com.ahmed.rotrun
 
 import com.ahmed.rotrun.logic.CameoOffer
+import com.ahmed.rotrun.logic.DeviceOnline
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -99,26 +100,58 @@ class CameoOfferTest {
 
     @Test
     fun friendCameoSpeaksWithTheFirstNameAndTheRealGap() {
-        assertEquals(6, CameoOffer.motivationCount())
-        val spoken = CameoOffer.friendLine("Sam", friendXp = 900, yourXp = 0, seed = 0)
-        assertEquals("Sam", spoken.speaker)
-        assertEquals("Come on, put it down. I'm 900 XP ahead of you today.", spoken.sentence)
-        assertEquals("Sara", CameoOffer.firstName("Sara J."))
-        val again = CameoOffer.friendLine("Sam", 900, 0, 0)
-        assertEquals(spoken.sentence, again.sentence)
-        val lines = (0 until 6).map { seed ->
-            CameoOffer.friendLine("Sam Jones", friendXp = 1200, yourXp = 300, seed = seed)
-        }
-        assertEquals(6, lines.map { it.sentence }.distinct().size)
-        lines.forEach { line ->
-            assertEquals("Sam", line.speaker)
-            assertTrue(line.sentence.contains("I'm 900 XP ahead of you today"))
+        assertEquals(3, CameoOffer.motivationCount())
+        val ahead = CameoOffer.friendLine("Sam", friendXp = 900, yourXp = 0)
+        assertEquals("Sam", ahead.speaker)
+        assertEquals("It's Sam. I'm 900 XP ahead of you today — close this and catch me.", ahead.sentence)
+        val tied = CameoOffer.friendLine("Sara J.", friendXp = 40, yourXp = 40)
+        assertEquals("Sara", tied.speaker)
+        assertEquals("We're level at 40 XP. Don't let this app be the reason I pass you.", tied.sentence)
+        val behind = CameoOffer.friendLine("Sam Jones", friendXp = 10, yourXp = 30)
+        assertEquals("Sam", behind.speaker)
+        assertEquals("You're 20 XP ahead of me. Don't throw it away on this app.", behind.sentence)
+        listOf(ahead, tied, behind).forEach { line ->
+            assertFalse(line.sentence.contains("Not now"))
             assertFalse(line.sentence.contains("workout"))
-            assertFalse(line.sentence.contains("shame"))
         }
-        assertEquals("We're level on XP today", CameoOffer.gapPhrase(40, 40))
-        assertEquals("You're 20 XP ahead of me today", CameoOffer.gapPhrase(10, 30))
         assertEquals(CameoOffer.confirmQuestion, "You're at 0 XP. Do you want to continue and open the app?")
+    }
+
+    @Test
+    fun randomPoolIncludesCameoAboveZeroOnlyWithAFriendAndOnline() {
+        assertTrue(DeviceOnline.connected(hasNetwork = true, internet = true, validated = true))
+        assertFalse(DeviceOnline.connected(hasNetwork = true, internet = true, validated = false))
+        assertFalse(DeviceOnline.connected(hasNetwork = false, internet = true, validated = true))
+        assertTrue(CameoOffer.cameoInRandomPool(hasFriend = true, online = true))
+        assertFalse(CameoOffer.cameoInRandomPool(hasFriend = false, online = true))
+        assertFalse(CameoOffer.cameoInRandomPool(hasFriend = true, online = false))
+        val withCameo = CameoOffer.pool(true, true, true, true, cameo = true)
+        assertTrue(withCameo.contains("cameo"))
+        assertEquals(listOf("standard", "breathing", "mirror", "quick", "cameo"), withCameo)
+        assertFalse(CameoOffer.lastResort(40, true, true, true, true, hasFriend = true))
+        assertEquals("cameo", CameoOffer.mode(40, false, false, false, false, hasFriend = true, online = true))
+        assertEquals("standard", CameoOffer.mode(40, true, false, false, false, hasFriend = false, online = true))
+        assertFalse(CameoOffer.pool(true, true, true, true, cameo = CameoOffer.cameoInRandomPool(true, false)).contains("cameo"))
+        assertEquals("standard", CameoOffer.mode(80, true, false, false, false, hasFriend = true, online = false))
+        repeat(24) {
+            val picked = CameoOffer.mode(40, true, true, true, true, hasFriend = true, online = true)
+            assertTrue(picked in setOf("standard", "breathing", "mirror", "quick", "cameo"))
+        }
+    }
+
+    @Test
+    fun randomCameoDeclinePaysNothingAndStillGoesHome() {
+        val random = CameoOffer.walkAway(lastResortConfirm = false, reward = 1500, alreadyPaid = false)
+        assertEquals(0, random.payout)
+        assertTrue(random.goHome)
+        val first = CameoOffer.walkAway(lastResortConfirm = true, reward = 1500, alreadyPaid = false)
+        assertEquals(1500, first.payout)
+        assertTrue(first.goHome)
+        val again = CameoOffer.walkAway(lastResortConfirm = true, reward = 1500, alreadyPaid = true)
+        assertEquals(0, again.payout)
+        assertTrue(again.goHome)
+        assertEquals(0, payout(health = 40, hasFriend = true, standard = true))
+        assertEquals(1500, payout(health = 0, hasFriend = true, standard = false))
     }
 
     @Test

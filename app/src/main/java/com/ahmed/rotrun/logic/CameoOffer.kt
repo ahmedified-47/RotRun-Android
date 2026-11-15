@@ -1,24 +1,17 @@
 package com.ahmed.rotrun.logic
 
 /**
- * Friend Cameo is not one of the four intervention styles.
- * It is offered only as a last resort, and only after the confirm step.
+ * Friend Cameo is one of the Ask-my-brain styles when a real friend is cached and the device is online.
+ * It is also the last resort at 0 health, and that path is the only one that pays a bailout.
  */
 object CameoOffer {
     const val confirmQuestion = "You're at 0 XP. Do you want to continue and open the app?"
 
     data class FriendLine(val sentence: String, val speaker: String)
 
-    private val aheadLines = listOf(
-        "Come on, put it down. %s.",
-        "Leave it closed. %s.",
-        "You can set this one down. %s.",
-        "Close it and stay with me. %s.",
-        "Put it down for now. %s.",
-        "I want you ahead of this app. %s.",
-    )
+    data class WalkAway(val payout: Int, val goHome: Boolean)
 
-    fun motivationCount(): Int = aheadLines.size
+    fun motivationCount(): Int = 3
 
     /** First name only. "Sara J." and "Sam" both stay a name the friend would answer to. */
     fun firstName(displayName: String): String {
@@ -27,24 +20,21 @@ object CameoOffer {
         return trimmed.substringBefore(' ').trim().trimEnd('.').ifBlank { "A friend" }
     }
 
-    /** Friend XP minus the user's XP. Ahead, behind, and level each say the real gap. */
-    fun gapPhrase(friendXp: Int, yourXp: Int): String {
-        val gap = friendXp - yourXp
-        return when {
-            gap > 0 -> "I'm $gap XP ahead of you today"
-            gap < 0 -> "You're ${-gap} XP ahead of me today"
-            else -> "We're level on XP today"
-        }
-    }
-
     /**
-     * A short line in the friend's voice. The same friend and gap keep the same line.
-     * [seed] is the friend's id hash so the six lines rotate without changing on each redraw.
+     * The friend's voice, from today's Daily XP.
+     * One line when the friend is ahead, one when the scores are level, one when the user is ahead.
+     * The iOS checkout did not have a longer list.
      */
-    fun friendLine(displayName: String, friendXp: Int, yourXp: Int, seed: Int): FriendLine {
-        val speaker = firstName(displayName)
-        val index = (seed and Int.MAX_VALUE) % aheadLines.size
-        return FriendLine(aheadLines[index].format(gapPhrase(friendXp, yourXp)), speaker)
+    fun friendLine(displayName: String, friendXp: Int, yourXp: Int): FriendLine {
+        val name = firstName(displayName)
+        val friend = friendXp.coerceAtLeast(0)
+        val yours = yourXp.coerceAtLeast(0)
+        val sentence = when {
+            friend > yours -> "It's $name. I'm ${friend - yours} XP ahead of you today — close this and catch me."
+            friend == yours -> "We're level at $friend XP. Don't let this app be the reason I pass you."
+            else -> "You're ${yours - friend} XP ahead of me. Don't throw it away on this app."
+        }
+        return FriendLine(sentence, name)
     }
 
     enum class Confirm { Open, WalkAway }
@@ -89,12 +79,22 @@ object CameoOffer {
     fun interceptStandardContinue(health: Int?, hasFriend: Boolean): Boolean =
         health == 0 && hasFriend
 
-    fun pool(standard: Boolean, breathing: Boolean, mirror: Boolean, quick: Boolean): List<String> =
+    /** Random Ask-my-brain pool. Cameo is in it only for a real friend while the device is online. */
+    fun cameoInRandomPool(hasFriend: Boolean, online: Boolean): Boolean = hasFriend && online
+
+    fun pool(
+        standard: Boolean,
+        breathing: Boolean,
+        mirror: Boolean,
+        quick: Boolean,
+        cameo: Boolean = false,
+    ): List<String> =
         buildList {
             if (standard) add("standard")
             if (breathing) add("breathing")
             if (mirror) add("mirror")
             if (quick) add("quick")
+            if (cameo) add("cameo")
         }
 
     /** Health exactly 0, all four styles disabled, and a real accepted friend. Not a health lock. */
@@ -122,9 +122,19 @@ object CameoOffer {
         mirror: Boolean,
         quick: Boolean,
         hasFriend: Boolean,
+        online: Boolean = false,
     ): String {
         if (lastResort(health, standard, breathing, mirror, quick, hasFriend)) return "cameo"
-        return pool(standard, breathing, mirror, quick).randomOrNull() ?: "standard"
+        return pool(standard, breathing, mirror, quick, cameoInRandomPool(hasFriend, online)).randomOrNull() ?: "standard"
+    }
+
+    /**
+     * Declining Cameo always leaves for Home.
+     * The bailout is paid only for the 0-health last resort, and only the first time today.
+     */
+    fun walkAway(lastResortConfirm: Boolean, reward: Int, alreadyPaid: Boolean): WalkAway {
+        val payout = if (lastResortConfirm && !alreadyPaid) reward.coerceAtLeast(0) else 0
+        return WalkAway(payout, goHome = true)
     }
 
     /** Opening the blocked app is only the confirm's Open choice. Walk-away never opens it. */

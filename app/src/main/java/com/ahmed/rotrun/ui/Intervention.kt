@@ -173,8 +173,16 @@ fun InterventionFlow(
                 if (choice == null) {
                     Standard(name, friend, state.cameoKind, onDismiss = retreat, onUnlock = onUnlock)
                 } else {
+                    val confirmBeforeOpen = pendingOpenMinutes != null || CameoOffer.lastResort(
+                        health,
+                        state.standardDialogue,
+                        state.breathingExercise,
+                        state.mirrorMode,
+                        state.quickCheck,
+                        hasFriend = true,
+                    )
                     Box(Modifier.fillMaxSize().background(meadowBrush())) {
-                        CameoConfirm(name, choice, repo, retreat, onUnlock, pendingOpenMinutes)
+                        CameoConfirm(name, choice, repo, retreat, onUnlock, pendingOpenMinutes, confirmBeforeOpen)
                     }
                 }
             } else {
@@ -904,6 +912,7 @@ private fun CameoConfirm(
     onDismiss: () -> Unit,
     onUnlock: (Int) -> Unit,
     pendingMinutes: Int? = null,
+    confirmBeforeOpen: Boolean = false,
 ) {
     var opened by remember { mutableStateOf(false) }
     Column(
@@ -916,7 +925,7 @@ private fun CameoConfirm(
                 CameoPerson(choice.userId, choice.name, choice.avatarUrl, choice.name, "${choice.xp} XP")
                 CameoPerson(userId = null, name = "You", url = null, title = "You", xp = "${choice.yourXp} XP", mascot = true)
             }
-            val spoken = CameoOffer.friendLine(choice.name, choice.xp, choice.yourXp, choice.userId.hashCode())
+            val spoken = CameoOffer.friendLine(choice.name, choice.xp, choice.yourXp)
             Text(
                 spoken.sentence,
                 color = Color.White,
@@ -935,22 +944,24 @@ private fun CameoConfirm(
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(top = 8.dp),
             )
-            Text(
-                CameoOffer.confirmQuestion,
-                color = Color.White,
-                fontFamily = Nunito,
-                fontWeight = FontWeight.Bold,
-                fontSize = 22.sp,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(top = 20.dp),
-            )
+            if (confirmBeforeOpen) {
+                Text(
+                    CameoOffer.confirmQuestion,
+                    color = Color.White,
+                    fontFamily = Nunito,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 22.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = 20.dp),
+                )
+            }
             Spacer(Modifier.heightIn(min = 32.dp).weight(1f))
             MeadowButton("Open the app", filled = true) {
                 if (pendingMinutes != null) onUnlock(pendingMinutes) else opened = true
             }
             Spacer(Modifier.height(12.dp))
             MeadowButton("Don't open", filled = false) {
-                repo.recordWalkAwayBailout()
+                if (confirmBeforeOpen) repo.recordWalkAwayBailout()
                 onDismiss()
             }
             Spacer(Modifier.height(16.dp))
