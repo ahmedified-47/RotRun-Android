@@ -80,6 +80,13 @@ class RotRunRepository(context: Context) {
     val pulses: SharedFlow<UiPulse> = _pulses.asSharedFlow()
     private var host: WeakReference<Activity>? = null
     val backend = Backend(app, this)
+
+    private val _goalStreak = MutableStateFlow(backend.cachedGoalStreak())
+    val goalStreak: StateFlow<Int> = _goalStreak.asStateFlow()
+
+    fun showGoalStreak(value: Int) {
+        _goalStreak.value = value.coerceAtLeast(0)
+    }
     private val billing = PlayBilling(
         app,
         accountId = { backend.userId },
@@ -223,16 +230,29 @@ class RotRunRepository(context: Context) {
     fun syncDailyXp() {
         val state = _state.value
         val level = BrainHealthLevel.fromLabel(state.brainHealth)
-        val post = Scoring.nextDailyXp(
-            today = Scoring.dayKey(),
-            minutesLoaded = Scoring.scoredMinutes(_usage.value.todaySeconds, _usage.value.authorized),
+        val streak = backend.refreshGoalStreak()
+        showGoalStreak(streak)
+        val today = Scoring.dayKey()
+        val userId = backend.userId.orEmpty()
+        val loaded = Scoring.measuredMinutes(
+            Scoring.scoredMinutes(_usage.value.todaySeconds, _usage.value.authorized),
+        )
+        val previous = backend.storedDailyXp()
+        val decided = Scoring.nextDailyXp(
+            today = today,
+            minutesLoaded = loaded,
             askCount = state.askBrainCount,
             ransomDebit = state.ransomDebit,
             level = level,
-            userId = backend.userId.orEmpty(),
-            previous = backend.storedDailyXp(),
-        ) ?: return
-        if (backend.publishXp(post.xp, hasReading = true)) backend.rememberDailyXp(post)
+            userId = userId,
+            previous = previous,
+            streak = streak,
+        )
+        val post = decided ?: previous
+            ?.takeIf { it.userId == userId && it.day == today }
+            ?.let { stored -> Scoring.measuredMinutes(stored.minutes)?.let { stored.copy(minutes = it) } }
+            ?: return
+        if (backend.publishXp(post)) backend.rememberDailyXp(post)
     }
 
     fun publishDailyXp() {
@@ -246,9 +266,9 @@ class RotRunRepository(context: Context) {
     fun shownDailyXp(): Int {
         val state = _state.value
         val level = BrainHealthLevel.fromLabel(state.brainHealth)
-        val minutes = Scoring.scoredMinutes(_usage.value.todaySeconds, _usage.value.authorized)
+        val minutes = Scoring.measuredMinutes(Scoring.scoredMinutes(_usage.value.todaySeconds, _usage.value.authorized))
         if (minutes != null) {
-            return Scoring.dailyXp(minutes, level.goalMinutes, state.askBrainCount, state.ransomDebit, level.xpMultiplier)
+            return Scoring.dailyXp(minutes, level.goalMinutes, state.askBrainCount, state.ransomDebit, level.xpMultiplier, _goalStreak.value)
         }
         val stored = backend.storedDailyXp()
         return if (stored?.day == Scoring.dayKey() && stored.userId == backend.userId) stored.xp else 0

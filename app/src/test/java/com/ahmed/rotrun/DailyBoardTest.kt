@@ -93,13 +93,22 @@ class DailyBoardTest {
 
     @Test
     fun uploadOmitsAvatarWhenItIsMissing() {
-        val bare = DailyBoard.xpUploadBody("user", "2026-11-11", 10, "Ahmed J.", null, "2026-11-11T00:00:00Z")
-        assertFalse(bare.has("avatar_url"))
+        val bare = DailyBoard.xpUploadBody("user", "2026-11-11", 10, "Ahmed J.", null, "2026-11-11T00:00:00Z", 100, 180, "medium")
+        assertFalse(bare!!.has("avatar_url"))
         assertEquals(10, bare.getInt("xp"))
-        val blank = DailyBoard.xpUploadBody("user", "2026-11-11", 10, "Ahmed J.", "  ", "2026-11-11T00:00:00Z")
-        assertFalse(blank.has("avatar_url"))
-        val photo = DailyBoard.xpUploadBody("user", "2026-11-11", 10, "Ahmed J.", "https://cdn.example/a.jpg", "2026-11-11T00:00:00Z")
-        assertEquals("https://cdn.example/a.jpg", photo.getString("avatar_url"))
+        assertEquals(100, bare.getInt("minutes"))
+        assertEquals(180, bare.getInt("goal_minutes"))
+        assertEquals("medium", bare.getString("difficulty"))
+        assertTrue(bare.getBoolean("met_goal"))
+        val blank = DailyBoard.xpUploadBody("user", "2026-11-11", 10, "Ahmed J.", "  ", "2026-11-11T00:00:00Z", 100, 180, "medium")
+        assertFalse(blank!!.has("avatar_url"))
+        val photo = DailyBoard.xpUploadBody("user", "2026-11-11", 10, "Ahmed J.", "https://cdn.example/a.jpg", "2026-11-11T00:00:00Z", 200, 180, "medium")
+        assertEquals("https://cdn.example/a.jpg", photo!!.getString("avatar_url"))
+        assertFalse(photo.getBoolean("met_goal"))
+        assertNull(DailyBoard.xpUploadBody("user", "2026-11-11", 10, "Ahmed J.", null, "2026-11-11T00:00:00Z", 12 * 60, 300, "easy"))
+        assertNull(DailyBoard.xpUploadBody("user", "2026-11-11", 10, "Ahmed J.", null, "2026-11-11T00:00:00Z", 16 * 60, 300, "easy"))
+        assertNull(DailyBoard.xpUploadBody("user", "2026-11-11", 10, "Ahmed J.", null, "2026-11-11T00:00:00Z", 100, 240, "medium"))
+        assertNull(DailyBoard.xpUploadBody("user", "2026-11-11", 10, "Ahmed J.", null, "2026-11-11T00:00:00Z", 100, 180, "Medium"))
     }
 
     @Test

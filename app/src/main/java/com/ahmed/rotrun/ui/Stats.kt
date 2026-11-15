@@ -47,6 +47,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -248,7 +249,11 @@ private fun LeaderboardBody(
 ) {
     val context = LocalContext.current
     val level = BrainHealthLevel.fromLabel(state.brainHealth)
-    val xp = screenMinutes?.let { Scoring.dailyXp(it, level.goalMinutes, state.askBrainCount, state.ransomDebit, level.xpMultiplier) }
+    val streak by repo.goalStreak.collectAsState()
+    val measured = screenMinutes?.let { Scoring.measuredMinutes(it) }
+    val xp = measured?.let {
+        Scoring.dailyXp(it, level.goalMinutes, state.askBrainCount, state.ransomDebit, level.xpMultiplier, streak)
+    }
     var board by remember { mutableStateOf(BoardSnapshot()) }
     var refreshing by remember { mutableStateOf(false) }
     var scope by remember { mutableStateOf(BoardScope.Daily) }
@@ -309,6 +314,19 @@ private fun LeaderboardBody(
             modifier = Modifier.fillMaxWidth(),
             textAlign = TextAlign.Center,
         )
+    }
+    val streakLine = if (scope == BoardScope.Daily) Scoring.streakLine(streak) else null
+    if (streakLine != null) {
+        Appear(0.08f) {
+            Text(
+                streakLine,
+                color = BoardMuted,
+                fontFamily = Nunito,
+                fontSize = 13.sp,
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                textAlign = TextAlign.Center,
+            )
+        }
     }
     Appear(0.1f) {
         BoardTabs(scope) { scope = it }

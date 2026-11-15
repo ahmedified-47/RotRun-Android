@@ -71,6 +71,63 @@ class ScoringTest {
     }
 
     @Test
+    fun goalStreakBonusCapsAtFiveDays() {
+        val goal = BrainHealthLevel.Medium.goalMinutes
+        val rate = BrainHealthLevel.Medium.xpMultiplier
+        assertEquals(1500, Scoring.dailyXp(60, goal, 0, 0, rate, 0))
+        assertEquals(1650, Scoring.dailyXp(60, goal, 0, 0, rate, 1))
+        assertEquals(1950, Scoring.dailyXp(60, goal, 0, 0, rate, 3))
+        assertEquals(2250, Scoring.dailyXp(60, goal, 0, 0, rate, 5))
+        assertEquals(2250, Scoring.dailyXp(60, goal, 0, 0, rate, 7))
+        assertEquals(14, Scoring.dailyXp(179, goal, 0, 0, rate, 1))
+        val over = Scoring.dailyXp(200, goal, 0, 0, rate, 7)
+        assertEquals(0, over)
+        assertEquals(Scoring.dailyXp(200, goal, 0, 0, rate, 0), over)
+        assertNull(Scoring.streakLine(0))
+        assertEquals("1-day streak +10%", Scoring.streakLine(1))
+        assertEquals("3-day streak +30%", Scoring.streakLine(3))
+        assertEquals("7-day streak +50%", Scoring.streakLine(7))
+        assertEquals("easy", BrainHealthLevel.Easy.wireDifficulty)
+        assertEquals("medium", BrainHealthLevel.Medium.wireDifficulty)
+        assertEquals("hard", BrainHealthLevel.Hard.wireDifficulty)
+    }
+
+    @Test
+    fun goalStreakStopsOnAGapOrANull() {
+        val today = LocalDate.of(2026, 11, 15)
+        fun day(offset: Long, met: Boolean?) = Scoring.PastGoal(today.minusDays(offset), met)
+        assertEquals(0, Scoring.goalStreakDays(today, emptyList()))
+        assertEquals(1, Scoring.goalStreakDays(today, listOf(day(1, true))))
+        assertEquals(3, Scoring.goalStreakDays(today, (1L..3L).map { day(it, true) }))
+        assertEquals(5, Scoring.goalStreakDays(today, (1L..5L).map { day(it, true) }))
+        assertEquals(7, Scoring.goalStreakDays(today, (1L..7L).map { day(it, true) }))
+        assertEquals(2, Scoring.goalStreakDays(today, listOf(day(1, true), day(2, true), day(4, true))))
+        assertEquals(1, Scoring.goalStreakDays(today, listOf(day(1, true), day(2, null), day(3, true))))
+        assertEquals(0, Scoring.goalStreakDays(today, listOf(day(1, false), day(2, true))))
+        assertEquals(1, Scoring.goalStreakDays(today, listOf(day(0, true), day(1, true))))
+        assertEquals(4, Scoring.streakAfterFetch(null, 4, today))
+        assertEquals(0, Scoring.streakAfterFetch(emptyList(), 4, today))
+        assertEquals(
+            "/rest/v1/daily_xp?select=day,met_goal&user_id=eq.user-1&day=lt.2026-11-15&order=day.desc&limit=6",
+            Scoring.goalStreakPath("user-1", "2026-11-15"),
+        )
+    }
+
+    @Test
+    fun standInMinutesAreNotMeasured() {
+        assertNull(Scoring.measuredMinutes(Scoring.PLACEHOLDER_MINUTES))
+        assertNull(Scoring.measuredMinutes(Scoring.COVERAGE_CAP_MINUTES))
+        assertNull(Scoring.measuredMinutes(1441))
+        assertNull(Scoring.measuredMinutes(null))
+        assertEquals(100, Scoring.measuredMinutes(100))
+        val today = "2026-11-15"
+        assertNull(Scoring.nextDailyXp(today, Scoring.PLACEHOLDER_MINUTES, 0, 0, BrainHealthLevel.Easy, "user", null))
+        assertNull(Scoring.nextDailyXp(today, Scoring.COVERAGE_CAP_MINUTES, 0, 0, BrainHealthLevel.Easy, "user", null))
+        val stored = Scoring.DailyXpPost(today, 1500, 60, 0, 0, BrainHealthLevel.Medium.label, "user")
+        assertNull(Scoring.nextDailyXp(today, Scoring.PLACEHOLDER_MINUTES, 0, 0, BrainHealthLevel.Medium, "user", stored))
+    }
+
+    @Test
     fun staleRefreshDoesNotLowerTheSameDayScore() {
         val today = "2026-11-14"
         val stored = Scoring.DailyXpPost(today, 1500, 60, 0, 0, BrainHealthLevel.Medium.label, "user")

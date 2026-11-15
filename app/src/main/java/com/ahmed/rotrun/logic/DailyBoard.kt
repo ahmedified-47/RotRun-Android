@@ -86,8 +86,18 @@ object DailyBoard {
         return text
     }
 
-    fun fingerprint(userId: String, day: String, xp: Int, name: String, avatarUrl: String? = null): String =
-        "$userId|$day|$xp|$name|${avatarUrl.orEmpty()}"
+    fun fingerprint(
+        userId: String,
+        day: String,
+        xp: Int,
+        name: String,
+        avatarUrl: String? = null,
+        minutes: Int? = null,
+        goalMinutes: Int? = null,
+        difficulty: String? = null,
+        metGoal: Boolean? = null,
+    ): String =
+        "$userId|$day|$xp|$name|${avatarUrl.orEmpty()}|${minutes ?: ""}|${goalMinutes ?: ""}|${difficulty.orEmpty()}|${metGoal ?: ""}"
 
     fun shouldUpload(authorized: Boolean, hasReading: Boolean): Boolean = authorized && hasReading
 
@@ -129,14 +139,35 @@ object DailyBoard {
         }
     }
 
-    /** Daily XP upsert. `avatar_url` is omitted when there is no URL, matching iOS `DailyXPSync.publish`. */
-    fun xpUploadBody(id: String, day: String, xp: Int, name: String, avatar: String?, updatedAt: String): org.json.JSONObject {
+    /**
+     * Daily XP upsert. `avatar_url` is omitted when there is no URL.
+     * Minutes, goal, difficulty, and met_goal go on every row.
+     * A stand-in total, or a goal outside 60/180/300, is not a body we can post.
+     */
+    fun xpUploadBody(
+        id: String,
+        day: String,
+        xp: Int,
+        name: String,
+        avatar: String?,
+        updatedAt: String,
+        minutes: Int,
+        goalMinutes: Int,
+        difficulty: String,
+    ): org.json.JSONObject? {
+        val measured = Scoring.measuredMinutes(minutes) ?: return null
+        if (goalMinutes !in setOf(60, 180, 300)) return null
+        if (difficulty !in setOf("easy", "medium", "hard")) return null
         val body = org.json.JSONObject()
             .put("user_id", id)
             .put("day", day)
             .put("xp", xp.coerceAtLeast(0))
             .put("display_name", name)
             .put("updated_at", updatedAt)
+            .put("minutes", measured)
+            .put("goal_minutes", goalMinutes)
+            .put("difficulty", difficulty)
+            .put("met_goal", measured <= goalMinutes)
         val column = avatar?.trim()?.takeIf { it.isNotEmpty() }
         if (column != null) body.put("avatar_url", column)
         return body

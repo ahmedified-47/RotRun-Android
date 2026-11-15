@@ -106,6 +106,7 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
         session.edit().clear().apply()
         app.getSharedPreferences("rotrun", Context.MODE_PRIVATE).edit().remove("chat.turns").apply()
         flags().edit { remove(XP_POST) }
+        repo.showGoalStreak(0)
         syncProfileGate()
     }
 
@@ -478,26 +479,76 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
         flags().edit { putString(XP_POST, post.encode()) }
     }
 
+    /** Last goal streak for this signed-in user. Another account's cache is ignored. */
+    fun cachedGoalStreak(): Int {
+        val id = userId ?: return 0
+        val raw = flags().getString(GOAL_STREAK, null) ?: return 0
+        val parts = raw.split('|', limit = 2)
+        if (parts.size != 2 || parts[0] != id) return 0
+        return parts[1].toIntOrNull()?.coerceAtLeast(0) ?: 0
+    }
+
+    /**
+     * Reads the six days before today. A failed request keeps the cached streak.
+     * A successful empty list is a real zero.
+     */
+    fun refreshGoalStreak(): Int {
+        val id = userId
+        val token = freshToken()
+        val today = Scoring.dayKey()
+        if (id.isNullOrBlank() || token == null) return cachedGoalStreak()
+        val response = call("GET", Scoring.goalStreakPath(id, today), null, token)
+        if (response.code !in 200..299 || response.array == null) return cachedGoalStreak()
+        val rows = parseGoalDays(response.array)
+        val todayDate = Scoring.parseDay(today) ?: return cachedGoalStreak()
+        val streak = Scoring.streakAfterFetch(rows, cachedGoalStreak(), todayDate)
+        flags().edit { putString(GOAL_STREAK, "$id|$streak") }
+        return streak
+    }
+
     /** True when this score is already on the server or the upsert succeeded. */
-    fun publishXp(xp: Int, hasReading: Boolean): Boolean {
+    fun publishXp(post: Scoring.DailyXpPost): Boolean {
         if (!signedIn) return false
+        val day = Scoring.dayKey()
+        if (post.day != day) return false
+        val measured = Scoring.measuredMinutes(post.minutes) ?: return false
         flushPendingXp()
-        if (!DailyBoard.shouldUpload(authorized = true, hasReading = hasReading)) return false
+        if (!DailyBoard.shouldUpload(authorized = true, hasReading = true)) return false
         val id = userId ?: return false
         ensureProfile()
         val name = storedDisplayName()
         val avatar = storedAvatar()
-        val day = Scoring.dayKey()
-        val finger = DailyBoard.fingerprint(id, day, xp.coerceAtLeast(0), name, avatar)
+        val level = com.ahmed.rotrun.logic.BrainHealthLevel.fromLabel(post.level)
+        val body = DailyBoard.xpUploadBody(
+            id,
+            day,
+            post.xp.coerceAtLeast(0),
+            name,
+            avatar,
+            ZonedDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
+            measured,
+            level.goalMinutes,
+            level.wireDifficulty,
+        ) ?: return false
+        val finger = DailyBoard.fingerprint(
+            id,
+            day,
+            post.xp.coerceAtLeast(0),
+            name,
+            avatar,
+            body.getInt("minutes"),
+            body.getInt("goal_minutes"),
+            body.getString("difficulty"),
+            body.getBoolean("met_goal"),
+        )
         val prefs = flags()
         if (DailyBoard.shouldSkip(prefs.getString(XP_FINGER, null), prefs.getString(XP_PENDING, null), finger)) return true
-        val body = xpBody(id, day, xp.coerceAtLeast(0), name, avatar)
         val code = postDaily(body.toString())
         return if (code in 200..299) {
-            prefs.edit().putString(XP_FINGER, finger).remove(XP_PENDING).apply()
+            prefs.edit { putString(XP_FINGER, finger).remove(XP_PENDING) }
             true
         } else {
-            prefs.edit().putString(XP_PENDING, body.toString()).apply()
+            prefs.edit { putString(XP_PENDING, body.toString()) }
             false
         }
     }
@@ -983,16 +1034,16 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
 
     private fun flags() = app.getSharedPreferences("rotrun.flags", Context.MODE_PRIVATE)
 
-    private fun xpBody(id: String, day: String, xp: Int, name: String, avatar: String?): JSONObject {
-        val shown = if (name.equals("You", ignoreCase = true)) DailyBoard.fallbackName else name
-        return DailyBoard.xpUploadBody(
-            id,
-            day,
-            xp,
-            shown,
-            avatar,
-            ZonedDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
-        )
+    private fun parseGoalDays(array: JSONArray): List<Scoring.PastGoal> = buildList {
+        for (index in 0 until array.length()) {
+            val row = array.optJSONObject(index) ?: continue
+            val day = Scoring.parseDay(row.optString("day")) ?: continue
+            val met = when {
+                !row.has("met_goal") || row.isNull("met_goal") -> null
+                else -> row.optBoolean("met_goal")
+            }
+            add(Scoring.PastGoal(day, met))
+        }
     }
 
     private fun postDaily(body: String): Int {
@@ -1281,9 +1332,16 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
             .put("caught_doomscrolling", false)
             .put("leaderboard", "unknown")
         if (usage.authorized) {
-            val minutes = Scoring.scoredMinutes(usage.todaySeconds, authorized = true)
+            val minutes = Scoring.measuredMinutes(Scoring.scoredMinutes(usage.todaySeconds, authorized = true))
             if (minutes != null) {
-                val xp = Scoring.dailyXp(minutes, level.goalMinutes, state.askBrainCount, state.ransomDebit, level.xpMultiplier)
+                val xp = Scoring.dailyXp(
+                    minutes,
+                    level.goalMinutes,
+                    state.askBrainCount,
+                    state.ransomDebit,
+                    level.xpMultiplier,
+                    repo.goalStreak.value,
+                )
                 objectJson.put("xp", xp)
                 objectJson.put("screen_time_today_min", minutes)
             }
@@ -1476,6 +1534,7 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
         private const val XP_FINGER = "xp.finger"
         private const val XP_POST = "xp.post"
         private const val XP_PENDING = "xp.pending"
+        private const val GOAL_STREAK = "xp.goalstreak"
         private const val BOARD_CACHE = "board.cache"
         private const val BOARD_DAY = "board.day"
         private const val PROFILE_DONE = "profile.done"
