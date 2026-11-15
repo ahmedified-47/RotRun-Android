@@ -15,9 +15,12 @@ fun buildConfigString(name: String): String {
     return "\"" + raw.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 }
 
+// Paywall code stays in the app. Closed testing leaves it off.
+// A launch build turns it on with -Protrun.showPaywall=true,
+// or rotrun.showPaywall=true in gradle.properties or local.properties.
 val showPaywall = (project.findProperty("rotrun.showPaywall") as String?)?.toBooleanStrictOrNull()
     ?: localProperties.getProperty("rotrun.showPaywall")?.toBooleanStrictOrNull()
-    ?: true
+    ?: false
 
 android {
     namespace = "com.ahmed.rotrun"
@@ -63,8 +66,7 @@ android {
             if (keystorePropertiesFile.exists()) {
                 signingConfig = signingConfigs.getByName("release")
             }
-            // Internal testing always shows the paywall. A debug flag cannot turn this off.
-            buildConfigField("boolean", "SHOW_PAYWALL", "true")
+            // SHOW_PAYWALL is the defaultConfig value. An unset rotrun.showPaywall stays false.
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",

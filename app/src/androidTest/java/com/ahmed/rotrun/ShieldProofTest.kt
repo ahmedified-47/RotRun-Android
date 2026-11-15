@@ -152,12 +152,17 @@ class ShieldProofTest {
         shot("home")
     }
 
-    /** Clicks through the emulator's System UI ANR and the battery prompt while waiting. */
+    /**
+     * Clicks through the emulator's System UI ANR ("Wait") and the battery prompt.
+     * The block shield has no dismiss button, so this does not look for one.
+     */
     private fun settle(timeoutMs: Long, probe: () -> Boolean): Boolean {
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
             device.findObject(By.text("Wait"))?.click()
-            device.findObject(By.text("Not now"))?.click()
+            if (device.hasObject(By.text("Keep blocking on"))) {
+                device.findObject(By.text("Not now"))?.click()
+            }
             if (probe()) return true
             Thread.sleep(500)
         }
