@@ -252,7 +252,8 @@ private fun LeaderboardBody(
     val streak by repo.goalStreak.collectAsState()
     val measured = screenMinutes?.let { Scoring.measuredMinutes(it) }
     val xp = measured?.let {
-        Scoring.dailyXp(it, level.goalMinutes, state.askBrainCount, state.ransomDebit, level.xpMultiplier, streak)
+        val bonus = if (state.xpDay == Scoring.dayKey()) state.bailoutXp else 0
+        Scoring.dailyXp(it, level.goalMinutes, state.askBrainCount, state.ransomDebit, level.xpMultiplier, streak, bonus)
     }
     var board by remember { mutableStateOf(BoardSnapshot()) }
     var refreshing by remember { mutableStateOf(false) }
@@ -287,7 +288,7 @@ private fun LeaderboardBody(
             }
         }
     }
-    LaunchedEffect(xp, repo.backend.signedIn, day, state.askBrainCount, state.ransomDebit) {
+    LaunchedEffect(xp, repo.backend.signedIn, day, state.askBrainCount, state.ransomDebit, state.bailoutXp) {
         reload()
         reloadFriends()
     }

@@ -32,7 +32,6 @@ import com.ahmed.rotrun.data.AskIntervention
 import com.ahmed.rotrun.data.RotRunGraph
 import com.ahmed.rotrun.logic.InterventionCopy
 import com.ahmed.rotrun.logic.OverlayInsetTypes
-import com.ahmed.rotrun.logic.ShieldPalette
 import com.ahmed.rotrun.ui.InterventionFlow
 import com.ahmed.rotrun.ui.RotRunTheme
 
@@ -114,30 +113,27 @@ object ShieldOverlay {
         onAsk: () -> Unit,
     ): View? {
         val copy = InterventionCopy.forPackage(packageName, label)
-        val cameo = friendShield(context)
         val density = context.resources.displayMetrics.density
         fun px(dp: Int) = (dp * density).toInt()
+        val rounded = androidx.core.content.res.ResourcesCompat.getFont(context, R.font.nunito)
+        fun face(bold: Boolean): android.graphics.Typeface {
+            val base = rounded ?: return if (bold) android.graphics.Typeface.DEFAULT_BOLD else android.graphics.Typeface.DEFAULT
+            return android.graphics.Typeface.create(base, if (bold) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
+        }
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            setBackgroundColor(cameo?.background ?: ShieldPalette.background(copy.id))
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(0xFF4DA86B.toInt(), 0xFF288052.toInt()),
+            )
         }
         val topGap = android.view.View(context).apply {
             minimumHeight = px(24)
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
         }
         val mascot = ImageView(context).apply {
-            if (cameo?.icon != null) {
-                setImageBitmap(cameo.icon)
-                outlineProvider = object : android.view.ViewOutlineProvider() {
-                    override fun getOutline(view: View, outline: android.graphics.Outline) {
-                        outline.setOval(0, 0, view.width, view.height)
-                    }
-                }
-                clipToOutline = true
-            } else {
-                setImageResource(R.drawable.rot_brain_character)
-            }
+            setImageResource(R.drawable.rot_brain_character)
             val scale = Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
             if (scale != 0f) {
                 val breath = ObjectAnimator.ofPropertyValuesHolder(
@@ -162,25 +158,27 @@ object ShieldOverlay {
             }
         }
         val title = TextView(context).apply {
-            text = cameo?.title ?: copy.headline
+            text = copy.headline
             setTextColor(android.graphics.Color.WHITE)
             textSize = 32f
-            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            typeface = face(true)
             gravity = Gravity.CENTER
             setPadding(px(28), 0, px(28), 0)
         }
         val body = TextView(context).apply {
-            text = cameo?.body ?: copy.body
-            setTextColor(if (cameo != null) 0xD1FFFFFF.toInt() else 0xFF9E9EA3.toInt())
+            text = copy.body
+            setTextColor(0xE6FFFFFF.toInt())
             textSize = 17f
+            typeface = face(false)
             gravity = Gravity.CENTER
             setPadding(px(36), px(16), px(36), 0)
         }
-        val footer = if (cameo != null) null else copy.footer?.let { line ->
+        val footer = copy.footer?.let { line ->
             TextView(context).apply {
                 text = line
-                setTextColor(0xFF9E9EA3.toInt())
+                setTextColor(0xE6FFFFFF.toInt())
                 textSize = 16f
+                typeface = face(false)
                 gravity = Gravity.CENTER
                 setPadding(px(36), px(14), px(36), 0)
             }
@@ -189,31 +187,40 @@ object ShieldOverlay {
             minimumHeight = px(32)
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
         }
-        val button = TextView(context).apply {
-            text = "Ask my brain"
-            setTextColor(android.graphics.Color.WHITE)
-            textSize = 18f
-            typeface = android.graphics.Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER
-            background = GradientDrawable().apply {
-                cornerRadius = 999f * density
-                setColor(cameo?.accent ?: ShieldPalette.accent(copy.id))
+        fun pill(labelText: String, fill: Int, ink: Int, bottom: Int, onClick: (() -> Unit)?): TextView =
+            TextView(context).apply {
+                text = labelText
+                setTextColor(ink)
+                textSize = 18f
+                typeface = face(true)
+                gravity = Gravity.CENTER
+                background = GradientDrawable().apply {
+                    cornerRadius = 999f * density
+                    setColor(fill)
+                }
+                val padH = px(18)
+                setPadding(padH, padH, padH, padH)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply {
+                    marginStart = px(28)
+                    marginEnd = px(28)
+                    bottomMargin = px(bottom)
+                }
+                if (onClick != null) {
+                    setOnClickListener {
+                        if (!AskLaunchPolicy.acceptTap(AskBrainLaunch.launching)) return@setOnClickListener
+                        isEnabled = false
+                        onClick()
+                    }
+                }
             }
-            val padH = px(18)
-            setPadding(padH, padH, padH, padH)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply {
-                marginStart = px(28)
-                marginEnd = px(28)
-                bottomMargin = px(12)
-            }
-            setOnClickListener {
-                if (!AskLaunchPolicy.acceptTap(AskBrainLaunch.launching)) return@setOnClickListener
-                isEnabled = false
-                onAsk()
-            }
+        val button = pill("Ask my brain", 0xFF217AFF.toInt(), android.graphics.Color.WHITE, 12) {
+            onAsk()
+        }
+        val stay = pill("Not now", android.graphics.Color.WHITE, 0xFF1C1C1E.toInt(), 28, null).apply {
+            setOnClickListener { }
         }
         root.addView(topGap)
         root.addView(mascot)
@@ -222,6 +229,7 @@ object ShieldOverlay {
         footer?.let(root::addView)
         root.addView(bottomGap)
         root.addView(button)
+        root.addView(stay)
         padForBars(root)
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
@@ -299,45 +307,6 @@ object ShieldOverlay {
             Log.w(TAG, "chat failed for $packageName: ${error.javaClass.simpleName}")
             host.destroy()
         }.getOrNull()
-    }
-
-    private data class FriendShield(val title: String, val body: String, val icon: android.graphics.Bitmap?, val background: Int, val accent: Int)
-
-    /** Accepted friend from the local cache. Null keeps the existing shield copy. */
-    private fun friendShield(context: Context): FriendShield? {
-        val enabled = com.ahmed.rotrun.data.FriendCameoDisk.friendCameoEnabled(context)
-        val accent = ShieldPalette.accent("how-much-today")
-        val background = ShieldPalette.background("how-much-today")
-        return when (val surface = com.ahmed.rotrun.data.FriendCameoDisk.surface(context, enabled)) {
-            is com.ahmed.rotrun.logic.FriendCameoSurface.Hidden -> null
-            is com.ahmed.rotrun.logic.FriendCameoSurface.Fallback -> FriendShield("Friend cameo", surface.text, null, background, accent)
-            is com.ahmed.rotrun.logic.FriendCameoSurface.Friend -> FriendShield(
-                surface.choice.name,
-                surface.choice.line,
-                friendIcon(context, surface.choice.userId, surface.choice.name),
-                background,
-                accent,
-            )
-        }
-    }
-
-    private fun friendIcon(context: Context, userId: String, name: String): android.graphics.Bitmap {
-        val bytes = com.ahmed.rotrun.data.FriendCameoDisk.portraitBytes(context, userId)
-        val photo = bytes?.let { android.graphics.BitmapFactory.decodeByteArray(it, 0, it.size) }
-        if (photo != null) return photo
-        val side = 256
-        val bitmap = androidx.core.graphics.createBitmap(side, side)
-        val canvas = android.graphics.Canvas(bitmap)
-        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
-        paint.color = 0xFFED6B38.toInt()
-        canvas.drawCircle(side / 2f, side / 2f, side / 2f, paint)
-        paint.color = android.graphics.Color.WHITE
-        paint.textSize = 120f
-        paint.textAlign = android.graphics.Paint.Align.CENTER
-        val letter = name.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "?"
-        val baseline = side / 2f - (paint.descent() + paint.ascent()) / 2f
-        canvas.drawText(letter, side / 2f, baseline, paint)
-        return bitmap
     }
 
     fun hide(context: Context, view: View?) {

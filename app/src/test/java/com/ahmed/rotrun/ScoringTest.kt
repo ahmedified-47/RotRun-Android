@@ -148,6 +148,26 @@ class ScoringTest {
     }
 
     @Test
+    fun bailoutIsHalfTheZeroMinuteCapWithoutStreak() {
+        assertEquals(3000, Scoring.underGoalCap(BrainHealthLevel.Easy.goalMinutes, BrainHealthLevel.Easy.xpMultiplier))
+        assertEquals(2250, Scoring.underGoalCap(BrainHealthLevel.Medium.goalMinutes, BrainHealthLevel.Medium.xpMultiplier))
+        assertEquals(900, Scoring.underGoalCap(BrainHealthLevel.Hard.goalMinutes, BrainHealthLevel.Hard.xpMultiplier))
+        assertEquals(1500, Scoring.bailoutReward(BrainHealthLevel.Easy))
+        assertEquals(1125, Scoring.bailoutReward(BrainHealthLevel.Medium))
+        assertEquals(450, Scoring.bailoutReward(BrainHealthLevel.Hard))
+        assertEquals(4380, Scoring.dailyXp(0, 300, 1, 100, 1.0, 0, 1500))
+        assertEquals(2505, Scoring.dailyXp(60, 180, 1, 100, 1.25, 0, 1125))
+        assertEquals(0, Scoring.dailyXp(200, 60, 0, 0, 1.5, 0, 450))
+        assertEquals(6000, Scoring.dailyXp(0, 300, 0, 0, 1.0, 5, 1500))
+        val today = "2026-11-15"
+        val base = Scoring.nextDailyXp(today, 0, 0, 0, BrainHealthLevel.Easy, "user", null)
+        assertEquals(3000, base?.xp)
+        val paid = Scoring.nextDailyXp(today, 0, 0, 0, BrainHealthLevel.Easy, "user", base, bailout = 1500)
+        assertEquals(4500, paid?.xp)
+        assertNull(Scoring.nextDailyXp(today, 0, 0, 0, BrainHealthLevel.Easy, "user", paid, bailout = 0))
+    }
+
+    @Test
     fun thursdayWeekStartsOnThursday() {
         assertEquals(LocalDate.of(2026, 10, 22), Scoring.thursdayStart(LocalDate.of(2026, 10, 27)))
     }

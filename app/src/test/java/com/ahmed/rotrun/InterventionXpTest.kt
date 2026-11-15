@@ -62,11 +62,27 @@ class InterventionXpTest {
 
     @Test
     fun localMidnightClearsTheCounters() {
-        val rolled = InterventionXp.roll(open.copy(ransomDebit = 100), "2026-11-12")
+        val rolled = InterventionXp.roll(open.copy(ransomDebit = 100, bailoutPaid = true, bailoutXp = 1500), "2026-11-12")
         assertEquals(0, rolled.askBrainCount)
         assertEquals(0, rolled.ransomDebit)
+        assertEquals(0, rolled.bailoutXp)
+        assertFalse(rolled.bailoutPaid)
         assertFalse(rolled.askOpen)
         val next = InterventionXp.presentAsk(rolled, eventId = 7L, today = "2026-11-12")
         assertEquals(1, next.askBrainCount)
+    }
+
+    @Test
+    fun bailoutPaysOncePerLocalDay() {
+        val first = InterventionXp.grantBailout(InterventionXp.DayLedger(xpDay = today), today, 1500)
+        assertTrue(first.bailoutPaid)
+        assertEquals(1500, first.bailoutXp)
+        val second = InterventionXp.grantBailout(first, today, 1500)
+        assertEquals(1500, second.bailoutXp)
+        assertEquals(4500, Scoring.dailyXp(0, 300, 0, 0, 1.0, 0, second.bailoutXp))
+        val tomorrow = InterventionXp.roll(second, "2026-11-12")
+        val again = InterventionXp.grantBailout(tomorrow, "2026-11-12", 450)
+        assertEquals(450, again.bailoutXp)
+        assertTrue(again.bailoutPaid)
     }
 }

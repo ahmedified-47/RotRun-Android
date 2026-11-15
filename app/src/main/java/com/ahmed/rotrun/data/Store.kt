@@ -6,6 +6,8 @@ import com.ahmed.rotrun.billing.PlayBilling
 import com.ahmed.rotrun.icon.LauncherIcons
 import com.ahmed.rotrun.logic.BrainHealthLevel
 import com.ahmed.rotrun.logic.BlockRules
+import com.ahmed.rotrun.logic.CameoOffer
+import com.ahmed.rotrun.logic.FriendCameoSurface
 import com.ahmed.rotrun.logic.InterventionXp
 import com.ahmed.rotrun.logic.withoutAppList
 import com.ahmed.rotrun.logic.PaywallGate
@@ -247,6 +249,7 @@ class RotRunRepository(context: Context) {
             userId = userId,
             previous = previous,
             streak = streak,
+            bailout = if (state.xpDay == today) state.bailoutXp else 0,
         )
         val post = decided ?: previous
             ?.takeIf { it.userId == userId && it.day == today }
@@ -268,7 +271,8 @@ class RotRunRepository(context: Context) {
         val level = BrainHealthLevel.fromLabel(state.brainHealth)
         val minutes = Scoring.measuredMinutes(Scoring.scoredMinutes(_usage.value.todaySeconds, _usage.value.authorized))
         if (minutes != null) {
-            return Scoring.dailyXp(minutes, level.goalMinutes, state.askBrainCount, state.ransomDebit, level.xpMultiplier, _goalStreak.value)
+            val bonus = if (state.xpDay == Scoring.dayKey()) state.bailoutXp else 0
+            return Scoring.dailyXp(minutes, level.goalMinutes, state.askBrainCount, state.ransomDebit, level.xpMultiplier, _goalStreak.value, bonus)
         }
         val stored = backend.storedDailyXp()
         return if (stored?.day == Scoring.dayKey() && stored.userId == backend.userId) stored.xp else 0
@@ -652,7 +656,7 @@ class RotRunRepository(context: Context) {
     fun requestAskIntervention(packageName: String, label: String, forcedMode: String? = null) {
         if (packageName.isBlank()) return
         if (AskInterventionPlan.alreadyShowing(_askIntervention.value)) return
-        val mode = forcedMode?.takeIf { it.isNotBlank() } ?: AskInterventionPlan.mode(pickStyle())
+        val mode = forcedMode?.takeIf { it.isNotBlank() } ?: askMode()
         _askIntervention.value = AskIntervention(
             packageName = packageName,
             label = label.ifBlank { "this app" },
@@ -674,16 +678,58 @@ class RotRunRepository(context: Context) {
         return true
     }
 
+    /**
+     * Last-resort Cameo when health is exactly 0, the four standard styles are all off,
+     * and a real friend is cached. Otherwise one of those four, or Standard when none are on.
+     * Cameo is never in the random pool.
+     */
+    fun askMode(): String {
+        val current = _state.value
+        val level = BrainHealthLevel.fromLabel(current.brainHealth)
+        val health = Scoring.shownHealth(
+            _usage.value.authorized,
+            _usage.value.todaySeconds,
+            current.focusMinutesToday(),
+            level,
+        )
+        val friend = FriendCameoDisk.surface(app, current.friendCameo) is FriendCameoSurface.Friend
+        return CameoOffer.mode(
+            health,
+            current.standardDialogue,
+            current.breathingExercise,
+            current.mirrorMode,
+            current.quickCheck,
+            friend,
+        )
+    }
+
+    /** The four standard styles only. Cameo is decided by [askMode], not this pool. */
     fun pickStyle(): String? {
         val current = _state.value
-        val styles = buildList {
-            if (current.standardDialogue) add("standard")
-            if (current.mirrorMode) add("mirror")
-            if (current.quickCheck) add("quick")
-            if (current.breathingExercise) add("breathing")
-            if (current.friendCameo) add("cameo")
+        return CameoOffer.pool(
+            current.standardDialogue,
+            current.breathingExercise,
+            current.mirrorMode,
+            current.quickCheck,
+        ).randomOrNull()
+    }
+
+    /**
+     * Walk-away from a last-resort Cameo. Pays the difficulty bailout the first time today.
+     * Opening the app does not call this. A later walk-away the same day pays nothing.
+     */
+    fun recordWalkAwayBailout() {
+        if (_askIntervention.value?.mode != "cameo") return
+        val reward = Scoring.bailoutReward(BrainHealthLevel.fromLabel(_state.value.brainHealth))
+        var granted = false
+        update(commit = true) { current ->
+            val today = Scoring.dayKey()
+            val before = InterventionXp.roll(current.dayLedger(), today)
+            if (before.bailoutPaid) return@update current
+            granted = true
+            current.withLedger(InterventionXp.grantBailout(before, today, reward))
         }
-        return styles.randomOrNull()
+        if (granted) publishDailyXp()
     }
 
     fun isBlocked(packageName: String, safety: Set<String>): Boolean =
@@ -809,6 +855,8 @@ class RotRunRepository(context: Context) {
         ransomDebit = ransomDebit,
         askOpen = askOpen,
         lastAskToken = lastAskToken,
+        bailoutPaid = bailoutPaid,
+        bailoutXp = bailoutXp,
     )
 
     private fun SavedState.withLedger(ledger: InterventionXp.DayLedger) = copy(
@@ -817,6 +865,8 @@ class RotRunRepository(context: Context) {
         ransomDebit = ledger.ransomDebit,
         askOpen = ledger.askOpen,
         lastAskToken = ledger.lastAskToken,
+        bailoutPaid = ledger.bailoutPaid,
+        bailoutXp = ledger.bailoutXp,
     )
 
     private fun rollDay(current: SavedState): SavedState {
@@ -934,6 +984,8 @@ class RotRunRepository(context: Context) {
         put("lastOpenDay", state.lastOpenDay)
         put("askBrainCount", state.askBrainCount)
         put("ransomDebit", state.ransomDebit)
+        put("bailoutPaid", state.bailoutPaid)
+        put("bailoutXp", state.bailoutXp)
         put("askOpen", state.askOpen)
         put("xpDay", state.xpDay)
         put("focusMinutesByDay", JSONObject(state.focusMinutesByDay.mapValues { it.value }))
@@ -998,6 +1050,8 @@ class RotRunRepository(context: Context) {
             lastOpenDay = json.optString("lastOpenDay"),
             askBrainCount = json.optInt("askBrainCount"),
             ransomDebit = json.optInt("ransomDebit"),
+            bailoutPaid = json.optBoolean("bailoutPaid"),
+            bailoutXp = json.optInt("bailoutXp"),
             askOpen = json.optBoolean("askOpen"),
             xpDay = json.optString("xpDay"),
             focusMinutesByDay = json.optJSONObject("focusMinutesByDay").toIntMap(),

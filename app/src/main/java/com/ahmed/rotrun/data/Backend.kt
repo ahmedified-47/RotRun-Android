@@ -1334,6 +1334,7 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
         if (usage.authorized) {
             val minutes = Scoring.measuredMinutes(Scoring.scoredMinutes(usage.todaySeconds, authorized = true))
             if (minutes != null) {
+                val bonus = if (state.xpDay == Scoring.dayKey()) state.bailoutXp else 0
                 val xp = Scoring.dailyXp(
                     minutes,
                     level.goalMinutes,
@@ -1341,6 +1342,7 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
                     state.ransomDebit,
                     level.xpMultiplier,
                     repo.goalStreak.value,
+                    bonus,
                 )
                 objectJson.put("xp", xp)
                 objectJson.put("screen_time_today_min", minutes)

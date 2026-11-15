@@ -205,7 +205,8 @@ object Scoring {
     /**
      * Under the goal: round_half_away((goal − used) × 10 × [multiplier] × (1 + streak bonus)).
      * Over the goal: (used − goal) × 15, with no multiplier and no streak bonus.
-     * Then −20 per Ask and −100 per ransom, floored at 0.
+     * Then −20 per Ask and −100 per ransom, then the bailout, floored at 0.
+     * The bailout is half of the 0-minute cap and does not include the streak bonus.
      */
     fun dailyXp(
         screenMinutes: Int,
@@ -214,6 +215,7 @@ object Scoring {
         ransomDebit: Int = 0,
         multiplier: Double = 1.0,
         streak: Int = 0,
+        bailoutBonus: Int = 0,
     ): Int {
         val used = screenMinutes.coerceAtLeast(0)
         val goal = goalMinutes.coerceAtLeast(0)
@@ -224,8 +226,19 @@ object Scoring {
             -((used - goal) * 15)
         }
         val ask = InterventionXp.ASK_XP * askBrainCount.coerceAtLeast(0)
-        return (screenXp - ask - ransomDebit.coerceAtLeast(0)).coerceAtLeast(0)
+        val bailout = bailoutBonus.coerceAtLeast(0)
+        return (screenXp - ask - ransomDebit.coerceAtLeast(0) + bailout).coerceAtLeast(0)
     }
+
+    /** Goal minutes × 10 × difficulty multiplier, with no streak bonus. Easy 3000, Medium 2250, Hard 900. */
+    fun underGoalCap(goalMinutes: Int, multiplier: Double): Int {
+        val rate = if (multiplier.isFinite()) multiplier else 1.0
+        return (goalMinutes.coerceAtLeast(0) * 10.0 * rate).roundToInt()
+    }
+
+    /** Half of [underGoalCap], rounded half away from zero. Easy 1500, Medium 1125, Hard 450. */
+    fun bailoutReward(level: BrainHealthLevel): Int =
+        (underGoalCap(level.goalMinutes, level.xpMultiplier) * 0.5).roundToInt()
 
     /**
      * Last Daily XP written for one user on one local day.
@@ -263,7 +276,8 @@ object Scoring {
     /**
      * Score to upsert, or null when this refresh must not write.
      * Missing minutes, or a smaller minute total than the one already stored today, are not a real drop.
-     * More minutes, a new Ask, a new ransom, or a new difficulty may lower today's score.
+     * More minutes, a new Ask, a new ransom, a new difficulty, or a bailout may change today's score.
+     * A refresh that omits a bailout already in the stored score does not replace that higher score.
      * A new local day does not keep yesterday's score.
      */
     fun nextDailyXp(
@@ -275,6 +289,7 @@ object Scoring {
         userId: String,
         previous: DailyXpPost?,
         streak: Int = 0,
+        bailout: Int = 0,
     ): DailyXpPost? {
         val prior = previous?.takeIf { it.userId == userId && it.day == today }
         val loaded = measuredMinutes(minutesLoaded)
@@ -284,7 +299,7 @@ object Scoring {
             storedMinutes != null && loaded < storedMinutes -> storedMinutes
             else -> loaded
         } ?: return null
-        val candidate = dailyXp(minutes, level.goalMinutes, askCount, ransomDebit, level.xpMultiplier, streak)
+        val candidate = dailyXp(minutes, level.goalMinutes, askCount, ransomDebit, level.xpMultiplier, streak, bailout)
         val post = DailyXpPost(today, candidate, minutes, askCount, ransomDebit, level.label, userId)
         if (prior == null) return if (loaded == null) null else post
         val usageGrew = loaded != null && storedMinutes != null && loaded > storedMinutes

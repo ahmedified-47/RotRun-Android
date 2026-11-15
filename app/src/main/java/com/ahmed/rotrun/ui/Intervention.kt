@@ -60,6 +60,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
@@ -74,9 +76,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ahmed.rotrun.R
 import com.ahmed.rotrun.data.RotRunRepository
+import com.ahmed.rotrun.data.FriendCameoDisk
 import com.ahmed.rotrun.logic.BrainCallPolicy
+import com.ahmed.rotrun.logic.CameoOffer
+import com.ahmed.rotrun.logic.FriendCameoPick
+import com.ahmed.rotrun.logic.FriendCameoSurface
 import com.ahmed.rotrun.logic.InterventionCopy
-import com.ahmed.rotrun.logic.ShieldPalette
 import com.ahmed.rotrun.watch.AskBrainLaunch
 import kotlin.math.sin
 import kotlinx.coroutines.Dispatchers
@@ -99,7 +104,6 @@ fun InterventionFlow(
     var mode by remember { mutableStateOf(startMode) }
     val name = InterventionCopy.displayName(appName)
     val friend = state.cameoName.takeIf { state.cameoToday() }
-    val shieldCopy = InterventionCopy.forPackage(packageName, name)
     val reduce = reduceMotion()
     var pendingLeave by remember { mutableStateOf(false) }
     var ransom by remember { mutableStateOf(false) }
@@ -114,16 +118,15 @@ fun InterventionFlow(
         delay(if (reduce) 10 else 280)
         onDismiss()
     }
-    val shield = shieldColors(shieldCopy.id)
     Box(Modifier.fillMaxSize().rotInsets()) {
         if (shieldUnderneath && !pendingLeave) {
             Column(
-                Modifier.fillMaxSize().background(shield.second),
+                Modifier.fillMaxSize().background(meadowBrush()),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Shield(name, packageName, shield.first) {
+                Shield(name, packageName) {
                     if (packageName.isNotBlank()) repo.requestAskIntervention(packageName, name)
-                    mode = repo.askIntervention.value?.mode ?: repo.pickStyle() ?: "standard"
+                    mode = repo.askIntervention.value?.mode ?: repo.askMode()
                 }
             }
         }
@@ -147,12 +150,13 @@ fun InterventionFlow(
             } else if (shown == "breathing") {
                 Breathing(friend, state.cameoKind, retreat, onUnlock)
             } else if (shown == "cameo") {
-                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF8FDBFA), Color(0xFF66C785), Color(0xFF338C57))))) {
-                    Column(
-                        Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 20.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        FriendXpCameo(name, repo, state.friendCameo, retreat, onUnlock)
+                val context = LocalContext.current
+                val choice = (FriendCameoDisk.surface(context, state.friendCameo) as? FriendCameoSurface.Friend)?.choice
+                if (choice == null) {
+                    Standard(name, friend, state.cameoKind, onDismiss = retreat, onUnlock = onUnlock)
+                } else {
+                    Box(Modifier.fillMaxSize().background(meadowBrush())) {
+                        CameoConfirm(name, choice, repo, retreat, onUnlock)
                     }
                 }
             } else {
@@ -181,35 +185,44 @@ fun InterventionFlow(
     }
 }
 
+private fun meadowBrush() = Brush.verticalGradient(listOf(Melt.CardTop, Melt.CardBottom))
+
 @Composable
-private fun ColumnScope.Shield(appName: String, packageName: String, accent: Color, onAsk: () -> Unit) {
+private fun MeadowButton(label: String, filled: Boolean, enabled: Boolean = true, onClick: () -> Unit) {
+    Text(
+        label,
+        color = if (filled) Color.White else Melt.Ink,
+        fontFamily = Nunito,
+        fontWeight = FontWeight.ExtraBold,
+        fontSize = 18.sp,
+        textAlign = TextAlign.Center,
+        modifier = Modifier.fillMaxWidth().clip(CircleShape).background(if (filled) Melt.Action else Color.White).clickable(enabled = enabled, onClick = onClick).padding(vertical = 18.dp),
+    )
+}
+
+@Composable
+private fun ColumnScope.Shield(appName: String, packageName: String, onAsk: () -> Unit) {
     var opening by remember { mutableStateOf(false) }
     val copy = InterventionCopy.forPackage(packageName, appName)
     Spacer(Modifier.heightIn(min = 24.dp).weight(1f))
     RotPose(R.drawable.rot_brain_character, Modifier.padding(bottom = 36.dp).size(196.dp))
-    Text(copy.headline, color = Color.White, fontFamily = FontFamily.Default, fontSize = 32.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 28.dp))
-    Text(copy.body, color = Color(0xFF9E9EA3), fontFamily = FontFamily.Default, fontSize = 17.sp, fontWeight = FontWeight.Normal, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 16.dp).padding(horizontal = 36.dp))
+    Text(copy.headline, color = Color.White, fontFamily = Nunito, fontSize = 32.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 28.dp))
+    Text(copy.body, color = Color.White.copy(alpha = 0.9f), fontFamily = Nunito, fontSize = 17.sp, fontWeight = FontWeight.Normal, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 16.dp).padding(horizontal = 36.dp))
     if (copy.footer != null) {
-        Text(copy.footer, color = Color(0xFF9E9EA3), fontFamily = FontFamily.Default, fontSize = 16.sp, fontWeight = FontWeight.Normal, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 14.dp).padding(horizontal = 36.dp))
+        Text(copy.footer, color = Color.White.copy(alpha = 0.9f), fontFamily = Nunito, fontSize = 16.sp, fontWeight = FontWeight.Normal, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 14.dp).padding(horizontal = 36.dp))
     }
     Spacer(Modifier.heightIn(min = 32.dp).weight(1f))
-    Text(
-        "Ask my brain",
-        color = Color.White,
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Bold,
-        fontSize = 18.sp,
-        textAlign = TextAlign.Center,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 28.dp).padding(bottom = 12.dp).clip(CircleShape).background(accent).clickable(enabled = !opening) {
-            if (opening) return@clickable
+    Box(Modifier.fillMaxWidth().padding(horizontal = 28.dp).padding(bottom = 12.dp)) {
+        MeadowButton("Ask my brain", filled = true, enabled = !opening) {
+            if (opening) return@MeadowButton
             opening = true
             onAsk()
-        }.padding(vertical = 18.dp),
-    )
+        }
+    }
+    Box(Modifier.fillMaxWidth().padding(horizontal = 28.dp).padding(bottom = 28.dp)) {
+        MeadowButton("Not now", filled = false) { }
+    }
 }
-
-private fun shieldColors(id: String): Pair<Color, Color> =
-    Color(ShieldPalette.accent(id)) to Color(ShieldPalette.background(id))
 
 @Composable
 private fun Standard(appName: String, friend: String?, kind: String, onDismiss: () -> Unit, onUnlock: (Int) -> Unit) {
@@ -869,40 +882,82 @@ private fun MirrorPreview(modifier: Modifier) {
 }
 
 @Composable
-private fun FriendXpCameo(
+private fun CameoConfirm(
     appName: String,
+    choice: FriendCameoPick.Choice,
     repo: RotRunRepository,
-    enabled: Boolean,
     onDismiss: () -> Unit,
     onUnlock: (Int) -> Unit,
 ) {
-    val context = LocalContext.current
-    var surface by remember {
-        mutableStateOf(com.ahmed.rotrun.data.FriendCameoDisk.surface(context, enabled))
-    }
-    LaunchedEffect(enabled) {
-        val fresh = withContext(Dispatchers.IO) {
-            repo.backend.refreshFriendCameo(repo.shownDailyXp())
-            com.ahmed.rotrun.data.FriendCameoDisk.surface(context, enabled)
+    var opened by remember { mutableStateOf(false) }
+    Column(
+        Modifier.fillMaxSize().padding(horizontal = 28.dp, vertical = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        if (!opened) {
+            Spacer(Modifier.heightIn(min = 24.dp).weight(1f))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                CameoPerson(choice.userId, choice.name, choice.avatarUrl, choice.name, "${choice.xp} XP")
+                CameoPerson(userId = null, name = "You", url = null, title = "You", xp = "${choice.yourXp} XP", mascot = true)
+            }
+            Text(
+                CameoOffer.confirmQuestion,
+                color = Color.White,
+                fontFamily = Nunito,
+                fontWeight = FontWeight.Bold,
+                fontSize = 22.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 28.dp),
+            )
+            Spacer(Modifier.heightIn(min = 32.dp).weight(1f))
+            MeadowButton("Open the app", filled = true) { opened = true }
+            Spacer(Modifier.height(12.dp))
+            MeadowButton("Don't open", filled = false) {
+                repo.recordWalkAwayBailout()
+                onDismiss()
+            }
+            Spacer(Modifier.height(16.dp))
+        } else {
+            Spacer(Modifier.heightIn(min = 24.dp).weight(1f))
+            RotPose(R.drawable.rot_brain_character, Modifier.padding(bottom = 24.dp).size(160.dp))
+            Text("Opening $appName", color = Color.White, fontFamily = Nunito, fontWeight = FontWeight.Bold, fontSize = 28.sp, textAlign = TextAlign.Center)
+            Spacer(Modifier.height(20.dp))
+            DurationTiles(onUnlock)
+            Spacer(Modifier.height(12.dp))
+            MeadowButton("Nah, never mind", filled = false) { onDismiss() }
+            Spacer(Modifier.heightIn(min = 24.dp).weight(1f))
         }
-        surface = fresh
     }
-    val choice = (surface as? com.ahmed.rotrun.logic.FriendCameoSurface.Friend)?.choice
-    val line = choice?.line ?: com.ahmed.rotrun.logic.FriendCameoPick.fallback
-    val who = choice?.name ?: "a friend"
-    var howLong by remember { mutableStateOf(false) }
-    Appear(0f) {
-        PlayerAvatar(who, choice?.avatarUrl, 96.dp, fill = Color(0xFFED6B38), ink = Color.White)
+}
+
+@Composable
+private fun CameoPerson(userId: String?, name: String, url: String?, title: String, xp: String, mascot: Boolean = false) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.widthIn(max = 150.dp)) {
+        if (mascot) {
+            RotPose(R.drawable.rot_brain_character, Modifier.size(96.dp))
+        } else {
+            FriendPortrait(userId.orEmpty(), name, url)
+        }
+        Text(title, color = Color.White, fontFamily = Nunito, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp))
+        Text(xp, color = Color.White.copy(alpha = 0.9f), fontFamily = Nunito, fontWeight = FontWeight.Bold, fontSize = 15.sp, modifier = Modifier.padding(top = 2.dp))
     }
-    Appear(0.06f) { Text("Note from $who", fontWeight = FontWeight.Bold, fontSize = 22.sp) }
-    Appear(0.10f) { Text(line, textAlign = TextAlign.Center, modifier = Modifier.padding(vertical = 8.dp)) }
-    Appear(0.14f) { Text("Opening $appName anyway?") }
-    if (!howLong) {
-        Appear(0.20f) { Pill("Walk away") { onDismiss() } }
-        Appear(0.26f) { Pill("Continue") { howLong = true } }
+}
+
+@Composable
+private fun FriendPortrait(userId: String, name: String, url: String?) {
+    val context = LocalContext.current
+    var bitmap by remember(userId) { mutableStateOf<android.graphics.Bitmap?>(null) }
+    LaunchedEffect(userId) {
+        bitmap = withContext(Dispatchers.IO) {
+            val bytes = FriendCameoDisk.portraitBytes(context, userId) ?: return@withContext null
+            android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+        }
+    }
+    val photo = bitmap
+    if (photo != null) {
+        Image(photo.asImageBitmap(), contentDescription = name, modifier = Modifier.size(96.dp).clip(CircleShape), contentScale = ContentScale.Crop)
     } else {
-        DurationTiles(onUnlock)
-        Pill("Nah, never mind") { onDismiss() }
+        PlayerAvatar(name, url, 96.dp, fill = Color.White, ink = Melt.Ink)
     }
 }
 

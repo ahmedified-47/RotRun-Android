@@ -141,6 +141,8 @@ data class SavedState(
     val lastOpenDay: String = "",
     val askBrainCount: Int = 0,
     val ransomDebit: Int = 0,
+    val bailoutPaid: Boolean = false,
+    val bailoutXp: Int = 0,
     val askOpen: Boolean = false,
     val xpDay: String = "",
     val focusMinutesByDay: Map<String, Int> = emptyMap(),

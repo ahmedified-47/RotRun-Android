@@ -17,6 +17,8 @@ object InterventionXp {
         val ransomDebit: Int = 0,
         val askOpen: Boolean = false,
         val lastAskToken: Long = 0L,
+        val bailoutPaid: Boolean = false,
+        val bailoutXp: Int = 0,
     )
 
     /** Local midnight clears today's counters. A new day is a new presentation. */
@@ -49,5 +51,15 @@ object InterventionXp {
     fun payRansom(ledger: DayLedger, today: String): DayLedger {
         val current = roll(ledger, today)
         return current.copy(ransomDebit = current.ransomDebit + RANSOM_XP)
+    }
+
+    /**
+     * One bailout for this local day. A second call the same day keeps the first amount.
+     * [roll] clears it at the next local midnight, with the Ask and ransom counters.
+     */
+    fun grantBailout(ledger: DayLedger, today: String, reward: Int): DayLedger {
+        val current = roll(ledger, today)
+        if (current.bailoutPaid) return current
+        return current.copy(bailoutPaid = true, bailoutXp = reward.coerceAtLeast(0))
     }
 }
