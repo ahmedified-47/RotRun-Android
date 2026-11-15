@@ -170,8 +170,13 @@ class InterventionActivity : ComponentActivity() {
     }
 
     private fun goHome() {
+        val blocked = intent.getStringExtra(EXTRA_PACKAGE).orEmpty()
         if (RotRunGraph.ready()) RotRunGraph.repo.clearAskIntervention()
-        startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).setFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        val sent = com.ahmed.rotrun.watch.BlockAccessibilityService.declineAndGoHome(blocked) ||
+            com.ahmed.rotrun.watch.BlockWatchService.declineAndGoHome(blocked)
+        if (!sent) {
+            startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).setFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
         finish()
     }
 

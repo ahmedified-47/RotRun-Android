@@ -93,6 +93,18 @@ class BlockRulesTest {
     }
 
     @Test
+    fun everyAppOnTheBlockListIsEnforced() {
+        val listed = listOf("com.coloros.calendar", "com.coloros.gallery3d", "com.heytap.music", "com.oplus.camera")
+        assertEquals(listed.toSet(), BlockRules.enforcedPackages(listed, emptyList()))
+        assertEquals(setOf("com.coloros.note", "com.coloros.filemanager"), BlockRules.enforcedPackages(emptyList(), listOf("com.coloros.note", "com.coloros.filemanager")))
+        assertEquals(setOf(listed.first()), BlockRules.freeAllowed(listed, premium = false, paywall = true))
+        val window = BlockRules.Window(BlockRules.enforcedPackages(listed, emptyList()), "allDay", allDays, 0, 0, 30)
+        listed.forEach { packageName ->
+            assertTrue(packageName, blocked(packageName, listOf(window), tuesdayMorning, 0))
+        }
+    }
+
+    @Test
     fun freeTierKeepsOneApp() {
         assertEquals(setOf("com.instagram.android"), BlockRules.freeAllowed(listOf("com.instagram.android", "com.zhiliaoapp.musically"), premium = false, paywall = true))
         assertEquals(setOf("com.instagram.android", "com.zhiliaoapp.musically"), BlockRules.freeAllowed(listOf("com.instagram.android", "com.zhiliaoapp.musically"), premium = true, paywall = true))

@@ -111,6 +111,7 @@ object ShieldOverlay {
         packageName: String,
         label: String,
         onAsk: () -> Unit,
+        onLeave: () -> Unit,
     ): View? {
         val copy = InterventionCopy.forPackage(packageName, label)
         val density = context.resources.displayMetrics.density
@@ -216,11 +217,8 @@ object ShieldOverlay {
                     }
                 }
             }
-        val button = pill("Ask my brain", 0xFF217AFF.toInt(), android.graphics.Color.WHITE, 12) {
+        val button = pill("Ask my brain", 0xFF217AFF.toInt(), android.graphics.Color.WHITE, 28) {
             onAsk()
-        }
-        val stay = pill("Not now", android.graphics.Color.WHITE, 0xFF1C1C1E.toInt(), 28, null).apply {
-            setOnClickListener { }
         }
         root.addView(topGap)
         root.addView(mascot)
@@ -229,15 +227,14 @@ object ShieldOverlay {
         footer?.let(root::addView)
         root.addView(bottomGap)
         root.addView(button)
-        root.addView(stay)
         padForBars(root)
+        captureBack(root, onLeave)
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
             type,
             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED,
             PixelFormat.TRANSLUCENT,
         ).apply {
             gravity = Gravity.TOP or Gravity.START
@@ -269,7 +266,7 @@ object ShieldOverlay {
         onNah: () -> Unit,
         onUnlock: (Int) -> Unit,
     ): View? {
-        if (ask == null || !RotRunGraph.ready()) return show(context, type, packageName, label, onAsk)
+        if (ask == null || !RotRunGraph.ready()) return show(context, type, packageName, label, onAsk, onNah)
         val host = OverlayHost(context)
         val compose = ComposeView(context).apply {
             setViewTreeLifecycleOwner(host)
@@ -290,6 +287,7 @@ object ShieldOverlay {
         }
         host.addView(compose, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         padForBars(host)
+        captureBack(host, onNah)
         ViewCompat.setOnApplyWindowInsetsListener(host) { view, insets ->
             val bars = insets.getInsets(
                 WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.navigationBars() or WindowInsetsCompat.Type.ime(),
@@ -321,8 +319,7 @@ object ShieldOverlay {
         WindowManager.LayoutParams.MATCH_PARENT,
         type,
         WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-            WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED,
         PixelFormat.TRANSLUCENT,
     ).apply {
         gravity = Gravity.TOP or Gravity.START
@@ -333,6 +330,34 @@ object ShieldOverlay {
             fitInsetsTypes = 0
             fitInsetsSides = 0
         }
+    }
+
+    private fun captureBack(view: View, onLeave: () -> Unit) {
+        view.isFocusable = true
+        view.isFocusableInTouchMode = true
+        view.setOnKeyListener { _, keyCode, event ->
+            if (keyCode == android.view.KeyEvent.KEYCODE_BACK && event.action == android.view.KeyEvent.ACTION_UP) {
+                onLeave()
+                true
+            } else {
+                false
+            }
+        }
+        if (Build.VERSION.SDK_INT >= 33) registerBack(view, onLeave) else view.post { view.requestFocus() }
+    }
+
+    @androidx.annotation.RequiresApi(33)
+    private fun registerBack(view: View, onLeave: () -> Unit) {
+        view.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(v: View) {
+                v.findOnBackInvokedDispatcher()?.registerOnBackInvokedCallback(
+                    android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,
+                ) { onLeave() }
+                v.requestFocus()
+            }
+
+            override fun onViewDetachedFromWindow(v: View) = Unit
+        })
     }
 
     private fun padForBars(view: View) {

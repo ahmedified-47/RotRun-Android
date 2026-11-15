@@ -59,6 +59,18 @@ object BlockRules {
         }
     }
 
+    /**
+     * Every package still stored on this blocker.
+     * The free-tier cap applies when the list is saved, and that save tells the user.
+     * It must not drop a package that is still on the list the user can see.
+     * An empty blocker uses the app list it points at. Apps stashed on other modes are not active.
+     */
+    fun enforcedPackages(activeApps: List<String>, linkedList: List<String>): Set<String> {
+        val active = activeApps.filter { it.isNotBlank() }.distinct()
+        val source = if (active.isNotEmpty()) active else linkedList
+        return source.filter { it.isNotBlank() }.distinct().toSet()
+    }
+
     /** Free tier keeps the first distinct package. Premium, or a paywall that is off, keeps all of them. */
     fun freeAllowed(ordered: List<String>, premium: Boolean, paywall: Boolean): Set<String> {
         val unique = ordered.filter { it.isNotBlank() }.distinct()

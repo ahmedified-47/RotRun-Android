@@ -230,15 +230,12 @@ private fun ColumnScope.Shield(appName: String, packageName: String, onAsk: () -
         Text(copy.footer, color = Color.White.copy(alpha = 0.9f), fontFamily = Nunito, fontSize = 16.sp, fontWeight = FontWeight.Normal, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 14.dp).padding(horizontal = 36.dp))
     }
     Spacer(Modifier.heightIn(min = 32.dp).weight(1f))
-    Box(Modifier.fillMaxWidth().padding(horizontal = 28.dp).padding(bottom = 12.dp)) {
+    Box(Modifier.fillMaxWidth().padding(horizontal = 28.dp).padding(bottom = 28.dp)) {
         MeadowButton("Ask my brain", filled = true, enabled = !opening) {
             if (opening) return@MeadowButton
             opening = true
             onAsk()
         }
-    }
-    Box(Modifier.fillMaxWidth().padding(horizontal = 28.dp).padding(bottom = 28.dp)) {
-        MeadowButton("Not now", filled = false) { }
     }
 }
 
@@ -919,6 +916,25 @@ private fun CameoConfirm(
                 CameoPerson(choice.userId, choice.name, choice.avatarUrl, choice.name, "${choice.xp} XP")
                 CameoPerson(userId = null, name = "You", url = null, title = "You", xp = "${choice.yourXp} XP", mascot = true)
             }
+            val spoken = CameoOffer.friendLine(choice.name, choice.xp, choice.yourXp, choice.userId.hashCode())
+            Text(
+                spoken.sentence,
+                color = Color.White,
+                fontFamily = Nunito,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 18.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 28.dp),
+            )
+            Text(
+                "— ${spoken.speaker}",
+                color = Color.White.copy(alpha = 0.9f),
+                fontFamily = Nunito,
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 8.dp),
+            )
             Text(
                 CameoOffer.confirmQuestion,
                 color = Color.White,
@@ -926,7 +942,7 @@ private fun CameoConfirm(
                 fontWeight = FontWeight.Bold,
                 fontSize = 22.sp,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.padding(top = 28.dp),
+                modifier = Modifier.padding(top = 20.dp),
             )
             Spacer(Modifier.heightIn(min = 32.dp).weight(1f))
             MeadowButton("Open the app", filled = true) {

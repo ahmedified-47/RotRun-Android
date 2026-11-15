@@ -123,12 +123,14 @@ object ForegroundGate {
 
     data class CoverChoice(val step: ShieldStep, val packageName: String?)
 
-    /** System UI and ColorOS chrome. The launcher is not chrome: it is a real leave. */
+    /**
+     * System UI and known overlay processes. A launchable ColorOS, Oppo, or HeyTap app is not chrome.
+     * The launcher is not chrome either: it is a real leave.
+     */
     fun overlayChrome(packageName: String): Boolean {
-        val name = packageName.lowercase()
-        if (name == "android" || name.startsWith("com.android.systemui")) return true
-        if (name.startsWith("com.coloros.") || name.startsWith("com.oplus.") || name.startsWith("com.heytap.")) return true
-        return name.startsWith("com.oppo.") && !name.contains("launcher")
+        if (systemChrome(packageName)) return true
+        if (AskLaunchPolicy.isHomeLauncher(packageName)) return false
+        return AskLaunchPolicy.transientWindow(packageName)
     }
 
     fun realApp(packageName: String, ownPackage: String, safety: Set<String>): Boolean {
@@ -147,8 +149,13 @@ object ForegroundGate {
         windowsTopToBottom: List<Pair<String, Boolean>>,
         ownPackage: String,
         safety: Set<String>,
+        blocked: (String) -> Boolean = { false },
     ): List<String> {
         val names = windowsTopToBottom.map { it.first }
+        val focusedBlocked = windowsTopToBottom.firstOrNull { (pkg, focused) ->
+            focused && realApp(pkg, ownPackage, safety) && blocked(pkg)
+        }?.first
+        if (focusedBlocked != null) return listOf(focusedBlocked) + names.filter { it != focusedBlocked }
         val focusedReal = windowsTopToBottom.firstOrNull { (pkg, focused) ->
             focused && realApp(pkg, ownPackage, safety)
         }?.first
@@ -157,8 +164,9 @@ object ForegroundGate {
             focused && pkg.isNotBlank() && !overlayChrome(pkg)
         }
         if (!frontClaimed) {
-            val real = windowsTopToBottom.firstOrNull { (pkg, _) -> realApp(pkg, ownPackage, safety) }?.first
-            if (real != null) return listOf(real) + names.filter { it != real }
+            val real = windowsTopToBottom.map { it.first }.filter { realApp(it, ownPackage, safety) }
+            val lead = real.firstOrNull(blocked) ?: real.firstOrNull()
+            if (lead != null) return listOf(lead) + names.filter { it != lead }
         }
         return names
     }

@@ -1,8 +1,10 @@
 package com.ahmed.rotrun.watch
 
 import android.accessibilityservice.AccessibilityService
+import android.content.Intent
 import android.os.Handler
 import android.os.Looper
+import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
@@ -18,6 +20,7 @@ class BlockAccessibilityService : AccessibilityService() {
     private var shownAt = 0L
     private var adding = false
     private var showingChat = false
+    private var declinedPackage: String? = null
     private val poll = object : Runnable {
         override fun run() {
             noteArming()
@@ -73,7 +76,12 @@ class BlockAccessibilityService : AccessibilityService() {
         }
         if (coverLoose) GatePrompt.open(this)
         val safety = repo.safetyPackages()
-        val ordered = ForegroundGate.orderedPackages(seenWindows(), packageName, safety)
+        val blockedNow = { pkg: String -> if (coverLoose) repo.rulesBlocked(pkg, safety) else repo.isBlocked(pkg, safety) }
+        val ordered = ForegroundGate.orderedPackages(seenWindows(), packageName, safety, blockedNow)
+        val front = ordered.firstOrNull { it.isNotBlank() && !ForegroundGate.overlayChrome(it) }
+            ?: reported?.takeIf { it.isNotBlank() }
+            ?: usagePackage
+        if (ShieldExit.finishedLeaving(declinedPackage, front, packageName, safety)) declinedPackage = null
         val choice = ForegroundGate.coverChoice(
             reported = reported,
             windowsFrontToBack = ordered,
@@ -83,14 +91,18 @@ class BlockAccessibilityService : AccessibilityService() {
             shownAt = shownAt,
             ownPackage = packageName,
             safety = safety,
-            blocked = { if (coverLoose) repo.rulesBlocked(it, safety) else repo.isBlocked(it, safety) },
+            blocked = blockedNow,
             windowStateChanged = windowStateChanged,
         )
         when (choice.step) {
-            ShieldStep.Show -> choice.packageName?.let(::consider)
+            ShieldStep.Show -> {
+                val pkg = choice.packageName
+                if (ShieldExit.suppress(declinedPackage, pkg)) hide() else pkg?.let(::consider)
+            }
             ShieldStep.Hide -> hide()
             ShieldStep.Keep, ShieldStep.Leave -> {
-                if (coverLoose && ordered.firstOrNull() == packageName) hide()
+                if (ShieldExit.suppress(declinedPackage, shownFor ?: choice.packageName)) hide()
+                else if (coverLoose && ordered.firstOrNull() == packageName) hide()
             }
         }
     }
@@ -134,6 +146,10 @@ class BlockAccessibilityService : AccessibilityService() {
     }
 
     private fun considerNow(packageName: String) {
+        if (ShieldExit.suppress(declinedPackage, packageName)) {
+            hide()
+            return
+        }
         if (RotRunGraph.ready() && !RotRunGraph.repo.armingReady() && !coverDespiteArming()) {
             if (overlay != null || shownFor != null) GatePrompt.open(this)
             hide()
@@ -188,13 +204,20 @@ class BlockAccessibilityService : AccessibilityService() {
             label = label,
             ask = if (wantChat) ask else null,
             onAsk = { openAsk(packageName, label) },
-            onNah = { RotRunGraph.repo.clearAskIntervention(); shownFor = null; considerNow(packageName) },
+            onNah = { walkAway(packageName) },
             onUnlock = { minutes -> unlock(packageName, minutes) },
         )
         showingChat = wantChat && overlay != null
         shownFor = if (overlay == null) null else packageName
         if (shownFor != null) shownAt = System.currentTimeMillis()
         covering = overlay != null
+    }
+
+    override fun onKeyEvent(event: KeyEvent): Boolean {
+        if (overlay == null && shownFor == null) return false
+        if (event.keyCode != KeyEvent.KEYCODE_BACK) return false
+        if (event.action == KeyEvent.ACTION_UP && !event.isCanceled) walkAway(shownFor)
+        return true
     }
 
     override fun onInterrupt() {
@@ -260,7 +283,21 @@ class BlockAccessibilityService : AccessibilityService() {
         considerNow(packageName)
     }
 
+    private fun walkAway(packageName: String?) {
+        val leaving = packageName?.takeIf { it.isNotBlank() } ?: shownFor
+        if (!leaving.isNullOrBlank()) declinedPackage = leaving
+        if (RotRunGraph.ready()) RotRunGraph.repo.clearAskIntervention()
+        hide()
+        val sentHome = performGlobalAction(GLOBAL_ACTION_HOME)
+        if (!sentHome) {
+            performGlobalAction(GLOBAL_ACTION_BACK)
+            val home = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            runCatching { startActivity(home) }
+        }
+    }
+
     private fun unlock(packageName: String, minutes: Int) {
+        declinedPackage = null
         val repo = RotRunGraph.repo
         if (!repo.grantUnlock(minutes)) {
             repo.toast("Unlock waits until Focus ends")
@@ -296,6 +333,13 @@ class BlockAccessibilityService : AccessibilityService() {
 
         fun dismiss() {
             live?.hide()
+        }
+
+        /** Hide the cover and leave the blocked app. False when this service is not connected. */
+        fun declineAndGoHome(packageName: String): Boolean {
+            val service = live ?: return false
+            service.handler.post { service.walkAway(packageName) }
+            return true
         }
 
         fun recheck() {

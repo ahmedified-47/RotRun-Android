@@ -8,6 +8,7 @@ import com.ahmed.rotrun.data.GoogleSignInPolicy
 import com.ahmed.rotrun.logic.BrainCallPolicy
 import com.ahmed.rotrun.watch.AskLaunchPolicy
 import com.ahmed.rotrun.watch.ForegroundGate
+import com.ahmed.rotrun.watch.ShieldExit
 import com.ahmed.rotrun.watch.ShieldSession
 import com.ahmed.rotrun.watch.ShieldStep
 import org.junit.Assert.assertEquals
@@ -366,6 +367,67 @@ class AskLaunchPolicyTest {
         assertFalse(ShieldSession.openedInto("com.instagram.android"))
         assertTrue(ShieldSession.blocks("com.instagram.android"))
         ShieldSession.release()
+    }
+
+    @Test
+    fun colorOsAppsOnTheBlockListAreNotOverlayChrome() {
+        val own = "com.ahmed.rotrun"
+        val safety = setOf(own, "android", "com.android.systemui", "com.android.launcher3", "com.oppo.launcher")
+        val listed = listOf(
+            "com.coloros.calendar",
+            "com.coloros.gallery3d",
+            "com.heytap.music",
+            "com.oplus.camera",
+        )
+        listed.forEach { pkg ->
+            assertFalse(pkg, AskLaunchPolicy.transientWindow(pkg))
+            assertFalse(pkg, ForegroundGate.ignore(pkg, own))
+            assertFalse(pkg, ForegroundGate.overlayChrome(pkg))
+            assertTrue(pkg, ForegroundGate.realApp(pkg, own, safety))
+            val choice = ForegroundGate.coverChoice(
+                reported = pkg,
+                windowsFrontToBack = listOf(pkg),
+                usagePackage = pkg,
+                usageResumedAt = 0L,
+                shownFor = null,
+                shownAt = 0L,
+                ownPackage = own,
+                safety = safety,
+                blocked = { it == pkg },
+                windowStateChanged = true,
+            )
+            assertEquals(pkg, ShieldStep.Show, choice.step)
+            assertEquals(pkg, pkg, choice.packageName)
+        }
+        assertTrue(AskLaunchPolicy.transientWindow("com.coloros.oppoguardelf"))
+        assertTrue(AskLaunchPolicy.transientWindow("com.oplus.systemui"))
+        assertTrue(AskLaunchPolicy.transientWindow("com.oppo.launcher"))
+        assertTrue(ForegroundGate.overlayChrome("com.coloros.smartsidebar"))
+        assertFalse(ForegroundGate.overlayChrome("com.oppo.launcher"))
+        assertFalse(ForegroundGate.overlayChrome("com.coloros.calendar"))
+        val gallery = "com.coloros.gallery3d"
+        val ordered = ForegroundGate.orderedPackages(
+            listOf("com.android.systemui" to false, "com.instagram.android" to false, gallery to false),
+            own,
+            safety,
+        ) { it == gallery }
+        assertEquals(gallery, ordered.first())
+    }
+
+    @Test
+    fun walkingAwayKeepsTheShieldDownUntilTheUserHasLeft() {
+        val own = "com.ahmed.rotrun"
+        val safety = setOf(own, "com.oppo.launcher", "com.android.systemui")
+        val calendar = "com.coloros.calendar"
+        assertTrue(ShieldExit.suppress(calendar, calendar))
+        assertTrue(ShieldExit.suppress(calendar, null))
+        assertFalse(ShieldExit.suppress(null, calendar))
+        assertFalse(ShieldExit.finishedLeaving(calendar, calendar, own, safety))
+        assertFalse(ShieldExit.finishedLeaving(calendar, own, own, safety))
+        assertFalse(ShieldExit.finishedLeaving(calendar, "com.android.systemui", own, safety))
+        assertFalse(ShieldExit.finishedLeaving(calendar, "com.coloros.oppoguardelf", own, safety))
+        assertTrue(ShieldExit.finishedLeaving(calendar, "com.oppo.launcher", own, safety))
+        assertTrue(ShieldExit.finishedLeaving(calendar, "com.heytap.music", own, safety))
     }
 
     @Test

@@ -7,6 +7,46 @@ package com.ahmed.rotrun.logic
 object CameoOffer {
     const val confirmQuestion = "You're at 0 XP. Do you want to continue and open the app?"
 
+    data class FriendLine(val sentence: String, val speaker: String)
+
+    private val aheadLines = listOf(
+        "Come on, put it down. %s.",
+        "Leave it closed. %s.",
+        "You can set this one down. %s.",
+        "Close it and stay with me. %s.",
+        "Put it down for now. %s.",
+        "I want you ahead of this app. %s.",
+    )
+
+    fun motivationCount(): Int = aheadLines.size
+
+    /** First name only. "Sara J." and "Sam" both stay a name the friend would answer to. */
+    fun firstName(displayName: String): String {
+        val trimmed = displayName.trim()
+        if (trimmed.isEmpty() || trimmed.equals("A friend", ignoreCase = true)) return "A friend"
+        return trimmed.substringBefore(' ').trim().trimEnd('.').ifBlank { "A friend" }
+    }
+
+    /** Friend XP minus the user's XP. Ahead, behind, and level each say the real gap. */
+    fun gapPhrase(friendXp: Int, yourXp: Int): String {
+        val gap = friendXp - yourXp
+        return when {
+            gap > 0 -> "I'm $gap XP ahead of you today"
+            gap < 0 -> "You're ${-gap} XP ahead of me today"
+            else -> "We're level on XP today"
+        }
+    }
+
+    /**
+     * A short line in the friend's voice. The same friend and gap keep the same line.
+     * [seed] is the friend's id hash so the six lines rotate without changing on each redraw.
+     */
+    fun friendLine(displayName: String, friendXp: Int, yourXp: Int, seed: Int): FriendLine {
+        val speaker = firstName(displayName)
+        val index = (seed and Int.MAX_VALUE) % aheadLines.size
+        return FriendLine(aheadLines[index].format(gapPhrase(friendXp, yourXp)), speaker)
+    }
+
     enum class Confirm { Open, WalkAway }
 
     val standardModes = setOf("standard", "breathing", "mirror", "quick")

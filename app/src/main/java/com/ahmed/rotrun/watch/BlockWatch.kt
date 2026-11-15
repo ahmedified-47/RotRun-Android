@@ -54,6 +54,7 @@ class BlockWatchService : Service() {
     private var overlayShownAt = 0L
     private var showingChat = false
     private var lastFocusWidget = 0L
+    private var declinedPackage: String? = null
     private val tick = object : Runnable {
         override fun run() {
             checkForeground()
@@ -160,8 +161,13 @@ class BlockWatchService : Service() {
             blocked = { repo.isBlocked(it, safety) },
             windowStateChanged = false,
         )
+        val front = choice.packageName ?: reading?.packageName
+        if (ShieldExit.finishedLeaving(declinedPackage, front, packageName, safety)) declinedPackage = null
         when (choice.step) {
-            ShieldStep.Leave, ShieldStep.Keep -> return
+            ShieldStep.Leave, ShieldStep.Keep -> {
+                if (ShieldExit.suppress(declinedPackage, shownFor)) hideOverlay()
+                return
+            }
             ShieldStep.Hide -> {
                 hideOverlay()
                 return
@@ -169,6 +175,10 @@ class BlockWatchService : Service() {
             ShieldStep.Show -> Unit
         }
         val target = choice.packageName ?: return
+        if (ShieldExit.suppress(declinedPackage, target)) {
+            hideOverlay()
+            return
+        }
         if (ShieldSession.openedInto(target)) {
             hideOverlay()
             if (!repo.isBlocked(target, repo.safetyPackages())) ShieldSession.release()
@@ -196,12 +206,9 @@ class BlockWatchService : Service() {
                     label = label,
                     ask = if (wantChat) ask else null,
                     onAsk = { openAsk(target, label) },
-                    onNah = {
-                        repo.clearAskIntervention()
-                        shownFor = null
-                        checkForeground()
-                    },
+                    onNah = { walkAway(target) },
                     onUnlock = { minutes ->
+                        declinedPackage = null
                         if (!repo.grantUnlock(minutes)) {
                             repo.toast("Unlock waits until Focus ends")
                         } else {
@@ -257,12 +264,9 @@ class BlockWatchService : Service() {
             label = label,
             ask = if (wantChat) ask else null,
             onAsk = { openAsk(reading, label) },
-            onNah = {
-                repo.clearAskIntervention()
-                shownFor = null
-                coverHeld()
-            },
+            onNah = { walkAway(reading) },
             onUnlock = { minutes ->
+                declinedPackage = null
                 if (!repo.grantUnlock(minutes)) {
                     repo.toast("Unlock waits until Focus ends")
                 } else {
@@ -280,6 +284,14 @@ class BlockWatchService : Service() {
         showingChat = wantChat && overlay != null
         shownFor = if (overlay == null) null else reading
         if (shownFor != null) overlayShownAt = System.currentTimeMillis()
+    }
+
+    private fun walkAway(packageName: String?) {
+        if (!packageName.isNullOrBlank()) declinedPackage = packageName
+        if (RotRunGraph.ready()) RotRunGraph.repo.clearAskIntervention()
+        hideOverlay()
+        val home = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        runCatching { startActivity(home) }
     }
 
     private fun openAsk(packageName: String, label: String) {
@@ -325,6 +337,13 @@ class BlockWatchService : Service() {
 
         fun dismiss() {
             live?.hideOverlay()
+        }
+
+        /** Hide the fallback cover and leave the blocked app. False when this service is not running. */
+        fun declineAndGoHome(packageName: String): Boolean {
+            val service = live ?: return false
+            service.handler.post { service.walkAway(packageName) }
+            return true
         }
     }
 }

@@ -98,6 +98,30 @@ class CameoOfferTest {
     }
 
     @Test
+    fun friendCameoSpeaksWithTheFirstNameAndTheRealGap() {
+        assertEquals(6, CameoOffer.motivationCount())
+        val spoken = CameoOffer.friendLine("Sam", friendXp = 900, yourXp = 0, seed = 0)
+        assertEquals("Sam", spoken.speaker)
+        assertEquals("Come on, put it down. I'm 900 XP ahead of you today.", spoken.sentence)
+        assertEquals("Sara", CameoOffer.firstName("Sara J."))
+        val again = CameoOffer.friendLine("Sam", 900, 0, 0)
+        assertEquals(spoken.sentence, again.sentence)
+        val lines = (0 until 6).map { seed ->
+            CameoOffer.friendLine("Sam Jones", friendXp = 1200, yourXp = 300, seed = seed)
+        }
+        assertEquals(6, lines.map { it.sentence }.distinct().size)
+        lines.forEach { line ->
+            assertEquals("Sam", line.speaker)
+            assertTrue(line.sentence.contains("I'm 900 XP ahead of you today"))
+            assertFalse(line.sentence.contains("workout"))
+            assertFalse(line.sentence.contains("shame"))
+        }
+        assertEquals("We're level on XP today", CameoOffer.gapPhrase(40, 40))
+        assertEquals("You're 20 XP ahead of me today", CameoOffer.gapPhrase(10, 30))
+        assertEquals(CameoOffer.confirmQuestion, "You're at 0 XP. Do you want to continue and open the app?")
+    }
+
+    @Test
     fun noBailoutAboveZeroHealthOrWithoutAFriend() {
         assertEquals(0, payout(health = 1, hasFriend = true, standard = false))
         assertEquals(0, payout(health = 12, hasFriend = true, standard = false))

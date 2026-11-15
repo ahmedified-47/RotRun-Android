@@ -29,15 +29,47 @@ object AskLaunchPolicy {
         return transientWindow(eventPackage)
     }
 
+    /**
+     * Overlay processes, not apps the user can put on a block list.
+     * A ColorOS, Oppo, or HeyTap package is a real app unless it is one of these.
+     * Treating the whole prefix as chrome is what let Gallery, Music, and Calendar
+     * stay on the list and never raise a shield.
+     */
     fun transientWindow(packageName: String): Boolean {
         val name = packageName.lowercase()
-        return name == "android" ||
-            name.startsWith("com.android.systemui") ||
-            name.startsWith("com.coloros.") ||
-            name.startsWith("com.oplus.") ||
-            name.startsWith("com.oppo.") ||
-            name.startsWith("com.heytap.")
+        if (name == "android" || name.startsWith("com.android.systemui")) return true
+        if (name.endsWith(".systemui")) return true
+        if (isHomeLauncher(name)) return true
+        return name in vendorOverlay
     }
+
+    fun isHomeLauncher(packageName: String): Boolean {
+        val name = packageName.lowercase()
+        return name.endsWith(".launcher") || name.endsWith(".launcher3") || name.contains(".launcher.")
+    }
+
+    private val vendorOverlay = setOf(
+        "com.coloros.oppoguardelf",
+        "com.oplus.systemui",
+        "com.coloros.systemui",
+        "com.coloros.smartsidebar",
+        "com.oplus.smartsidebar",
+        "com.coloros.floatassistant",
+        "com.oplus.floatassistant",
+        "com.coloros.screenshot",
+        "com.oplus.screenshot",
+        "com.coloros.exserviceui",
+        "com.oplus.exserviceui",
+        "com.coloros.securitykeyboard",
+        "com.oplus.securitykeyboard",
+        "com.coloros.gesture",
+        "com.oplus.gesture",
+        "com.coloros.recents",
+        "com.oplus.recents",
+        "com.coloros.assistantscreen",
+        "com.oplus.assistantscreen",
+        "com.heytap.accessory",
+    )
 
     /** The first tap runs. Another tap while that launch is in flight does nothing. */
     fun acceptTap(inFlight: Boolean): Boolean = !inFlight

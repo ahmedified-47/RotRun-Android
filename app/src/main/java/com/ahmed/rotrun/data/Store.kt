@@ -752,17 +752,10 @@ class RotRunRepository(context: Context) {
     fun rulesBlocked(packageName: String, safety: Set<String>): Boolean {
         val current = _state.value
         val excluded = current.excluded.map { it.packageName }.toSet()
-        val ordered = buildList {
-            current.blockers.forEach { addAll(it.packageOrder()) }
-            current.appLists.forEach { list -> addAll(list.apps.map { it.packageName }) }
-        }
-        val allowed = BlockRules.freeAllowed(ordered, current.proFor(backend.userId), PaywallGate.shows)
         val windows = current.blockers.map { blocker ->
-            val active = blocker.apps.ifEmpty {
-                current.appLists.firstOrNull { it.id == blocker.appListId }?.apps.orEmpty()
-            }
+            val linked = current.appLists.firstOrNull { it.id == blocker.appListId }?.apps?.map { it.packageName }.orEmpty()
             BlockRules.Window(
-                packages = active.map { it.packageName }.filter { it in allowed }.toSet(),
+                packages = BlockRules.enforcedPackages(blocker.apps.map { it.packageName }, linked),
                 mode = blocker.mode,
                 days = blocker.days.toSet(),
                 startHour = blocker.startHour,
