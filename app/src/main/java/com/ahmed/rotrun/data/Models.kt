@@ -175,6 +175,9 @@ data class SavedState(
 
     fun proFor(userId: String?): Boolean = BillingQuotes.showsPlayPlan(userId, grantUserId, premiumActive())
 
+    /** Voice, the premium client flag, and upgrade reminders. Open while the paywall gate is off. */
+    fun featuresUnlocked(userId: String?): Boolean = !PaywallGate.shows || proFor(userId)
+
     fun cameoToday(day: String = Scoring.dayKey()): Boolean = cameoName.isNotBlank() && cameoDay == day
 
     fun focusMinutesToday(day: String = Scoring.dayKey()): Int = focusMinutesByDay[day] ?: 0

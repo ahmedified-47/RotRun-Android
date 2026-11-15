@@ -80,6 +80,7 @@ import com.ahmed.rotrun.data.SavedState
 import com.ahmed.rotrun.data.TrackedApp
 import com.ahmed.rotrun.logic.BillingQuotes
 import com.ahmed.rotrun.logic.BrainHealthLevel
+import com.ahmed.rotrun.logic.PaywallGate
 import com.ahmed.rotrun.logic.Products
 import com.ahmed.rotrun.logic.SupportCopy
 import kotlinx.coroutines.Dispatchers
@@ -146,7 +147,7 @@ fun SettingsScreen(state: SavedState, installed: List<TrackedApp>, repo: RotRunR
             onBattery = { DeviceAccessReader.open(context, DeviceAccessReader.batteryIntent(context)) },
         )
     }
-    if (showPlans) {
+    if (showPlans && PaywallGate.premiumPlanRowsShown()) {
         val notice by repo.purchaseError.collectAsState()
         PaywallPopup(onDismiss = { showPlans = false }) {
             GetAccessPaywall(
@@ -754,8 +755,10 @@ private fun SubscriptionSection(state: SavedState, repo: RotRunRepository, onCha
         Text(renews, color = chrome.muted, fontSize = 15.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp, start = 16.dp, end = 16.dp))
     }
     CardGroup {
-        RowLink(if (shows) "Change Plan" else "Get Premium", icon = Icons.Default.Star, tint = Color(0xFFF2BF33), onClick = onChangePlan)
-        Hairline()
+        if (PaywallGate.premiumPlanRowsShown()) {
+            RowLink(if (shows) "Change Plan" else "Get Premium", icon = Icons.Default.Star, tint = Color(0xFFF2BF33), onClick = onChangePlan)
+            Hairline()
+        }
         RowLink("Manage Subscription", plan, icon = Icons.Default.Paid, tint = Color(0xFFF2BF33)) {
             val product = state.productId
             val uri = android.net.Uri.parse(
@@ -767,7 +770,7 @@ private fun SubscriptionSection(state: SavedState, repo: RotRunRepository, onCha
         Hairline()
         RowLink("Restore Purchases", icon = Icons.Default.Refresh, tint = Color(0xFF598CF2), onClick = repo::restore)
     }
-    if (!shows) {
+    if (!shows && PaywallGate.premiumPlanRowsShown()) {
         Text(
             "You're not subscribed. Get Premium to start a plan, or Restore Purchases if you already bought one on this Google account.",
             color = chrome.muted,

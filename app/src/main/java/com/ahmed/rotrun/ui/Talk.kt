@@ -144,7 +144,7 @@ fun TalkSheet(repo: RotRunRepository, onClose: () -> Unit) {
         }
     }
     fun startCall() {
-        if (!repo.state.value.proFor(repo.backend.userId)) {
+        if (!repo.state.value.featuresUnlocked(repo.backend.userId)) {
             note = FreeTier.voiceMessage
             if (PaywallGate.shows) repo.requestPaywall()
             return

@@ -26,7 +26,13 @@ object PlayCatalog {
 }
 
 object PaywallGate {
-    val shows: Boolean get() = BuildConfig.SHOW_PAYWALL
+    /** Unit tests set this. Production leaves it null and uses [BuildConfig.SHOW_PAYWALL]. */
+    internal var showsForTest: Boolean? = null
+
+    val shows: Boolean get() = showsForTest ?: BuildConfig.SHOW_PAYWALL
+
+    /** Get Premium and Change Plan. Hidden while the paywall gate is off. */
+    fun premiumPlanRowsShown(): Boolean = shows
 }
 
 object FreeTier {

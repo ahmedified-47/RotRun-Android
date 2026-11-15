@@ -297,7 +297,7 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
 
     suspend fun startVoice(onUpdate: (String, String) -> Unit = { _, _ -> }, allowRetry: Boolean = true): String? {
         val state = repo.state.value
-        if (!state.proFor(userId)) {
+        if (!state.featuresUnlocked(userId)) {
             if (PaywallGate.shows) repo.requestPaywall()
             return FreeTier.voiceMessage
         }
@@ -1327,7 +1327,7 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
             .put("unlock_minutes_left", ((state.unlockUntil - System.currentTimeMillis()) / 60_000).toInt().coerceAtLeast(0))
             .put("streak_days", state.streak)
             .put("screen_time_goal_min", level.goalMinutes)
-            .put("is_premium", state.proFor(userId))
+            .put("is_premium", state.featuresUnlocked(userId))
             .put("app_version", BuildConfig.VERSION_NAME)
             .put("caught_doomscrolling", false)
             .put("leaderboard", "unknown")
