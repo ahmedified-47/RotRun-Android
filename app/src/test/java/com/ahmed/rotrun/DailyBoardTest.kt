@@ -112,6 +112,14 @@ class DailyBoardTest {
     }
 
     @Test
+    fun zeroAndNullMinutesNeverPostMetGoalTrue() {
+        val zero = DailyBoard.xpUploadBody("user", "2026-11-15", 1800, "Ahmed J.", null, "2026-11-15T00:00:00Z", 0, 180, "medium")
+        assertEquals(0, zero!!.getInt("minutes"))
+        assertFalse(zero.getBoolean("met_goal"))
+        assertNull(DailyBoard.xpUploadBody("user", "2026-11-15", 1800, "Ahmed J.", null, "2026-11-15T00:00:00Z", null, 180, "medium"))
+    }
+
+    @Test
     fun outsideRankUsesTheHigherCount() {
         assertEquals(51, DailyBoard.outsideRank(50, 10))
         assertNull(DailyBoard.outsideRank(null, 10))

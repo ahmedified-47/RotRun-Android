@@ -489,7 +489,7 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
     }
 
     /**
-     * Reads the six days before today. A failed request keeps the cached streak.
+     * Reads the seven days before today. A failed request keeps the cached streak.
      * A successful empty list is a real zero.
      */
     fun refreshGoalStreak(): Int {

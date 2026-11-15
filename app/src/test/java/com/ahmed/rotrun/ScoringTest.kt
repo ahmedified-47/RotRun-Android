@@ -108,7 +108,7 @@ class ScoringTest {
         assertEquals(4, Scoring.streakAfterFetch(null, 4, today))
         assertEquals(0, Scoring.streakAfterFetch(emptyList(), 4, today))
         assertEquals(
-            "/rest/v1/daily_xp?select=day,met_goal&user_id=eq.user-1&day=lt.2026-11-15&order=day.desc&limit=6",
+            "/rest/v1/daily_xp?select=day,met_goal&user_id=eq.user-1&day=lt.2026-11-15&order=day.desc&limit=7",
             Scoring.goalStreakPath("user-1", "2026-11-15"),
         )
     }

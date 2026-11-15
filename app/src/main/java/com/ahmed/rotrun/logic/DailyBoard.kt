@@ -151,7 +151,7 @@ object DailyBoard {
         name: String,
         avatar: String?,
         updatedAt: String,
-        minutes: Int,
+        minutes: Int?,
         goalMinutes: Int,
         difficulty: String,
     ): org.json.JSONObject? {
@@ -167,7 +167,7 @@ object DailyBoard {
             .put("minutes", measured)
             .put("goal_minutes", goalMinutes)
             .put("difficulty", difficulty)
-            .put("met_goal", measured <= goalMinutes)
+            .put("met_goal", measured > 0 && measured <= goalMinutes)
         val column = avatar?.trim()?.takeIf { it.isNotEmpty() }
         if (column != null) body.put("avatar_url", column)
         return body

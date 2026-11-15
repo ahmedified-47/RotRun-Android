@@ -161,12 +161,12 @@ object Scoring {
     data class PastGoal(val day: LocalDate, val metGoal: Boolean?)
 
     /**
-     * Own rows before today, newest first, at most six.
-     * `GET /rest/v1/daily_xp?select=day,met_goal&user_id=eq.{id}&day=lt.{today}&order=day.desc&limit=6`
+     * Own rows before today, newest first, at most seven.
+     * `GET /rest/v1/daily_xp?select=day,met_goal&user_id=eq.{id}&day=lt.{today}&order=day.desc&limit=7`
      */
     fun goalStreakPath(userId: String, today: String): String {
         val id = URLEncoder.encode(userId, Charsets.UTF_8.name())
-        return "/rest/v1/daily_xp?select=day,met_goal&user_id=eq.$id&day=lt.$today&order=day.desc&limit=6"
+        return "/rest/v1/daily_xp?select=day,met_goal&user_id=eq.$id&day=lt.$today&order=day.desc&limit=7"
     }
 
     /**
