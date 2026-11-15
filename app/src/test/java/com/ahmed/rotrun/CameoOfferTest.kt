@@ -19,12 +19,33 @@ class CameoOfferTest {
     }
 
     @Test
-    fun zeroHealthWithAStandardStyleDoesNotOfferCameo() {
+    fun zeroHealthStillRunsAnEnabledStandardStyle() {
         assertFalse(CameoOffer.standardStylesUnusable(standard = true, breathing = false, mirror = false, quick = false))
         assertEquals("standard", CameoOffer.mode(0, true, false, false, false, hasFriend = true))
         assertEquals("breathing", CameoOffer.mode(0, false, true, false, false, hasFriend = true))
         assertEquals("mirror", CameoOffer.mode(0, false, false, true, false, hasFriend = true))
         assertEquals("quick", CameoOffer.mode(0, false, false, false, true, hasFriend = true))
+        assertFalse(CameoOffer.standardInterventionFailed(0, continuedFromStandard = false, true, false, false, false, hasFriend = true))
+    }
+
+    @Test
+    fun continuingAStandardStyleAtZeroHealthShowsCameoBeforeOpen() {
+        listOf("standard", "breathing", "mirror", "quick").forEach { style ->
+            assertTrue(CameoOffer.isStandardStyle(style))
+        }
+        assertFalse(CameoOffer.isStandardStyle("cameo"))
+        assertTrue(CameoOffer.interceptStandardContinue(health = 0, hasFriend = true))
+        assertFalse(CameoOffer.interceptStandardContinue(health = 1, hasFriend = true))
+        assertFalse(CameoOffer.interceptStandardContinue(health = null, hasFriend = true))
+        assertFalse(CameoOffer.interceptStandardContinue(health = 0, hasFriend = false))
+        assertTrue(CameoOffer.standardInterventionFailed(0, continuedFromStandard = true, true, true, true, true, hasFriend = true))
+        assertFalse(CameoOffer.standardInterventionFailed(8, continuedFromStandard = true, true, false, false, false, hasFriend = true))
+        assertFalse(CameoOffer.standardInterventionFailed(0, continuedFromStandard = true, true, false, false, false, hasFriend = false))
+        assertEquals("standard", CameoOffer.mode(0, true, false, false, false, hasFriend = true))
+        assertEquals(1500, payout(health = 0, hasFriend = true, standard = true, continued = true))
+        assertEquals(0, payout(health = 0, hasFriend = true, standard = true, continued = true, choice = CameoOffer.Confirm.Open))
+        assertEquals(0, payout(health = 3, hasFriend = true, standard = true, continued = true))
+        assertEquals(0, payout(health = 0, hasFriend = false, standard = true, continued = true))
     }
 
     @Test
@@ -86,16 +107,23 @@ class CameoOfferTest {
         assertEquals(0, payout(health = 0, hasFriend = true, standard = false, alreadyPaid = true))
     }
 
-    private fun payout(health: Int?, hasFriend: Boolean, standard: Boolean, alreadyPaid: Boolean = false): Int =
-        CameoOffer.confirmPayout(
-            choice = CameoOffer.Confirm.WalkAway,
-            health = health,
-            standard = standard,
-            breathing = false,
-            mirror = false,
-            quick = false,
-            hasFriend = hasFriend,
-            reward = 1500,
-            alreadyPaid = alreadyPaid,
-        )
+    private fun payout(
+        health: Int?,
+        hasFriend: Boolean,
+        standard: Boolean,
+        alreadyPaid: Boolean = false,
+        continued: Boolean = false,
+        choice: CameoOffer.Confirm = CameoOffer.Confirm.WalkAway,
+    ): Int = CameoOffer.confirmPayout(
+        choice = choice,
+        health = health,
+        standard = standard,
+        breathing = false,
+        mirror = false,
+        quick = false,
+        hasFriend = hasFriend,
+        reward = 1500,
+        alreadyPaid = alreadyPaid,
+        continuedFromStandard = continued,
+    )
 }

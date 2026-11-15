@@ -9,10 +9,14 @@ object CameoOffer {
 
     enum class Confirm { Open, WalkAway }
 
+    val standardModes = setOf("standard", "breathing", "mirror", "quick")
+
+    fun isStandardStyle(mode: String?): Boolean = mode in standardModes
+
     /**
      * Standard Dialogue, Breathing, Mirror Mode, and Quick Check.
      * They are unusable when every toggle is off, so the standard flow cannot run.
-     * Brain health does not lock a style: a toggle that is on is still available at 0 health.
+     * Brain health does not lock them. A toggle that is on still runs at 0 health.
      */
     fun standardStylesUnusable(
         standard: Boolean,
@@ -20,6 +24,30 @@ object CameoOffer {
         mirror: Boolean,
         quick: Boolean,
     ): Boolean = !standard && !breathing && !mirror && !quick
+
+    /**
+     * Show Cameo before the blocked app opens.
+     * Health is exactly 0, a real accepted friend is cached, and either the user just
+     * chose to continue out of a standard intervention, or all four of those styles are disabled.
+     * This is not "the four are locked at 0 health". They are not locked.
+     */
+    fun standardInterventionFailed(
+        health: Int?,
+        continuedFromStandard: Boolean,
+        standard: Boolean,
+        breathing: Boolean,
+        mirror: Boolean,
+        quick: Boolean,
+        hasFriend: Boolean,
+    ): Boolean {
+        if (health != 0 || !hasFriend) return false
+        if (continuedFromStandard) return true
+        return standardStylesUnusable(standard, breathing, mirror, quick)
+    }
+
+    /** The continue button of a standard style, before the app opens. */
+    fun interceptStandardContinue(health: Int?, hasFriend: Boolean): Boolean =
+        health == 0 && hasFriend
 
     fun pool(standard: Boolean, breathing: Boolean, mirror: Boolean, quick: Boolean): List<String> =
         buildList {
@@ -29,7 +57,7 @@ object CameoOffer {
             if (quick) add("quick")
         }
 
-    /** Health exactly 0, none of the four styles usable, and a real accepted friend. */
+    /** Health exactly 0, all four styles disabled, and a real accepted friend. Not a health lock. */
     fun lastResort(
         health: Int?,
         standard: Boolean,
@@ -37,9 +65,15 @@ object CameoOffer {
         mirror: Boolean,
         quick: Boolean,
         hasFriend: Boolean,
-    ): Boolean = health == 0 &&
-        standardStylesUnusable(standard, breathing, mirror, quick) &&
-        hasFriend
+    ): Boolean = standardInterventionFailed(
+        health,
+        continuedFromStandard = false,
+        standard,
+        breathing,
+        mirror,
+        quick,
+        hasFriend,
+    )
 
     fun mode(
         health: Int?,
@@ -58,7 +92,8 @@ object CameoOffer {
 
     /**
      * Walk-away pays [reward] the first time today. Opening pays nothing.
-     * Nothing is paid above 0 health, without a real friend, or while a standard style can still run.
+     * Nothing is paid above 0 health or without a real friend.
+     * A standard style that is still enabled does not pay until the user continues out of it.
      */
     fun confirmPayout(
         choice: Confirm,
@@ -70,9 +105,10 @@ object CameoOffer {
         hasFriend: Boolean,
         reward: Int,
         alreadyPaid: Boolean,
+        continuedFromStandard: Boolean = false,
     ): Int {
         if (choice != Confirm.WalkAway || alreadyPaid) return 0
-        if (!lastResort(health, standard, breathing, mirror, quick, hasFriend)) return 0
+        if (!standardInterventionFailed(health, continuedFromStandard, standard, breathing, mirror, quick, hasFriend)) return 0
         return reward.coerceAtLeast(0)
     }
 }

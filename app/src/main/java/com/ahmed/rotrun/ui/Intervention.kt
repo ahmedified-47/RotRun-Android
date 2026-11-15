@@ -78,7 +78,9 @@ import com.ahmed.rotrun.R
 import com.ahmed.rotrun.data.RotRunRepository
 import com.ahmed.rotrun.data.FriendCameoDisk
 import com.ahmed.rotrun.logic.BrainCallPolicy
+import com.ahmed.rotrun.logic.BrainHealthLevel
 import com.ahmed.rotrun.logic.CameoOffer
+import com.ahmed.rotrun.logic.Scoring
 import com.ahmed.rotrun.logic.FriendCameoPick
 import com.ahmed.rotrun.logic.FriendCameoSurface
 import com.ahmed.rotrun.logic.InterventionCopy
@@ -101,7 +103,10 @@ fun InterventionFlow(
     packageName: String = "",
 ) {
     val state by repo.state.collectAsState()
+    val usage by repo.usage.collectAsState()
     var mode by remember { mutableStateOf(startMode) }
+    var pendingOpenMinutes by remember { mutableStateOf<Int?>(null) }
+    var heldCameo by remember { mutableStateOf<FriendCameoPick.Choice?>(null) }
     val name = InterventionCopy.displayName(appName)
     val friend = state.cameoName.takeIf { state.cameoToday() }
     val reduce = reduceMotion()
@@ -117,6 +122,20 @@ fun InterventionFlow(
         if (!pendingLeave) return@LaunchedEffect
         delay(if (reduce) 10 else 280)
         onDismiss()
+    }
+    val level = BrainHealthLevel.fromLabel(state.brainHealth)
+    val health = Scoring.shownHealth(usage.authorized, usage.todaySeconds, state.focusMinutesToday(), level)
+    val context = LocalContext.current
+    val openFromStandard: (Int) -> Unit = { minutes ->
+        val choice = (FriendCameoDisk.surface(context, state.friendCameo) as? FriendCameoSurface.Friend)?.choice
+        if (choice != null && CameoOffer.interceptStandardContinue(health, hasFriend = true)) {
+            heldCameo = choice
+            pendingOpenMinutes = minutes
+            repo.holdCameoBeforeOpen()
+            mode = "cameo"
+        } else {
+            onUnlock(minutes)
+        }
     }
     Box(Modifier.fillMaxSize().rotInsets()) {
         if (shieldUnderneath && !pendingLeave) {
@@ -143,20 +162,19 @@ fun InterventionFlow(
                     onDecline = {
                         if (BrainCallPolicy.afterDecline() == "dismiss") pendingLeave = true
                     },
-                    onUnlock = onUnlock,
+                    onUnlock = openFromStandard,
                 )
             } else if (shown == "standard") {
-                Standard(name, friend, state.cameoKind, onDismiss = retreat, onUnlock = onUnlock)
+                Standard(name, friend, state.cameoKind, onDismiss = retreat, onUnlock = openFromStandard)
             } else if (shown == "breathing") {
-                Breathing(friend, state.cameoKind, retreat, onUnlock)
+                Breathing(friend, state.cameoKind, retreat, openFromStandard)
             } else if (shown == "cameo") {
-                val context = LocalContext.current
-                val choice = (FriendCameoDisk.surface(context, state.friendCameo) as? FriendCameoSurface.Friend)?.choice
+                val choice = heldCameo ?: (FriendCameoDisk.surface(context, state.friendCameo) as? FriendCameoSurface.Friend)?.choice
                 if (choice == null) {
                     Standard(name, friend, state.cameoKind, onDismiss = retreat, onUnlock = onUnlock)
                 } else {
                     Box(Modifier.fillMaxSize().background(meadowBrush())) {
-                        CameoConfirm(name, choice, repo, retreat, onUnlock)
+                        CameoConfirm(name, choice, repo, retreat, onUnlock, pendingOpenMinutes)
                     }
                 }
             } else {
@@ -166,7 +184,7 @@ fun InterventionFlow(
                         Modifier.fillMaxSize().padding(horizontal = 24.dp).padding(top = 16.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        Quick(name, friend, retreat, onUnlock)
+                        Quick(name, friend, retreat, openFromStandard)
                     }
                 }
             }
@@ -888,6 +906,7 @@ private fun CameoConfirm(
     repo: RotRunRepository,
     onDismiss: () -> Unit,
     onUnlock: (Int) -> Unit,
+    pendingMinutes: Int? = null,
 ) {
     var opened by remember { mutableStateOf(false) }
     Column(
@@ -910,7 +929,9 @@ private fun CameoConfirm(
                 modifier = Modifier.padding(top = 28.dp),
             )
             Spacer(Modifier.heightIn(min = 32.dp).weight(1f))
-            MeadowButton("Open the app", filled = true) { opened = true }
+            MeadowButton("Open the app", filled = true) {
+                if (pendingMinutes != null) onUnlock(pendingMinutes) else opened = true
+            }
             Spacer(Modifier.height(12.dp))
             MeadowButton("Don't open", filled = false) {
                 repo.recordWalkAwayBailout()

@@ -666,6 +666,7 @@ class RotRunRepository(context: Context) {
     }
 
     fun clearAskIntervention() {
+        cameoBeforeOpen = false
         _askIntervention.value = null
         if (_state.value.askOpen) {
             update(commit = true) { current -> current.withLedger(InterventionXp.dismiss(current.dayLedger())) }
@@ -679,9 +680,9 @@ class RotRunRepository(context: Context) {
     }
 
     /**
-     * Last-resort Cameo when health is exactly 0, the four standard styles are all off,
-     * and a real friend is cached. Otherwise one of those four, or Standard when none are on.
-     * Cameo is never in the random pool.
+     * Cameo up front only when health is exactly 0, every standard style is disabled,
+     * and a real friend is cached. A style that is on still runs at 0 health.
+     * Continuing out of that style is handled by [holdCameoBeforeOpen].
      */
     fun askMode(): String {
         val current = _state.value
@@ -714,12 +715,24 @@ class RotRunRepository(context: Context) {
         ).randomOrNull()
     }
 
+    private var cameoBeforeOpen = false
+
+    /** The user chose to open after a standard style. Cameo is next, and it does not charge another Ask. */
+    fun holdCameoBeforeOpen() {
+        cameoBeforeOpen = true
+        val current = _askIntervention.value
+        if (current != null && current.mode != "cameo") {
+            _askIntervention.value = current.copy(mode = "cameo")
+        }
+    }
+
     /**
      * Walk-away from a last-resort Cameo. Pays the difficulty bailout the first time today.
      * Opening the app does not call this. A later walk-away the same day pays nothing.
      */
     fun recordWalkAwayBailout() {
-        if (_askIntervention.value?.mode != "cameo") return
+        val offered = cameoBeforeOpen || _askIntervention.value?.mode == "cameo"
+        if (!offered) return
         val reward = Scoring.bailoutReward(BrainHealthLevel.fromLabel(_state.value.brainHealth))
         var granted = false
         update(commit = true) { current ->
