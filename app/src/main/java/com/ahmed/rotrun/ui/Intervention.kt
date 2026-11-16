@@ -84,6 +84,7 @@ import com.ahmed.rotrun.logic.Scoring
 import com.ahmed.rotrun.logic.FriendCameoPick
 import com.ahmed.rotrun.logic.FriendCameoSurface
 import com.ahmed.rotrun.logic.InterventionCopy
+import com.ahmed.rotrun.logic.ShieldPalette
 import com.ahmed.rotrun.watch.AskBrainLaunch
 import kotlin.math.sin
 import kotlinx.coroutines.Dispatchers
@@ -139,8 +140,9 @@ fun InterventionFlow(
     }
     Box(Modifier.fillMaxSize().rotInsets()) {
         if (shieldUnderneath && !pendingLeave) {
+            val shieldCopy = InterventionCopy.forPackage(packageName, name)
             Column(
-                Modifier.fillMaxSize().background(meadowBrush()),
+                Modifier.fillMaxSize().background(Color(ShieldPalette.background(shieldCopy.id))),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Shield(name, packageName) {
@@ -230,20 +232,55 @@ private fun MeadowButton(label: String, filled: Boolean, enabled: Boolean = true
 private fun ColumnScope.Shield(appName: String, packageName: String, onAsk: () -> Unit) {
     var opening by remember { mutableStateOf(false) }
     val copy = InterventionCopy.forPackage(packageName, appName)
-    Spacer(Modifier.heightIn(min = 24.dp).weight(1f))
-    RotPose(R.drawable.rot_brain_character, Modifier.padding(bottom = 36.dp).size(196.dp))
-    Text(copy.headline, color = Color.White, fontFamily = Nunito, fontSize = 32.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 28.dp))
-    Text(copy.body, color = Color.White.copy(alpha = 0.9f), fontFamily = Nunito, fontSize = 17.sp, fontWeight = FontWeight.Normal, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 16.dp).padding(horizontal = 36.dp))
-    if (copy.footer != null) {
-        Text(copy.footer, color = Color.White.copy(alpha = 0.9f), fontFamily = Nunito, fontSize = 16.sp, fontWeight = FontWeight.Normal, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 14.dp).padding(horizontal = 36.dp))
-    }
-    Spacer(Modifier.heightIn(min = 32.dp).weight(1f))
-    Box(Modifier.fillMaxWidth().padding(horizontal = 28.dp).padding(bottom = 28.dp)) {
-        MeadowButton("Ask my brain", filled = true, enabled = !opening) {
-            if (opening) return@MeadowButton
-            opening = true
-            onAsk()
+    val ink = Color.White.copy(alpha = 0.82f)
+    val shape = RoundedCornerShape(18.dp)
+    Spacer(Modifier.heightIn(min = 12.dp).weight(1f))
+    RotPose(
+        R.drawable.rot_brain_character,
+        Modifier
+            .padding(bottom = 28.dp)
+            .size(176.dp)
+            .shadow(16.dp, CircleShape, clip = false, ambientColor = Color.Black.copy(alpha = 0.4f), spotColor = Color.Black.copy(alpha = 0.4f)),
+    )
+    Text(
+        copy.headline,
+        color = Color.White,
+        fontFamily = Nunito,
+        fontSize = 34.sp,
+        fontWeight = FontWeight.Bold,
+        textAlign = TextAlign.Center,
+        lineHeight = 36.sp,
+        letterSpacing = (-0.3).sp,
+        modifier = Modifier.padding(horizontal = 28.dp),
+    )
+    Column(
+        Modifier.padding(top = 16.dp).padding(horizontal = 32.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(copy.body, color = ink, fontFamily = Nunito, fontSize = 17.sp, fontWeight = FontWeight.Normal, textAlign = TextAlign.Center, lineHeight = 21.sp)
+        if (copy.footer != null) {
+            Text(copy.footer, color = ink, fontFamily = Nunito, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center, lineHeight = 21.sp)
         }
+    }
+    Spacer(Modifier.heightIn(min = 28.dp).weight(1f))
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp)
+            .padding(bottom = 16.dp)
+            .height(56.dp)
+            .clip(shape)
+            .background(Color(ShieldPalette.accent(copy.id)))
+            .border(1.dp, Color.White.copy(alpha = 0.18f), shape)
+            .clickable(enabled = !opening) {
+                if (opening) return@clickable
+                opening = true
+                onAsk()
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text("Ask my brain", color = Color.White, fontFamily = Nunito, fontWeight = FontWeight.Bold, fontSize = 18.sp, textAlign = TextAlign.Center)
     }
 }
 

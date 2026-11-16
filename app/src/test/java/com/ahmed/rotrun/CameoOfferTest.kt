@@ -11,12 +11,24 @@ class CameoOfferTest {
     @Test
     fun cameoIsAbsentAboveZeroHealth() {
         assertFalse(CameoOffer.lastResort(80, false, false, false, false, hasFriend = true))
-        assertEquals("standard", CameoOffer.mode(80, false, false, false, false, hasFriend = true))
-        assertEquals("standard", CameoOffer.mode(null, false, false, false, false, hasFriend = true))
         repeat(24) {
             val picked = CameoOffer.mode(40, true, true, true, true, hasFriend = true)
             assertTrue(picked in setOf("standard", "breathing", "mirror", "quick"))
         }
+    }
+
+    @Test
+    fun allStandardStylesDisabledWithOneAcceptedFriendGivesCameo() {
+        assertEquals("cameo", CameoOffer.mode(80, false, false, false, false, hasFriend = true))
+        assertEquals("cameo", CameoOffer.mode(80, false, false, false, false, hasFriend = true, online = false))
+        assertEquals("cameo", CameoOffer.mode(null, false, false, false, false, hasFriend = true, online = false))
+        assertEquals("cameo", CameoOffer.mode(0, false, false, false, false, hasFriend = true, online = false))
+        assertEquals("standard", CameoOffer.mode(80, false, false, false, false, hasFriend = false, online = true))
+        assertEquals("standard", CameoOffer.mode(null, false, false, false, false, hasFriend = false))
+        assertEquals(0, payout(health = 80, hasFriend = true, standard = false))
+        assertEquals(1500, payout(health = 0, hasFriend = true, standard = false))
+        assertFalse(CameoOffer.lastResort(80, false, false, false, false, hasFriend = true))
+        assertTrue(CameoOffer.lastResort(0, false, false, false, false, hasFriend = true))
     }
 
     @Test
@@ -163,7 +175,8 @@ class CameoOfferTest {
     @Test
     fun randomPoolIncludesCameoAboveZeroOnlyWithAFriendAndOnline() {
         assertTrue(DeviceOnline.connected(hasNetwork = true, internet = true, validated = true))
-        assertFalse(DeviceOnline.connected(hasNetwork = true, internet = true, validated = false))
+        assertTrue(DeviceOnline.connected(hasNetwork = true, internet = true, validated = false))
+        assertFalse(DeviceOnline.connected(hasNetwork = true, internet = false, validated = true))
         assertFalse(DeviceOnline.connected(hasNetwork = false, internet = true, validated = true))
         assertTrue(CameoOffer.cameoInRandomPool(hasFriend = true, online = true))
         assertFalse(CameoOffer.cameoInRandomPool(hasFriend = false, online = true))

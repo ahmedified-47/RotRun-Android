@@ -681,7 +681,8 @@ class RotRunRepository(context: Context) {
 
     /**
      * Random pool includes Cameo at any health when a real friend is cached and the device is online.
-     * At health 0, Cameo is still forced when every standard style is off.
+     * When every standard style is off, a real friend is Cameo even if the phone is offline.
+     * The confirm and the bailout stay on the health-0 last resort.
      * Continuing out of a standard style at 0 health is handled by [holdCameoBeforeOpen].
      * The friend comes from the local cache. This does not call Supabase.
      */

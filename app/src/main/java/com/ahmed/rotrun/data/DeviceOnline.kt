@@ -13,6 +13,7 @@ fun isDeviceOnline(context: Context): Boolean {
     return DeviceOnline.connected(
         hasNetwork = true,
         internet = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET),
+        // Passed through and ignored. A usable network matches iOS NWPath.satisfied.
         validated = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED),
     )
 }

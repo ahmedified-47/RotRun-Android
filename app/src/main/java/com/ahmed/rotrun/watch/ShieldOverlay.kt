@@ -31,6 +31,7 @@ import com.ahmed.rotrun.R
 import com.ahmed.rotrun.data.AskIntervention
 import com.ahmed.rotrun.data.RotRunGraph
 import com.ahmed.rotrun.logic.InterventionCopy
+import com.ahmed.rotrun.logic.ShieldPalette
 import com.ahmed.rotrun.logic.OverlayInsetTypes
 import com.ahmed.rotrun.ui.InterventionFlow
 import com.ahmed.rotrun.ui.RotRunTheme
@@ -117,24 +118,26 @@ object ShieldOverlay {
         val density = context.resources.displayMetrics.density
         fun px(dp: Int) = (dp * density).toInt()
         val rounded = androidx.core.content.res.ResourcesCompat.getFont(context, R.font.nunito)
-        fun face(bold: Boolean): android.graphics.Typeface {
-            val base = rounded ?: return if (bold) android.graphics.Typeface.DEFAULT_BOLD else android.graphics.Typeface.DEFAULT
-            return android.graphics.Typeface.create(base, if (bold) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
+        fun face(weight: Int): android.graphics.Typeface {
+            val base = rounded ?: return if (weight >= 600) android.graphics.Typeface.DEFAULT_BOLD else android.graphics.Typeface.DEFAULT
+            return if (Build.VERSION.SDK_INT >= 28) {
+                android.graphics.Typeface.create(base, weight, false)
+            } else {
+                android.graphics.Typeface.create(base, if (weight >= 600) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
+            }
         }
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            background = GradientDrawable(
-                GradientDrawable.Orientation.TOP_BOTTOM,
-                intArrayOf(0xFF4DA86B.toInt(), 0xFF288052.toInt()),
-            )
+            setBackgroundColor(ShieldPalette.background(copy.id))
         }
         val topGap = android.view.View(context).apply {
-            minimumHeight = px(24)
+            minimumHeight = px(12)
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
         }
         val mascot = ImageView(context).apply {
             setImageResource(R.drawable.rot_brain_character)
+            scaleType = ImageView.ScaleType.FIT_CENTER
             val scale = Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
             if (scale != 0f) {
                 val breath = ObjectAnimator.ofPropertyValuesHolder(
@@ -152,79 +155,106 @@ object ShieldOverlay {
                     override fun onViewDetachedFromWindow(v: View) { breath.cancel() }
                 })
             }
-            val size = px(196)
-            layoutParams = LinearLayout.LayoutParams(size, size).apply {
-                gravity = Gravity.CENTER_HORIZONTAL
-                bottomMargin = px(36)
+            val size = px(176)
+            layoutParams = FrameLayout.LayoutParams(size, size, Gravity.CENTER)
+            elevation = 16f * density
+            if (Build.VERSION.SDK_INT >= 28) {
+                outlineAmbientShadowColor = 0x66000000
+                outlineSpotShadowColor = 0x66000000
             }
+        }
+        val mascotWrap = FrameLayout(context).apply {
+            layoutParams = LinearLayout.LayoutParams(px(176), px(176)).apply {
+                gravity = Gravity.CENTER_HORIZONTAL
+                bottomMargin = px(28)
+            }
+            addView(mascot)
         }
         val title = TextView(context).apply {
             text = copy.headline
             setTextColor(android.graphics.Color.WHITE)
-            textSize = 32f
-            typeface = face(true)
+            textSize = 34f
+            typeface = face(700)
             gravity = Gravity.CENTER
+            setLineSpacing(px(2).toFloat(), 1f)
+            letterSpacing = -0.3f / 34f
             setPadding(px(28), 0, px(28), 0)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
         }
+        val copyInk = 0xD1FFFFFF.toInt()
         val body = TextView(context).apply {
             text = copy.body
-            setTextColor(0xE6FFFFFF.toInt())
+            setTextColor(copyInk)
             textSize = 17f
-            typeface = face(false)
+            typeface = face(400)
             gravity = Gravity.CENTER
-            setPadding(px(36), px(16), px(36), 0)
+            setLineSpacing(px(4).toFloat(), 1f)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
         }
         val footer = copy.footer?.let { line ->
             TextView(context).apply {
                 text = line
-                setTextColor(0xE6FFFFFF.toInt())
-                textSize = 16f
-                typeface = face(false)
+                setTextColor(copyInk)
+                textSize = 17f
+                typeface = face(600)
                 gravity = Gravity.CENTER
-                setPadding(px(36), px(14), px(36), 0)
-            }
-        }
-        val bottomGap = android.view.View(context).apply {
-            minimumHeight = px(32)
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
-        }
-        fun pill(labelText: String, fill: Int, ink: Int, bottom: Int, onClick: (() -> Unit)?): TextView =
-            TextView(context).apply {
-                text = labelText
-                setTextColor(ink)
-                textSize = 18f
-                typeface = face(true)
-                gravity = Gravity.CENTER
-                background = GradientDrawable().apply {
-                    cornerRadius = 999f * density
-                    setColor(fill)
-                }
-                val padH = px(18)
-                setPadding(padH, padH, padH, padH)
+                setLineSpacing(px(4).toFloat(), 1f)
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply {
-                    marginStart = px(28)
-                    marginEnd = px(28)
-                    bottomMargin = px(bottom)
-                }
-                if (onClick != null) {
-                    setOnClickListener {
-                        if (!AskLaunchPolicy.acceptTap(AskBrainLaunch.launching)) return@setOnClickListener
-                        isEnabled = false
-                        onClick()
-                    }
-                }
+                ).apply { topMargin = px(12) }
             }
-        val button = pill("Ask my brain", 0xFF217AFF.toInt(), android.graphics.Color.WHITE, 28) {
-            onAsk()
+        }
+        val copyStack = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(px(32), px(16), px(32), 0)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+            addView(body)
+            if (footer != null) addView(footer)
+        }
+        val bottomGap = android.view.View(context).apply {
+            minimumHeight = px(28)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
+        }
+        val button = TextView(context).apply {
+            text = "Ask my brain"
+            setTextColor(android.graphics.Color.WHITE)
+            textSize = 18f
+            typeface = face(700)
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply {
+                cornerRadius = 18f * density
+                setColor(ShieldPalette.accent(copy.id))
+                setStroke(px(1).coerceAtLeast(1), 0x2EFFFFFF)
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                px(56),
+            ).apply {
+                marginStart = px(24)
+                marginEnd = px(24)
+                bottomMargin = px(16)
+            }
+            setOnClickListener {
+                if (!AskLaunchPolicy.acceptTap(AskBrainLaunch.launching)) return@setOnClickListener
+                isEnabled = false
+                onAsk()
+            }
         }
         root.addView(topGap)
-        root.addView(mascot)
+        root.addView(mascotWrap)
         root.addView(title)
-        root.addView(body)
-        footer?.let(root::addView)
+        root.addView(copyStack)
         root.addView(bottomGap)
         root.addView(button)
         padForBars(root)
