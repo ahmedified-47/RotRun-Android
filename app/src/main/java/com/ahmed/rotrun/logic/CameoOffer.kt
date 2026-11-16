@@ -152,10 +152,10 @@ object CameoOffer {
     ): String {
         if (lastResort(health, standard, breathing, mirror, quick, hasFriend)) return "cameo"
         val options = pool(standard, breathing, mirror, quick, cameoInRandomPool(hasFriend, online))
-        // All four standard styles are off. A real friend means Cameo, even when the
-        // phone is offline, so the empty pool does not fall through to a disabled style.
-        // Health 0 already returned above. That path keeps the confirm and the bailout.
-        if (options.isEmpty() && hasFriend) return "cameo"
+        // Every standard style is off. A real friend who is online is Cameo, so an empty
+        // pool does not fall through to a style the user turned off. Offline stays on
+        // that fallback. Health 0 already returned above and keeps the confirm and bailout.
+        if (options.isEmpty() && hasFriend && online) return "cameo"
         return options.randomOrNull() ?: "standard"
     }
 

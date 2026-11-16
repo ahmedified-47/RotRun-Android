@@ -18,13 +18,14 @@ class CameoOfferTest {
     }
 
     @Test
-    fun allStandardStylesDisabledWithOneAcceptedFriendGivesCameo() {
-        assertEquals("cameo", CameoOffer.mode(80, false, false, false, false, hasFriend = true))
-        assertEquals("cameo", CameoOffer.mode(80, false, false, false, false, hasFriend = true, online = false))
-        assertEquals("cameo", CameoOffer.mode(null, false, false, false, false, hasFriend = true, online = false))
+    fun allStandardStylesDisabledWithOneAcceptedFriendOnlineGivesCameo() {
+        assertEquals("cameo", CameoOffer.mode(80, false, false, false, false, hasFriend = true, online = true))
+        assertEquals("cameo", CameoOffer.mode(null, false, false, false, false, hasFriend = true, online = true))
+        assertEquals("cameo", CameoOffer.mode(0, false, false, false, false, hasFriend = true, online = true))
         assertEquals("cameo", CameoOffer.mode(0, false, false, false, false, hasFriend = true, online = false))
+        assertEquals("standard", CameoOffer.mode(80, false, false, false, false, hasFriend = true, online = false))
         assertEquals("standard", CameoOffer.mode(80, false, false, false, false, hasFriend = false, online = true))
-        assertEquals("standard", CameoOffer.mode(null, false, false, false, false, hasFriend = false))
+        assertEquals("standard", CameoOffer.mode(null, false, false, false, false, hasFriend = false, online = true))
         assertEquals(0, payout(health = 80, hasFriend = true, standard = false))
         assertEquals(1500, payout(health = 0, hasFriend = true, standard = false))
         assertFalse(CameoOffer.lastResort(80, false, false, false, false, hasFriend = true))
