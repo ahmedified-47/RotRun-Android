@@ -1,6 +1,5 @@
 package com.ahmed.rotrun.ui
 
-import android.app.Activity
 import android.graphics.BitmapFactory
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -137,8 +136,15 @@ fun ProfileEditor(repo: RotRunRepository, prompt: Boolean, onFinished: () -> Uni
         }
         if (!prompt && !repo.backend.signedIn) {
             Text("Sign in with Google", color = rot().blue, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp).clickable {
-                val activity = context as? Activity ?: return@clickable
-                repo.backend.signIn(activity) { message -> message?.let { repo.toast(it) } }
+                val activity = com.ahmed.rotrun.data.hostActivity(context)
+                if (activity == null) {
+                    error = com.ahmed.rotrun.data.LeaderboardSignIn.missingActivity
+                    return@clickable
+                }
+                repo.backend.signIn(activity) { message ->
+                    val shown = com.ahmed.rotrun.data.LeaderboardSignIn.notice(message)
+                    if (shown != null) error = shown else error = null
+                }
             })
         }
     }

@@ -37,3 +37,23 @@ object GoogleSignInPolicy {
         return body
     }
 }
+
+/** What the leaderboard does with the string `signIn` passes back. A failure is shown, never dropped. */
+object LeaderboardSignIn {
+    const val missingActivity = "Couldn’t open Google sign-in from this screen."
+
+    /** Null means the session was saved and the board should reload. */
+    fun notice(error: String?): String? = error?.trim()?.takeIf { it.isNotEmpty() }
+}
+
+/** A 200 without an access token is still a failed sign-in. The board must not treat it as success. */
+object GoogleTokenExchange {
+    fun failure(code: Int, accessToken: String, serverMessage: String?): String? {
+        if (code !in 200..299) {
+            val text = serverMessage?.trim().orEmpty()
+            return text.ifBlank { "Sign-in failed ($code)" }
+        }
+        if (accessToken.isBlank()) return "Google sign-in didn’t return a session."
+        return null
+    }
+}

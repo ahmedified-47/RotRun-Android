@@ -1,7 +1,6 @@
 package com.ahmed.rotrun.ui
 
 import android.Manifest
-import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.provider.Settings
@@ -193,15 +192,15 @@ fun TalkSheet(repo: RotRunRepository, onClose: () -> Unit) {
                 action = "Sign in with Google",
                 busy = false,
                 onAction = {
-                    val activity = context as? Activity ?: return@Gate
+                    val activity = com.ahmed.rotrun.data.hostActivity(context)
+                    if (activity == null) {
+                        note = com.ahmed.rotrun.data.LeaderboardSignIn.missingActivity
+                        return@Gate
+                    }
                     repo.backend.signIn(activity) { signError ->
                         signedIn = repo.backend.signedIn
                         needsConsent = repo.backend.needsConsent()
-                        note = when {
-                            signError.isNullOrBlank() -> null
-                            signError.contains("isn’t set up") || signError.contains("isn't set up") -> signError
-                            else -> signError
-                        }
+                        note = com.ahmed.rotrun.data.LeaderboardSignIn.notice(signError)
                     }
                 },
                 secondaryAction = null,

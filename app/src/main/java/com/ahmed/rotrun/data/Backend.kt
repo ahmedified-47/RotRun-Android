@@ -95,7 +95,6 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
                     onSuccess = { idToken -> exchange(idToken, nonce) },
                     onFailure = { GoogleSignInPolicy.message(it.javaClass.name, it.message.orEmpty()) },
                 )
-                if (activity.isDestroyed) return@launch
                 withContext(Dispatchers.Main) { onDone(error) }
             }
         }
@@ -1112,7 +1111,12 @@ class Backend(private val app: Context, private val repo: RotRunRepository) {
         val body = JSONObject().put("provider", "google").put("id_token", idToken).put("nonce", nonce)
         val response = call("POST", "/auth/v1/token?grant_type=id_token", body.toString(), null)
         val payload = response.json ?: return response.error ?: "Sign-in failed (${response.code})"
-        if (response.code !in 200..299) return payload.optString("msg").ifBlank { payload.optString("error_description", "Sign-in failed") }
+        val failure = GoogleTokenExchange.failure(
+            response.code,
+            payload.optString("access_token"),
+            payload.optString("msg").ifBlank { payload.optString("error_description").ifBlank { response.error } },
+        )
+        if (failure != null) return failure
         val user = payload.optJSONObject("user")
         session.edit()
             .putString("access", payload.optString("access_token"))

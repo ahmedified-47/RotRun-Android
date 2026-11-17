@@ -1,6 +1,5 @@
 package com.ahmed.rotrun.ui
 
-import android.app.Activity
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -9,9 +8,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
@@ -19,6 +20,11 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.ui.layout.boundsInWindow
@@ -63,7 +69,9 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ahmed.rotrun.R
+import com.ahmed.rotrun.data.LeaderboardSignIn
 import com.ahmed.rotrun.data.RotRunRepository
+import com.ahmed.rotrun.data.hostActivity
 import com.ahmed.rotrun.data.SavedState
 import com.ahmed.rotrun.logic.InterventionCopy
 import com.ahmed.rotrun.logic.BrainHealthLevel
@@ -85,7 +93,7 @@ fun StatsScreen(
     onEditYou: () -> Unit = {},
 ) {
     var page by remember { mutableStateOf("focus") }
-    Column(Modifier.background(if (page == "board") Color.Black else Color.Transparent).padding(bottom = 24.dp)) {
+    Column(Modifier.fillMaxSize().background(if (page == "board") Color.Black else Color.Transparent)) {
         Segment(
             "Focus",
             "Leaderboard",
@@ -94,7 +102,13 @@ fun StatsScreen(
             { page = "board" },
             Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
         )
-        if (page == "focus") FocusStats(state, health) else Leaderboard(state, screenMinutes, repo, onEditYou)
+        if (page == "focus") {
+            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
+                FocusStats(state, health)
+            }
+        } else {
+            Leaderboard(state, screenMinutes, repo, onEditYou, Modifier.weight(1f).fillMaxWidth())
+        }
     }
 }
 
@@ -234,14 +248,15 @@ private fun Leaderboard(
     screenMinutes: Int?,
     repo: RotRunRepository,
     onEditYou: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    Column(Modifier.padding(horizontal = 20.dp)) {
+    Column(modifier.padding(horizontal = 20.dp)) {
         LeaderboardBody(state, screenMinutes, repo, onEditYou)
     }
 }
 
 @Composable
-private fun LeaderboardBody(
+private fun ColumnScope.LeaderboardBody(
     state: SavedState,
     screenMinutes: Int?,
     repo: RotRunRepository,
@@ -333,67 +348,56 @@ private fun LeaderboardBody(
         BoardTabs(scope) { scope = it }
     }
     if (scope == BoardScope.Friends) {
-        FriendsBoard(
-            graph = graph,
-            note = friendNote,
-            draft = inviteDraft,
-            signedIn = repo.backend.signedIn,
-            youName = repo.backend.profileName(),
-            youXp = xp ?: repo.shownDailyXp(),
-            youAvatar = repo.backend.profileAvatar(),
-            onDraft = { inviteDraft = it },
-            onAddCode = {
-                val typed = inviteDraft
-                inviteDraft = ""
-                CoroutineScope(Dispatchers.IO).launch {
-                    val message = repo.backend.addFriendByCode(typed)
-                    withContext(Dispatchers.Main) { friendNote = message }
-                    reloadFriends()
-                }
-            },
-            onRespond = { id, accept ->
-                CoroutineScope(Dispatchers.IO).launch {
-                    val message = repo.backend.setFriendStatus(id, if (accept) "accepted" else "declined")
-                    withContext(Dispatchers.Main) { friendNote = message }
-                    reloadFriends()
-                }
-            },
-            onOpen = { row -> if (row.you) onEditYou() else friendTarget = row },
-            repo = repo,
-            onEditYou = onEditYou,
-            onSignIn = { reload(); reloadFriends() },
-        )
-    } else {
-        val you = board.rows.firstOrNull { it.you } ?: board.pinned
-        var youOnScreen by remember(you?.userId, you?.rank, board.rows.size) {
-            mutableStateOf(board.rows.any { it.you })
+        Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
+            FriendsBoard(
+                graph = graph,
+                note = friendNote,
+                draft = inviteDraft,
+                signedIn = repo.backend.signedIn,
+                youName = repo.backend.profileName(),
+                youXp = xp ?: repo.shownDailyXp(),
+                youAvatar = repo.backend.profileAvatar(),
+                onDraft = { inviteDraft = it },
+                onAddCode = {
+                    val typed = inviteDraft
+                    inviteDraft = ""
+                    CoroutineScope(Dispatchers.IO).launch {
+                        val message = repo.backend.addFriendByCode(typed)
+                        withContext(Dispatchers.Main) { friendNote = message }
+                        reloadFriends()
+                    }
+                },
+                onRespond = { id, accept ->
+                    CoroutineScope(Dispatchers.IO).launch {
+                        val message = repo.backend.setFriendStatus(id, if (accept) "accepted" else "declined")
+                        withContext(Dispatchers.Main) { friendNote = message }
+                        reloadFriends()
+                    }
+                },
+                onOpen = { row -> if (row.you) onEditYou() else friendTarget = row },
+                repo = repo,
+                onEditYou = onEditYou,
+                onSignIn = { reload(); reloadFriends() },
+            )
         }
-        PullToRefreshBox(isRefreshing = refreshing, onRefresh = { repo.refreshUsage(); reload(); reloadFriends() }) {
-            Column(Modifier.fillMaxWidth()) {
+    } else {
+        val openRow = { row: RankedXp -> if (row.you) onEditYou() else friendTarget = row }
+        PullToRefreshBox(
+            isRefreshing = refreshing,
+            onRefresh = { repo.refreshUsage(); reload(); reloadFriends() },
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+        ) {
+            Column(Modifier.fillMaxSize()) {
                 when {
                     !repo.backend.signedIn || board.signedOut -> Appear(0f) { SignInBoard(context, repo) { reload() } }
                     xp == null -> Appear(0.08f) { UsageBoard() }
                     board.rows.isEmpty() && board.pinned == null -> Appear(0.12f) { EmptyBoard() }
-                    else -> {
-                        if (board.rows.isNotEmpty()) {
-                            Appear(0.04f) {
-                                TopAvatars(board.rows, { row -> if (row.you) onEditYou() else friendTarget = row }) { youOnScreen = it }
-                            }
-                        }
-                        board.rows.drop(3).forEachIndexed { index, row ->
-                            Appear(0.12f + minOf(index, 7) * 0.05f) {
-                                BoardLine(row, { tapped -> if (tapped.you) onEditYou() else friendTarget = tapped }) { youOnScreen = it }
-                            }
-                        }
-                    }
+                    else -> RankedBoard(board.rows, board.pinned, openRow, Modifier.weight(1f).fillMaxWidth())
                 }
                 board.message?.let {
                     Text(it, color = BoardMuted, fontSize = 13.sp, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), textAlign = TextAlign.Center)
                 }
             }
-        }
-        if (you != null && !youOnScreen && repo.backend.signedIn && xp != null && !board.signedOut) {
-            YouPill(you, onEditYou)
         }
     }
     friendTarget?.let { row ->
@@ -489,12 +493,24 @@ private fun UsageBoard() {
 
 @Composable
 private fun SignInBoard(context: android.content.Context, repo: RotRunRepository, onDone: () -> Unit) {
+    var failure by remember { mutableStateOf<String?>(null) }
     Column(Modifier.fillMaxWidth().padding(vertical = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Text("Sign in to see the leaderboard", color = BoardInk, fontWeight = FontWeight.Bold, fontSize = 18.sp, textAlign = TextAlign.Center)
         TextButton(onClick = {
-            val activity = context as? Activity ?: return@TextButton
-            repo.backend.signIn(activity) { onDone() }
+            val activity = hostActivity(context)
+            if (activity == null) {
+                failure = LeaderboardSignIn.missingActivity
+                return@TextButton
+            }
+            repo.backend.signIn(activity) { error ->
+                val shown = LeaderboardSignIn.notice(error)
+                failure = shown
+                if (shown == null) onDone()
+            }
         }) { Text("Sign in with Google") }
+        failure?.let {
+            Text(it, color = Color(0xFFFF6B4A), fontSize = 14.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 12.dp))
+        }
     }
 }
 
@@ -675,6 +691,38 @@ private fun FriendActionButton(label: String, onClick: () -> Unit) {
 }
 
 @Composable
+private fun RankedBoard(
+    rows: List<RankedXp>,
+    pinned: RankedXp?,
+    onOpen: (RankedXp) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val below = DailyBoard.belowPodium(rows)
+    val listState = rememberLazyListState()
+    val podiumIds = DailyBoard.topRow(rows).map { it.userId }.toSet()
+    val laidOut = listState.layoutInfo.viewportEndOffset > 0 || below.isEmpty()
+    val visibleIds = if (laidOut) {
+        listState.layoutInfo.visibleItemsInfo.mapNotNull { below.getOrNull(it.index)?.userId }.toSet()
+    } else {
+        below.map { it.userId }.toSet()
+    }
+    val sticky = DailyBoard.stickyYou(rows, pinned, podiumIds + visibleIds)
+    Column(modifier) {
+        if (rows.isNotEmpty()) {
+            TopAvatars(rows, onOpen) {}
+        }
+        LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = listState) {
+            items(below, key = { it.userId }) { row ->
+                BoardLine(row, onOpen)
+            }
+        }
+        if (sticky != null) {
+            BoardLine(sticky, onOpen, Modifier.background(Color.Black))
+        }
+    }
+}
+
+@Composable
 private fun TopAvatars(rows: List<RankedXp>, onOpen: (RankedXp) -> Unit, onYouPlacement: (Boolean) -> Unit) {
     Row(
         Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 8.dp),
@@ -746,9 +794,14 @@ private fun RankBadge(rank: Int, fill: Color, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun BoardLine(row: RankedXp, onOpen: (RankedXp) -> Unit, onYouPlacement: (Boolean) -> Unit) {
+private fun BoardLine(
+    row: RankedXp,
+    onOpen: (RankedXp) -> Unit,
+    modifier: Modifier = Modifier,
+    onYouPlacement: (Boolean) -> Unit = {},
+) {
     Row(
-        Modifier
+        modifier
             .fillMaxWidth()
             .padding(vertical = 2.dp)
             .then(if (row.you) Modifier.border(2.dp, BoardOrange, RoundedCornerShape(18.dp)) else Modifier)

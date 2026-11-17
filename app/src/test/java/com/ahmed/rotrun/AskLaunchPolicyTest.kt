@@ -5,6 +5,8 @@ import com.ahmed.rotrun.data.AskIntervention
 import com.ahmed.rotrun.data.AskInterventionPlan
 import com.ahmed.rotrun.data.GoogleNonce
 import com.ahmed.rotrun.data.GoogleSignInPolicy
+import com.ahmed.rotrun.data.GoogleTokenExchange
+import com.ahmed.rotrun.data.LeaderboardSignIn
 import com.ahmed.rotrun.logic.BrainCallPolicy
 import com.ahmed.rotrun.watch.AskLaunchPolicy
 import com.ahmed.rotrun.watch.ForegroundGate
@@ -442,5 +444,20 @@ class AskLaunchPolicyTest {
         assertFalse(GoogleSignInPolicy.retryWithAccountList("GetCredentialCancellationException", "activity is cancelled by the user"))
         assertTrue(GoogleSignInPolicy.message("NoCredentialException", "").contains("Google account"))
         assertTrue(GoogleSignInPolicy.message("GetCredentialException", "Developer console is not set up correctly. 10:").contains("SHA-1"))
+    }
+
+    @Test
+    fun leaderboardSignInShowsTheFailureInsteadOfDroppingIt() {
+        val setup = GoogleSignInPolicy.message("GetCredentialException", "Developer console is not set up correctly. 10:")
+        assertEquals(setup, LeaderboardSignIn.notice(setup))
+        assertTrue(setup.contains("SHA-1"))
+        assertEquals("Sign-in failed (400)", LeaderboardSignIn.notice("  Sign-in failed (400)  "))
+        assertNull(LeaderboardSignIn.notice(null))
+        assertNull(LeaderboardSignIn.notice("   "))
+        assertEquals(LeaderboardSignIn.missingActivity, LeaderboardSignIn.notice(LeaderboardSignIn.missingActivity))
+        assertEquals("Google sign-in didn’t return a session.", GoogleTokenExchange.failure(200, "", null))
+        assertNull(GoogleTokenExchange.failure(200, "access-token", null))
+        assertEquals("nonce mismatch", GoogleTokenExchange.failure(400, "", "nonce mismatch"))
+        assertEquals("Sign-in failed (401)", GoogleTokenExchange.failure(401, "", "  "))
     }
 }

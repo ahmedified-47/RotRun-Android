@@ -114,8 +114,14 @@ private fun AccountSignup(repo: RotRunRepository, onLater: () -> Unit) {
         Text("Sign in with Google", color = rot().ink, fontFamily = Nunito, fontWeight = FontWeight.Bold, fontSize = 28.sp, textAlign = TextAlign.Center)
         Text("Then add the name and photo that show on Daily XP.", color = rot().muted, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp, bottom = 24.dp))
         PrimaryButton("Sign in with Google") {
-            val activity = context as? android.app.Activity ?: return@PrimaryButton
-            repo.backend.signIn(activity) { message -> message?.let { repo.toast(it) } }
+            val activity = com.ahmed.rotrun.data.hostActivity(context)
+            if (activity == null) {
+                repo.toast(com.ahmed.rotrun.data.LeaderboardSignIn.missingActivity)
+                return@PrimaryButton
+            }
+            repo.backend.signIn(activity) { message ->
+                com.ahmed.rotrun.data.LeaderboardSignIn.notice(message)?.let { repo.toast(it) }
+            }
         }
         Text("Not now", color = rot().muted, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(vertical = 16.dp).clickable(onClick = onLater))
         Spacer(Modifier.weight(1f))

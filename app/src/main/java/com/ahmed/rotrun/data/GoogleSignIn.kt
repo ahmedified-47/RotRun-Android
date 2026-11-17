@@ -1,6 +1,8 @@
 package com.ahmed.rotrun.data
 
 import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
@@ -11,6 +13,18 @@ import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+
+/** LocalContext is often a theme wrapper, not the Activity. A failed cast used to return without an error. */
+fun hostActivity(context: Context): Activity? {
+    var current: Context = context
+    while (true) {
+        if (current is Activity) return current
+        if (current !is ContextWrapper) return null
+        val next = current.baseContext ?: return null
+        if (next === current) return null
+        current = next
+    }
+}
 
 object GoogleSignIn {
     fun start(activity: Activity, serverClientId: String, hashedNonce: String, onDone: (Result<String>) -> Unit) {

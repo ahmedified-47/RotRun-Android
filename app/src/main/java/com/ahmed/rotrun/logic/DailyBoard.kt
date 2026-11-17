@@ -139,6 +139,20 @@ object DailyBoard {
         }
     }
 
+    /** Rank 4 and below. The podium keeps the first three places. */
+    fun belowPodium(rows: List<RankedXp>): List<RankedXp> = rows.drop(3)
+
+    /**
+     * The signed-in row to keep on screen when that player is not in `visibleUserIds`.
+     * That set is the podium plus the ranks currently in the list viewport.
+     * `pinned` is the signed-in player when they are outside the fetched rows.
+     */
+    fun stickyYou(rows: List<RankedXp>, pinned: RankedXp?, visibleUserIds: Set<String>): RankedXp? {
+        val you = rows.firstOrNull { it.you } ?: pinned?.takeIf { it.you } ?: return null
+        if (you.userId in visibleUserIds) return null
+        return you
+    }
+
     /**
      * Daily XP upsert. `avatar_url` is omitted when there is no URL.
      * Minutes, goal, difficulty, and met_goal go on every row.

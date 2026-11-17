@@ -1,6 +1,7 @@
 package com.ahmed.rotrun
 
 import com.ahmed.rotrun.logic.DailyBoard
+import com.ahmed.rotrun.logic.RankedXp
 import com.ahmed.rotrun.logic.XpRow
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -117,6 +118,22 @@ class DailyBoardTest {
         assertEquals(0, zero!!.getInt("minutes"))
         assertFalse(zero.getBoolean("met_goal"))
         assertNull(DailyBoard.xpUploadBody("user", "2026-11-15", 1800, "Ahmed J.", null, "2026-11-15T00:00:00Z", null, 180, "medium"))
+    }
+
+    @Test
+    fun ranksBelowThePodiumStayListedAndTheCurrentUserStaysVisible() {
+        val rows = (1..6).map { index ->
+            RankedXp("u$index", "P$index", 100 - index, index, you = index == 5)
+        }
+        assertEquals(listOf(4, 5, 6), DailyBoard.belowPodium(rows).map { it.rank })
+        val you = rows.first { it.you }
+        assertEquals(you, DailyBoard.stickyYou(rows, null, setOf("u2", "u1", "u3")))
+        assertNull(DailyBoard.stickyYou(rows, null, setOf("u2", "u1", "u3", "u5")))
+        val others = rows.map { it.copy(you = false) }
+        val pinned = RankedXp("me", "Ahmed J.", 3, 80, true)
+        assertEquals(pinned, DailyBoard.stickyYou(others, pinned, setOf("u1", "u2", "u3")))
+        assertNull(DailyBoard.stickyYou(others, pinned, setOf("u1", "me")))
+        assertNull(DailyBoard.stickyYou(others, pinned.copy(you = false), emptySet()))
     }
 
     @Test

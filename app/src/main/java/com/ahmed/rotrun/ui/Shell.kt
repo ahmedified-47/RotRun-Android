@@ -255,13 +255,11 @@ private fun MainShell(repo: RotRunRepository, onEditYou: () -> Unit) {
     val tabClearance = 148.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val homeScroll = rememberScrollState()
     val blockScroll = rememberScrollState()
-    val statsScroll = rememberScrollState()
     val settingsScroll = rememberScrollState()
     val scroll = when (tab) {
-        Tab.Home -> homeScroll
         Tab.Block -> blockScroll
-        Tab.Stats -> statsScroll
         Tab.Settings -> settingsScroll
+        else -> homeScroll
     }
     Box(Modifier.fillMaxSize().background(canvas)) {
         CompositionLocalProvider(LocalContentColor provides contentInk) {
@@ -273,7 +271,7 @@ private fun MainShell(repo: RotRunRepository, onEditYou: () -> Unit) {
                         .union(WindowInsets.systemBars.only(WindowInsetsSides.Top))
                         .union(WindowInsets.ime),
                 )
-                .verticalScroll(scroll)
+                .then(if (tab == Tab.Stats) Modifier else Modifier.verticalScroll(scroll))
                 .padding(bottom = tabClearance),
         ) {
             when (tab) {
