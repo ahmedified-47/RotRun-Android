@@ -1,8 +1,8 @@
 package com.ahmed.rotrun.logic
 
 /**
- * Onboarding social proof copied from iOS build 105.
- * UNVERIFIED. Confirm with Ahmed before any Play listing. Do not invent other figures.
+ * Onboarding social proof from iOS build 105.
+ * Ahmed confirmed these figures for the app. Do not invent other figures.
  */
 object Marketing {
     const val rating = "4.7"

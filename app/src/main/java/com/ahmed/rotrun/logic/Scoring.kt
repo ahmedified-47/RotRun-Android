@@ -1,5 +1,6 @@
 package com.ahmed.rotrun.logic
 
+import java.net.URLEncoder
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -14,6 +15,7 @@ enum class BrainHealthLevel(
     val goalMinutes: Int,
     val restoreMinutes: Int,
     val restoreCopy: String,
+    val xpMultiplier: Double,
 ) {
     Easy(
         "Easy",
@@ -22,6 +24,7 @@ enum class BrainHealthLevel(
         5 * 60,
         8,
         "Focus Mode restores 1 health every 8 min",
+        1.0,
     ),
     Medium(
         "Medium",
@@ -30,16 +33,21 @@ enum class BrainHealthLevel(
         3 * 60,
         6,
         "Focus Mode restores 1 health every 6 min",
+        1.25,
     ),
     Hard(
         "Hard",
         "Strict. Brain reacts quickly.",
         "1h daily goal",
-        60,
+        1 * 60,
         4,
         "Focus Mode restores 1 health every 4 min",
+        1.5,
     ),
     ;
+
+    /** Column value on daily_xp.difficulty. */
+    val wireDifficulty: String get() = label.lowercase(Locale.US)
 
     companion object {
         fun fromLabel(raw: String): BrainHealthLevel = entries.firstOrNull { it.label == raw } ?: Medium
@@ -93,12 +101,14 @@ object Scoring {
 
     /**
      * One Brain Health number for Home, Stats, and the widget.
+     * [todaySeconds] is total screen time, the same input as iOS
+     * `ScreenTimeFormatting.brainHealth(today:)`. The excluded-app drain is not used.
      * Missing usage access is unknown, not 0% and not 100%.
      * There is no minimum number of seconds before a real score is shown.
      */
-    fun shownHealth(authorized: Boolean, drainSeconds: Long, focusMinutes: Int, level: BrainHealthLevel): Int? {
+    fun shownHealth(authorized: Boolean, todaySeconds: Long, focusMinutes: Int, level: BrainHealthLevel): Int? {
         if (!authorized) return null
-        return displayedHealth(drainHealth(drainSeconds, level), focusMinutes, level.restoreMinutes)
+        return displayedHealth(drainHealth(todaySeconds, level), focusMinutes, level.restoreMinutes)
     }
 
     /** Streak after an open. Same calendar day keeps it. The next day adds one. A gap starts over. */
@@ -115,10 +125,189 @@ object Scoring {
         else -> "Time to unplug"
     }
 
-    fun dailyXp(screenMinutes: Int, goalMinutes: Int, askBrainCount: Int, ransomDebit: Int = 0): Int {
-        val delta = goalMinutes.coerceAtLeast(0) - screenMinutes.coerceAtLeast(0)
-        val screenXp = if (delta >= 0) delta * 10 else delta * 15
-        return (screenXp - 20 * askBrainCount.coerceAtLeast(0) - ransomDebit.coerceAtLeast(0)).coerceAtLeast(0)
+    /** Floor of seconds, the same minutes the Home card prints once it has a minute to show. */
+    fun screenMinutes(seconds: Long): Int = (seconds.coerceAtLeast(0) / 60L).toInt()
+
+    /**
+     * Minutes the Home card is actually showing. Under a minute the card says
+     * "Not in yet", and that is not scored as zero use.
+     */
+    fun scoredMinutes(seconds: Long, authorized: Boolean): Int? {
+        if (!authorized || seconds < 60L) return null
+        return screenMinutes(seconds)
+    }
+
+    /** Stored goal hours times 60. A missing goal is 4 hours. Daily XP uses [BrainHealthLevel.goalMinutes] instead. */
+    fun goalMinutes(storedHours: Int): Int = (if (storedHours > 0) storedHours else 4) * 60
+
+    /** Device Activity's 12-hour cap. It is not a measured total. */
+    const val PLACEHOLDER_MINUTES = 12 * 60
+
+    /** DeviceActivityMonitor stops at 16 hours. That ceiling is not a measured total. */
+    const val COVERAGE_CAP_MINUTES = 16 * 60
+
+    /**
+     * Minutes that may be written to daily_xp.minutes.
+     * The 12-hour placeholder and the 16-hour coverage cap are stand-ins, and a value outside 0–1440 does not fit the column.
+     */
+    fun measuredMinutes(minutes: Int?): Int? {
+        val value = minutes ?: return null
+        if (value == PLACEHOLDER_MINUTES || value == COVERAGE_CAP_MINUTES) return null
+        if (value !in 0..1440) return null
+        return value
+    }
+
+    /** One past day from the streak query. A null [metGoal] is an old row and does not count. */
+    data class PastGoal(val day: LocalDate, val metGoal: Boolean?)
+
+    /**
+     * Own rows before today, newest first, at most seven.
+     * `GET /rest/v1/daily_xp?select=day,met_goal&user_id=eq.{id}&day=lt.{today}&order=day.desc&limit=7`
+     */
+    fun goalStreakPath(userId: String, today: String): String {
+        val id = URLEncoder.encode(userId, Charsets.UTF_8.name())
+        return "/rest/v1/daily_xp?select=day,met_goal&user_id=eq.$id&day=lt.$today&order=day.desc&limit=7"
+    }
+
+    /**
+     * Consecutive days immediately before [today] with met_goal true.
+     * A missing day, a false, or a null stops the count. Today is not included.
+     */
+    fun goalStreakDays(today: LocalDate, rows: List<PastGoal>): Int {
+        val byDay = LinkedHashMap<LocalDate, Boolean?>()
+        rows.sortedByDescending { it.day }.forEach { row ->
+            if (row.day < today && row.day !in byDay) byDay[row.day] = row.metGoal
+        }
+        var expected = today.minusDays(1)
+        var count = 0
+        for ((day, met) in byDay) {
+            if (day != expected || met != true) break
+            count += 1
+            expected = expected.minusDays(1)
+        }
+        return count
+    }
+
+    /** A failed read keeps the cached streak. An empty read is a real zero. */
+    fun streakAfterFetch(fetched: List<PastGoal>?, cached: Int, today: LocalDate): Int =
+        if (fetched == null) cached.coerceAtLeast(0) else goalStreakDays(today, fetched)
+
+    /** min(streak, 5) × 10%. A 7-day streak stays at +50%. */
+    fun streakBonus(streak: Int): Double = minOf(streak.coerceAtLeast(0), 5) * 0.10
+
+    /** Hidden at 0. "3-day streak +30%". */
+    fun streakLine(streak: Int): String? {
+        if (streak <= 0) return null
+        val percent = minOf(streak, 5) * 10
+        return "$streak-day streak +$percent%"
+    }
+
+    /**
+     * Under the goal: round_half_away((goal − used) × 10 × [multiplier] × (1 + streak bonus)).
+     * Over the goal: (used − goal) × 15, with no multiplier and no streak bonus.
+     * Then −20 per Ask and −100 per ransom, then the bailout, floored at 0.
+     * The bailout is half of the 0-minute cap and does not include the streak bonus.
+     */
+    fun dailyXp(
+        screenMinutes: Int,
+        goalMinutes: Int,
+        askBrainCount: Int,
+        ransomDebit: Int = 0,
+        multiplier: Double = 1.0,
+        streak: Int = 0,
+        bailoutBonus: Int = 0,
+    ): Int {
+        val used = screenMinutes.coerceAtLeast(0)
+        val goal = goalMinutes.coerceAtLeast(0)
+        val rate = if (multiplier.isFinite()) multiplier else 1.0
+        val screenXp = if (used <= goal) {
+            ((goal - used) * 10.0 * rate * (1.0 + streakBonus(streak))).roundToInt()
+        } else {
+            -((used - goal) * 15)
+        }
+        val ask = InterventionXp.ASK_XP * askBrainCount.coerceAtLeast(0)
+        val bailout = bailoutBonus.coerceAtLeast(0)
+        return (screenXp - ask - ransomDebit.coerceAtLeast(0) + bailout).coerceAtLeast(0)
+    }
+
+    /** Goal minutes × 10 × difficulty multiplier, with no streak bonus. Easy 3000, Medium 2250, Hard 900. */
+    fun underGoalCap(goalMinutes: Int, multiplier: Double): Int {
+        val rate = if (multiplier.isFinite()) multiplier else 1.0
+        return (goalMinutes.coerceAtLeast(0) * 10.0 * rate).roundToInt()
+    }
+
+    /** Half of [underGoalCap], rounded half away from zero. Easy 1500, Medium 1125, Hard 450. */
+    fun bailoutReward(level: BrainHealthLevel): Int =
+        (underGoalCap(level.goalMinutes, level.xpMultiplier) * 0.5).roundToInt()
+
+    /**
+     * Last Daily XP written for one user on one local day.
+     * A later refresh uses it so missing or smaller minutes cannot replace a higher score.
+     */
+    data class DailyXpPost(
+        val day: String,
+        val xp: Int,
+        val minutes: Int,
+        val askCount: Int,
+        val ransomDebit: Int,
+        val level: String,
+        val userId: String,
+    ) {
+        fun encode(): String = listOf(day, xp, minutes, askCount, ransomDebit, level, userId).joinToString("|")
+
+        companion object {
+            fun decode(raw: String?): DailyXpPost? {
+                if (raw.isNullOrBlank()) return null
+                val parts = raw.split('|')
+                if (parts.size != 7 || parts[0].length != 10 || parts[5].isBlank()) return null
+                return DailyXpPost(
+                    day = parts[0],
+                    xp = parts[1].toIntOrNull() ?: return null,
+                    minutes = parts[2].toIntOrNull() ?: return null,
+                    askCount = parts[3].toIntOrNull() ?: return null,
+                    ransomDebit = parts[4].toIntOrNull() ?: return null,
+                    level = parts[5],
+                    userId = parts[6],
+                )
+            }
+        }
+    }
+
+    /**
+     * Score to upsert, or null when this refresh must not write.
+     * Missing minutes, or a smaller minute total than the one already stored today, are not a real drop.
+     * More minutes, a new Ask, a new ransom, a new difficulty, or a bailout may change today's score.
+     * A refresh that omits a bailout already in the stored score does not replace that higher score.
+     * A new local day does not keep yesterday's score.
+     */
+    fun nextDailyXp(
+        today: String,
+        minutesLoaded: Int?,
+        askCount: Int,
+        ransomDebit: Int,
+        level: BrainHealthLevel,
+        userId: String,
+        previous: DailyXpPost?,
+        streak: Int = 0,
+        bailout: Int = 0,
+    ): DailyXpPost? {
+        val prior = previous?.takeIf { it.userId == userId && it.day == today }
+        val loaded = measuredMinutes(minutesLoaded)
+        val storedMinutes = prior?.minutes?.let { measuredMinutes(it) }
+        val minutes = when {
+            loaded == null -> storedMinutes
+            storedMinutes != null && loaded < storedMinutes -> storedMinutes
+            else -> loaded
+        } ?: return null
+        val candidate = dailyXp(minutes, level.goalMinutes, askCount, ransomDebit, level.xpMultiplier, streak, bailout)
+        val post = DailyXpPost(today, candidate, minutes, askCount, ransomDebit, level.label, userId)
+        if (prior == null) return if (loaded == null) null else post
+        val usageGrew = loaded != null && storedMinutes != null && loaded > storedMinutes
+        val ledgerChanged = askCount != prior.askCount || ransomDebit != prior.ransomDebit
+        val goalChanged = level.label != prior.level
+        if (candidate < prior.xp && !usageGrew && !ledgerChanged && !goalChanged) return null
+        if (candidate == prior.xp && !usageGrew && !ledgerChanged && !goalChanged) return null
+        return post
     }
 
     fun rank(score: Int): BrainRank = when (score.coerceAtLeast(0)) {
@@ -129,7 +318,7 @@ object Scoring {
     }
 
     fun formatDuration(seconds: Long): String {
-        val minutesTotal = (seconds.coerceAtLeast(0) / 60.0).roundToInt()
+        val minutesTotal = screenMinutes(seconds)
         val hours = minutesTotal / 60
         val minutes = minutesTotal % 60
         return when {

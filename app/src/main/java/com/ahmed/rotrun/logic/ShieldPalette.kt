@@ -1,10 +1,12 @@
 package com.ahmed.rotrun.logic
 
 import kotlin.math.abs
-import kotlin.math.max
 import kotlin.math.roundToInt
 
-/** Shield colours. Background uses the accent hue, saturation at least 0.55, brightness 0.24. */
+/**
+ * Shield colours. Same accent hue as iOS `InterventionAccent.shieldBackground`:
+ * saturation clamped to 0.28...0.42, brightness 0.11. The accent itself stays on the button.
+ */
 object ShieldPalette {
     fun accent(id: String): Int = when (id) {
         "stop-scrolling", "brain-first" -> 0xFFE6389E.toInt()
@@ -23,7 +25,7 @@ object ShieldPalette {
 
     fun background(id: String): Int {
         val color = accent(id)
-        return hsvToArgb(hueOf(color), max(satOf(color), 0.55f), 0.24f)
+        return hsvToArgb(hueOf(color), satOf(color).coerceIn(0.28f, 0.42f), 0.11f)
     }
 
     private fun hueOf(argb: Int): Float {
