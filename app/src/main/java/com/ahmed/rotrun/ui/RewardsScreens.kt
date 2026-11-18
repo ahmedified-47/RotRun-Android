@@ -147,7 +147,7 @@ fun IconPage(state: SavedState, repo: RotRunRepository, onBack: () -> Unit) {
             modifier = Modifier.padding(start = 22.dp, end = 22.dp, top = 16.dp),
         )
         Text(
-            "Icon changes show on your home screen and may take a moment to appear.",
+            "Your home screen may take a minute to update.",
             color = StreakInk,
             fontSize = 16.sp,
             fontWeight = FontWeight.Medium,

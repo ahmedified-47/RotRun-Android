@@ -5,35 +5,57 @@ import android.content.Context
 import android.content.pm.PackageManager
 import com.ahmed.rotrun.R
 
-/** Activity-alias launcher icons. Enable the chosen alias before disabling the others. */
+/**
+ * Activity-alias launcher icons. The chosen alias is enabled before the others are disabled,
+ * and exactly one stays enabled. ColorOS and MIUI keep the previous bitmap until they rescan,
+ * so a successful switch still tells the user the home screen can take a minute.
+ */
 object LauncherIcons {
     val order = listOf("Default", "Grassy", "Spark", "Zen", "Scholar", "Cosmic")
 
-    fun preview(name: String): Int = when (name) {
-        "Grassy" -> R.mipmap.ic_launcher_grassy
-        "Spark" -> R.mipmap.ic_launcher_spark
-        "Zen" -> R.mipmap.ic_launcher_zen
-        "Scholar" -> R.mipmap.ic_launcher_scholar
-        "Cosmic" -> R.mipmap.ic_launcher_cosmic
-        else -> R.mipmap.ic_launcher_default
+    const val refreshNote = "Your home screen may take a minute to update."
+
+    /** Saved names that are not an alias fall back to the manifest default. */
+    fun persistedChoice(stored: String?): String = if (stored != null && stored in order) stored else "Default"
+
+    /**
+     * Enable the saved alias first, then disable every other alias.
+     * The first pair is the one that must stay enabled.
+     */
+    fun changes(name: String): List<Pair<String, Boolean>> {
+        val chosen = persistedChoice(name)
+        return listOf(chosen to true) + order.filter { it != chosen }.map { it to false }
     }
 
-    fun apply(context: Context, name: String) {
-        val chosenName = if (name in order) name else "Default"
+    fun isLauncherAlias(className: String): Boolean {
+        val simple = className.substringAfterLast('.')
+        return simple in order && className == "com.ahmed.rotrun.icon.$simple"
+    }
+
+    /** Bitmap preview. The mipmap of the same alias name is an adaptive XML, which Compose cannot paint. */
+    fun preview(name: String): Int = when (persistedChoice(name)) {
+        "Grassy" -> R.mipmap.ic_fg_grassy
+        "Spark" -> R.mipmap.ic_fg_spark
+        "Zen" -> R.mipmap.ic_fg_zen
+        "Scholar" -> R.mipmap.ic_fg_scholar
+        "Cosmic" -> R.mipmap.ic_fg_cosmic
+        else -> R.mipmap.ic_fg_default
+    }
+
+    /** Null when the aliases were updated. A string is the failure to show. */
+    fun apply(context: Context, name: String): String? {
         val manager = context.packageManager
-        runCatching {
-            manager.setComponentEnabledSetting(
-                component(context, chosenName),
-                PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
-                PackageManager.DONT_KILL_APP,
-            )
-            order.filter { it != chosenName }.forEach { other ->
+        return try {
+            changes(name).forEach { (alias, enabled) ->
                 manager.setComponentEnabledSetting(
-                    component(context, other),
-                    PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                    component(context, alias),
+                    if (enabled) PackageManager.COMPONENT_ENABLED_STATE_ENABLED else PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
                     PackageManager.DONT_KILL_APP,
                 )
             }
+            null
+        } catch (error: Exception) {
+            error.message?.takeIf { it.isNotBlank() } ?: "Couldn't change the app icon."
         }
     }
 

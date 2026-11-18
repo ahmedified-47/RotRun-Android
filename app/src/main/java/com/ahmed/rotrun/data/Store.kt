@@ -296,7 +296,10 @@ class RotRunRepository(context: Context) {
         }
         publishWidget()
         WatchController.sync(app, next, armingReady())
-        if (previous.appIcon != next.appIcon) LauncherIcons.apply(app, next.appIcon)
+        if (previous.appIcon != next.appIcon) {
+            val failure = LauncherIcons.apply(app, next.appIcon)
+            toast(failure ?: LauncherIcons.refreshNote)
+        }
         if (previous.blockers != next.blockers || previous.appLists != next.appLists) {
             considerBatteryPrompt(next)
             scope.launch(Dispatchers.IO) { backend.pushBlockers(next) }
@@ -1056,7 +1059,7 @@ class RotRunRepository(context: Context) {
             goalHours = json.optInt("goalHours", 4),
             brainHealth = json.optString("brainHealth", "Medium"),
             theme = json.optString("theme", "Grassy"),
-            appIcon = json.optString("appIcon", "Default"),
+            appIcon = LauncherIcons.persistedChoice(json.optString("appIcon", "Default")),
             standardDialogue = json.optBoolean("standardDialogue", true),
             breathingExercise = json.optBoolean("breathingExercise", true),
             mirrorMode = json.optBoolean("mirrorMode", true),
