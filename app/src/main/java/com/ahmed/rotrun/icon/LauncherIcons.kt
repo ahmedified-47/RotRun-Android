@@ -32,14 +32,14 @@ object LauncherIcons {
         return simple in order && className == "com.ahmed.rotrun.icon.$simple"
     }
 
-    /** Bitmap preview. The mipmap of the same alias name is an adaptive XML, which Compose cannot paint. */
+    /** Flat preview. The alias mipmap is adaptive XML, which Compose cannot paint. */
     fun preview(name: String): Int = when (persistedChoice(name)) {
-        "Grassy" -> R.mipmap.ic_fg_grassy
-        "Spark" -> R.mipmap.ic_fg_spark
-        "Zen" -> R.mipmap.ic_fg_zen
-        "Scholar" -> R.mipmap.ic_fg_scholar
-        "Cosmic" -> R.mipmap.ic_fg_cosmic
-        else -> R.mipmap.ic_fg_default
+        "Grassy" -> R.drawable.ic_preview_grassy
+        "Spark" -> R.drawable.ic_preview_spark
+        "Zen" -> R.drawable.ic_preview_zen
+        "Scholar" -> R.drawable.ic_preview_scholar
+        "Cosmic" -> R.drawable.ic_preview_cosmic
+        else -> R.drawable.ic_preview_default
     }
 
     /** Null when the aliases were updated. A string is the failure to show. */
