@@ -7,12 +7,12 @@
     <string name="accessibility_disclosure">RotRun uses Accessibility to detect when you open apps you chose to block and to show a blocking screen; no personal data is collected or shared via this service.</string>
     <color name="meadow">#3DB370</color>
     <color name="ic_launcher_background">#FFF4EC</color>
-    <color name="icon_default">#FFF4EC</color>
-    <color name="icon_grassy">#3DB370</color>
-    <color name="icon_spark">#FF8C3C</color>
-    <color name="icon_zen">#6BAD94</color>
-    <color name="icon_scholar">#5C4A8A</color>
-    <color name="icon_cosmic">#1A1A42</color>
+    <color name="icon_default">#B8E1FA</color>
+    <color name="icon_grassy">#8CD1ED</color>
+    <color name="icon_spark">#FFC76B</color>
+    <color name="icon_zen">#BDE1DB</color>
+    <color name="icon_scholar">#8C61C7</color>
+    <color name="icon_cosmic">#1A1A48</color>
     <style name="Theme.RotRun" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
