@@ -167,7 +167,7 @@ fun sceneFor(theme: String): ScenePalette? = when (theme) {
     "Sunrise" -> ScenePalette(Color(0xFFFFC76B), Color(0xFFFF7A52), Color(0xFF579E5C), Color(0xFF387A47), Color(0xFFFFF2B8), true, true, false)
     "Zen" -> ScenePalette(Color(0xFFBDE0DB), Color(0xFF8CC7C2), Color(0xFF6BAD94), Color(0xFF478575), Color.White, false, true, false)
     "Twilight" -> ScenePalette(Color(0xFF8C61C7), Color(0xFF52388C), Color(0xFF47336B), Color(0xFF291F47), Color(0xFFFFEB8C), true, true, false)
-    "Cosmic" -> ScenePalette(Color(0xFF1A1A47), Color(0xFF291A66), Color(0xFF1A1A42), Color(0xFF0F142E), Color.White, true, false, true)
+    "Cosmic" -> ScenePalette(Color(0xFF1A1A47), Color(0xFF291A66), Color(0xFF1A1A42), Color(0xFF0F1433), Color.White, true, false, true)
     else -> null
 }
 

@@ -27,14 +27,30 @@ object InterventionCopy {
 
     fun forApp(appName: String): ShieldCopy = forPackage(appName, appName)
 
-    /** Stable template from the package name. {app} is the visible label. */
+    /**
+     * Same template as iOS `InterventionCopy.stableIndex`: the lowercased display name,
+     * not the package. {app} is that visible label.
+     */
     fun forPackage(packageName: String, label: String): ShieldCopy {
-        val name = displayName(label)
-        val seed = packageName.ifBlank { name }
-        val index = (fnv(seed).toUInt() % templates.size.toUInt()).toInt()
-        val template = templates[index]
+        val name = displayName(label.ifBlank { packageName })
+        val template = templates[stableIndex(name)]
         fun fill(value: String?) = value?.replace("{app}", name)
         return template.copy(headline = fill(template.headline).orEmpty(), body = fill(template.body).orEmpty(), footer = fill(template.footer))
+    }
+
+    /** iOS `stableIndex`: `($0 &* 16_777_619) &+ scalar` on 64-bit, then modulo the template count. */
+    fun stableIndex(appName: String): Int {
+        val text = displayName(appName).lowercase()
+        var hash = 0L
+        var index = 0
+        while (index < text.length) {
+            val scalar = text.codePointAt(index)
+            hash = hash * 16_777_619L + scalar.toLong()
+            index += Character.charCount(scalar)
+        }
+        val count = templates.size
+        val mod = hash % count
+        return if (mod >= 0) mod.toInt() else (mod + count).toInt()
     }
 
     fun roast(kind: String, name: String): String {
@@ -52,14 +68,6 @@ object InterventionCopy {
         return "In tonight's episode: the rare Rotter, friend of $who, approaches a glowing rectangle in search of crumbs of dopamine. Nature is patient. Nature is judging you. Close the app."
     }
 
-    private fun fnv(text: String): Int {
-        var hash = 2166136261u
-        for (char in text) {
-            hash = hash xor char.code.toUInt()
-            hash *= 16777619u
-        }
-        return hash.toInt()
-    }
 }
 
 data class Faq(val question: String, val answer: String)

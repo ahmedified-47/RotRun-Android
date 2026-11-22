@@ -42,7 +42,9 @@ object BlockRules {
         now: ZonedDateTime,
         usageSeconds: Long,
         windows: List<Window>,
+        @Suppress("UNUSED_PARAMETER") chatPackage: String? = null,
     ): Boolean {
+        // A chat hold used to uncover the blocked app. Recents and home then opened it with no shield.
         if (packageName in safety || packageName in excluded) return false
         if (focus != null) return if (focus.allApps) true else packageName in focus.brainrot
         if (nowMillis < unlockUntil) return false
@@ -55,6 +57,18 @@ object BlockRules {
                 else -> covers("allDay", window.days, window.startHour, window.endHour, now)
             }
         }
+    }
+
+    /**
+     * Every package still stored on this blocker.
+     * The free-tier cap applies when the list is saved, and that save tells the user.
+     * It must not drop a package that is still on the list the user can see.
+     * An empty blocker uses the app list it points at. Apps stashed on other modes are not active.
+     */
+    fun enforcedPackages(activeApps: List<String>, linkedList: List<String>): Set<String> {
+        val active = activeApps.filter { it.isNotBlank() }.distinct()
+        val source = if (active.isNotEmpty()) active else linkedList
+        return source.filter { it.isNotBlank() }.distinct().toSet()
     }
 
     /** Free tier keeps the first distinct package. Premium, or a paywall that is off, keeps all of them. */

@@ -1,13 +1,18 @@
 package com.ahmed.rotrun
 
+import com.ahmed.rotrun.data.DayUsage
+import com.ahmed.rotrun.data.Offender
+import com.ahmed.rotrun.data.UsageSlice
+import com.ahmed.rotrun.data.UsageSnapshot
 import com.ahmed.rotrun.data.countedSampleMillis
 import com.ahmed.rotrun.data.ForegroundMark
-import com.ahmed.rotrun.data.UsageSlice
 import com.ahmed.rotrun.data.dedupedUsageSlices
 import com.ahmed.rotrun.data.foregroundSeconds
+import com.ahmed.rotrun.data.mergeHomeUsage
 import com.ahmed.rotrun.data.usageBucketDay
 import com.ahmed.rotrun.data.visibleSecondsOnDay
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDate
 import java.time.ZoneId
@@ -122,5 +127,54 @@ class UsageWindowTest {
         val slice = UsageSlice("com.example.app", 0L, usedToday, 8 * 1000L)
         assertEquals(today, usageBucketDay(slice, zone))
         assertEquals(8, visibleSecondsOnDay(listOf(slice), "com.example.app", today, zone))
+    }
+
+    @Test
+    fun emptyRefreshKeepsThePreviousNumbers() {
+        val current = UsageSnapshot(
+            authorized = true,
+            todaySeconds = 120,
+            drainSeconds = 100,
+            pickups = 4,
+            avgSeconds = 80,
+            offenders = listOf(Offender("a", "Messages", 120)),
+            week = listOf(DayUsage("2026-11-03", "T", 120)),
+            hourlyToday = listOf(2f) + List(23) { 0f },
+        )
+        val merged = mergeHomeUsage(current, UsageSnapshot(authorized = true))
+        assertEquals(120L, merged.todaySeconds)
+        assertEquals(100L, merged.drainSeconds)
+        assertEquals(4, merged.pickups)
+        assertEquals(80L, merged.avgSeconds)
+        assertEquals("Messages", merged.offenders.single().label)
+        assertEquals(120L, merged.week.single().seconds)
+        assertEquals(2f, merged.hourlyToday.first())
+        assertTrue(merged.authorized)
+    }
+
+    @Test
+    fun measuredRefreshReplacesOnlyTheFieldsItRead() {
+        val current = UsageSnapshot(authorized = true, todaySeconds = 120, drainSeconds = 100, pickups = 4, avgSeconds = 80)
+        val next = UsageSnapshot(authorized = true, todaySeconds = 50, drainSeconds = 40, pickups = 0, avgSeconds = 0)
+        val merged = mergeHomeUsage(current, next)
+        assertEquals(50L, merged.todaySeconds)
+        assertEquals(40L, merged.drainSeconds)
+        assertEquals(4, merged.pickups)
+        assertEquals(80L, merged.avgSeconds)
+    }
+
+    @Test
+    fun failedReadDoesNotClearALiveHome() {
+        val current = UsageSnapshot(authorized = true, todaySeconds = 90, drainSeconds = 90)
+        val merged = mergeHomeUsage(current, UsageSnapshot())
+        assertEquals(90L, merged.todaySeconds)
+        assertTrue(merged.authorized)
+    }
+
+    @Test
+    fun firstReadingIsShownEvenWhenItIsSmall() {
+        val merged = mergeHomeUsage(UsageSnapshot(), UsageSnapshot(authorized = true, todaySeconds = 30, drainSeconds = 30))
+        assertEquals(30L, merged.todaySeconds)
+        assertTrue(merged.authorized)
     }
 }

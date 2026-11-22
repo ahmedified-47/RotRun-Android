@@ -16,14 +16,19 @@ object UpgradeReminders {
     private const val id = 77
     private const val channel = "rotrun.upgrade"
 
-    fun sync(context: Context, state: SavedState) {
+    /** A reminder is due only when the user asked for one and features are still locked. */
+    fun scheduled(state: SavedState, signedInUserId: String?): Boolean =
+        state.upgradeReminders && !state.featuresUnlocked(signedInUserId)
+
+    fun sync(context: Context, state: SavedState, signedInUserId: String? = null) {
+        val due = scheduled(state, signedInUserId)
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val alarm = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val pending = pending(context)
         context.getSharedPreferences("rotrun.flags", Context.MODE_PRIVATE).edit()
-            .putBoolean("upgrade", state.upgradeReminders && !state.premiumActive())
+            .putBoolean("upgrade", due)
             .apply()
-        if (!state.upgradeReminders || state.premiumActive()) {
+        if (!due) {
             alarm.cancel(pending)
             manager.cancel(id)
             return

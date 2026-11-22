@@ -1,48 +1,93 @@
 package com.ahmed.rotrun.ui
 
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.dp
+import androidx.annotation.DrawableRes
 import com.ahmed.rotrun.R
+import kotlin.math.sin
+import kotlinx.coroutines.delay
+
+/** iOS `Image("RotBrainCharacter")`. Sleep-cap, checking-watch, and pleading are this same file. */
+@Composable
+fun RotPose(@DrawableRes pose: Int, modifier: Modifier = Modifier, animated: Boolean = true) {
+    val minPx = with(LocalDensity.current) { 96.dp.roundToPx() }
+    var tallEnough by remember { mutableIntStateOf(0) }
+    val breath = rememberPulse(1.03f, 2400, animated && tallEnough >= minPx)
+    Image(
+        painter = painterResource(pose),
+        contentDescription = "Rot",
+        contentScale = ContentScale.Fit,
+        modifier = modifier.onSizeChanged { tallEnough = it.height }.graphicsLayer {
+            scaleX = breath
+            scaleY = breath
+        },
+    )
+}
 
 @Composable
 fun CartoonBrain(style: BrainStyle, modifier: Modifier = Modifier, animated: Boolean = true) {
     val label = style.name
     if (label.isEmpty()) return
-    val transition = rememberInfiniteTransition(label = "rot")
-    val breath by transition.animateFloat(
-        initialValue = 1f,
-        targetValue = if (animated) 1.026f else 1f,
-        animationSpec = infiniteRepeatable(tween(2400, easing = LinearEasing), RepeatMode.Reverse),
-        label = "breath",
-    )
+    val minPx = with(LocalDensity.current) { 96.dp.roundToPx() }
+    var tallEnough by remember { mutableIntStateOf(0) }
+    val breath = rememberPulse(1.03f, 2400, animated && tallEnough >= minPx)
     Image(
         painter = painterResource(R.drawable.rot_mascot),
         contentDescription = "Rot",
         contentScale = ContentScale.Fit,
-        modifier = modifier.graphicsLayer {
+        modifier = modifier.onSizeChanged { tallEnough = it.height }.graphicsLayer {
+            scaleX = breath
             scaleY = breath
-            transformOrigin = TransformOrigin(0.5f, 1f)
         },
     )
+}
+
+/** Rank canvas. Frame at most every 0.08s. Reduce Motion is not checked, matching iOS. */
+@Composable
+fun PixelBrain(rankTitle: String, modifier: Modifier = Modifier) {
+    var frame by remember { mutableIntStateOf(0) }
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        while (true) {
+            delay(80)
+            frame += 1
+        }
+    }
+    val speed = when (rankTitle) {
+        "Sloth" -> 0.6f
+        "Active" -> 2.0f
+        "Cosmic Mind" -> 3.2f
+        else -> 1.2f
+    }
+    val t = frame * 0.08f
+    val glow = 0.5f + 0.5f * sin(t * speed)
+    val jitter = if (rankTitle == "Rotter" || rankTitle !in setOf("Sloth", "Active", "Cosmic Mind")) 0.15f else 0f
+    Canvas(modifier) {
+        val cell = size.minDimension / 5f
+        val on = Color(0xFF7C5CFF).copy(alpha = glow.coerceIn(0.15f, 1f))
+        val cells = listOf(1 to 1, 2 to 1, 3 to 1, 1 to 2, 3 to 2, 2 to 3)
+        cells.forEachIndexed { index, (x, y) ->
+            val drop = if (jitter > 0f && index % 2 == 0) cell * jitter * ((sin(t * 3f + index) + 1f) / 2f) else 0f
+            drawRect(on, topLeft = Offset(x * cell, y * cell + drop), size = Size(cell * 0.8f, cell * 0.8f))
+        }
+    }
 }
 
 @Composable
